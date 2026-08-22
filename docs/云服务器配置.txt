@@ -1,0 +1,6 @@
+ip=107.148.27.165
+端口=49073
+用户名=root
+密码=8:sPikf)C91qA7XW
+前端访问地址=dailystock.zhicha.io
+后台访问地址=dailystock.zhicha.io/admin

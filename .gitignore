@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+out/
+
+# Local runtime state and logs
+.runtime/
+*.log
+
+# Local secrets and deployment settings
+.env
+.env.*
+!.env.example
+.deploy/
+
+# Local helper binaries
+.runtime-ssh-askpass.exe
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>行情日报 Desktop</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    :root{--ink:#17212b;--muted:#697582;--line:#dfe5e9;--paper:#f3f5f7;--card:#fff;--red:#c93432;--green:#087a64;--gold:#bc7a18;--bg:#f3f5f7;--card-bg:#fff;--focus:#1769aa;--radius:8px;--space:14px}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;transition:background .2s}
+    body.dark{--ink:#e8eef1;--muted:#a9b8c0;--line:#2c3a44;--paper:#17212b;--card:#1e2a33;--card-bg:#1e2a33;--bg:#17212b}
+    header{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#17212b;color:#fff;flex:0 0 52px}
+    header .logo{font-weight:900;letter-spacing:-.02em}
+    header .logo span{color:#a9b8c0;font-size:.6rem;margin-left:8px}
+    nav{display:flex;gap:2px;align-items:center;overflow-x:auto}
+    nav button{border:0;background:transparent;color:#c4d0d5;padding:8px 12px;border-radius:6px;font-weight:800;font-size:.83rem;cursor:pointer;white-space:nowrap;min-height:36px}
+    nav button.active{background:#273742;color:#fff}
+    nav .refresh{background:#e34845;color:#fff}
+    main{flex:1;overflow:auto;padding:16px 20px}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+    .indices{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+    .index-card{background:var(--card-bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+    .index-card small{color:var(--muted);display:block;font-size:.72rem}
+    .index-card b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+    .index-card .pct{display:block;font-size:.82rem;font-weight:700}
+    .up{color:var(--red)}.down{color:var(--green)}
+    .breadth{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+    .b-card{background:var(--card-bg);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+    .b-card small{display:block;color:var(--muted)}
+    .b-card b{font-size:1.3rem}
+    .panel{background:var(--card-bg);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+    .panel h2{margin:0 0 12px;font-size:.95rem;border-left:4px solid var(--red);padding-left:10px}
+    .table-wrap{overflow-x:auto;margin:0 -4px;padding:0 4px}
+    table{width:100%;border-collapse:collapse;font-size:.85rem}
+    th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+    th{color:var(--muted);font-size:.75rem;background:var(--paper)}
+    tr:last-child td{border-bottom:0}
+    .temp-ring{display:flex;align-items:center;gap:20px;padding:6px 0 12px;flex-wrap:wrap}
+    .ring{width:110px;height:110px;border-radius:50%;background:conic-gradient(var(--red) 0 var(--p,0%),#eef2f1 var(--p,0%) 100%);display:grid;place-items:center}
+    .ring div{width:82px;height:82px;border-radius:50%;background:var(--card-bg);display:grid;place-items:center}
+    .ring b{font-size:1.6rem;color:var(--red)}
+    .ring small{color:var(--muted)}
+    .temp-info b{font-size:1.1rem}
+    .temp-info p{margin:4px 0;color:var(--muted);font-size:.82rem}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .chip{padding:4px 10px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font-size:.78rem}
+    .err{color:var(--red);padding:20px;text-align:center;background:color-mix(in srgb,var(--red) 8%,var(--card-bg));border:1px solid color-mix(in srgb,var(--red) 25%,var(--line));border-radius:var(--radius);margin-bottom:14px}
+    .err button,.notice button{margin-left:8px;padding:6px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer}
+    .notice{color:var(--muted);padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px}
+    .loading{color:var(--muted);padding:30px;text-align:center}
+    .empty{color:var(--muted);text-align:center;padding:24px}
+    .updated{color:var(--muted);font-size:.72rem}
+    footer{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:var(--muted);font-size:.72rem;background:var(--paper);border-top:1px solid var(--line);flex:0 0 30px}
+    .num{font-variant-numeric:tabular-nums}
+    .addbar{display:flex;gap:8px;margin-bottom:12px;align-items:flex-start;flex-wrap:wrap}
+    .addbar input{flex:1;max-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--card-bg);color:var(--ink);font:inherit}
+    .addbar button{padding:8px 16px;border:0;border-radius:7px;background:var(--red);color:#fff;font-weight:800;cursor:pointer;min-height:38px}
+    .row-btn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:.76rem;font-weight:700;min-height:32px;color:var(--ink)}
+    .row-btn.danger{color:var(--red)}
+    svg{display:block;width:100%;height:220px;background:var(--card-bg)}
+    .kline-wrap{display:none;margin-top:10px}
+    .kline-wrap.show{display:block}
+    .his-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+    .his-row:last-child{border-bottom:0}
+    .his-row b{font-variant-numeric:tabular-nums}
+    .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .set-item{padding:12px;background:var(--paper);border:1px solid var(--line);border-radius:8px}
+    .set-item small{display:block;color:var(--muted);margin-bottom:6px}
+    .set-item select,.set-item input[type=checkbox]{font:inherit}
+    .set-item select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card-bg);color:var(--ink);min-height:36px}
+    .review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .review-grid .panel{margin-bottom:0}
+    .review-grid .panel.full{grid-column:1/-1}
+    .news-list{list-style:none;padding:0;margin:0}
+    .news-list li{padding:9px 0;border-bottom:1px solid var(--line)}
+    .news-list li:last-child{border-bottom:0}
+    .news-time{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:8px}
+    .form-error{color:var(--red);font-size:.8rem;flex-basis:100%;margin:0}
+    @media (max-width:900px){header{height:auto;min-height:52px;align-items:flex-start;padding:8px 12px;gap:8px}header .logo{padding-top:8px;white-space:nowrap}nav{flex-wrap:wrap;justify-content:flex-end}main{padding:12px}.review-grid{grid-template-columns:1fr}}
+    @media (max-width:600px){header{display:block}header .logo{display:block;margin-bottom:4px}nav{justify-content:flex-start}.indices{grid-template-columns:repeat(2,minmax(0,1fr))}.breadth{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{padding:12px}footer{height:auto;min-height:30px;padding:6px 12px;gap:10px;align-items:flex-start;flex-wrap:wrap}}
+    @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="logo">行情日报<span>DESKTOP</span></div>
+      <nav>
+        <button :class="{active:view==='realtime'}" :aria-current="view==='realtime'?'page':null" @click="view='realtime'">实时行情</button>
+        <button :class="{active:view==='watch'}" :aria-current="view==='watch'?'page':null" @click="view='watch';loadWatch()">自选股</button>
+        <button :class="{active:view==='overview'}" :aria-current="view==='overview'?'page':null" @click="loadRealtime();view='overview'">大盘概况</button>
+        <button :class="{active:view==='review'}" :aria-current="view==='review'?'page':null" @click="openReview(todayStr());view='review'">每日复盘</button>
+        <button :class="{active:view==='dragon'}" :aria-current="view==='dragon'?'page':null" @click="loadDragon();view='dragon'">龙虎榜</button>
+        <button :class="{active:view==='history'}" @click="buildHistory();view='history'">历史报告</button>
+        <button :class="{active:view==='settings'}" @click="view='settings'">设置</button>
+        <button class="refresh" :disabled="busy" @click="refreshAll">{{ busy ? '刷新中' : '刷新' }}</button>
+      </nav>
+    </header>
+    <main aria-live="polite">
+      <!-- 实时行情 -->
+      <div v-if="view==='realtime'">
+        <div v-if="status.realtime === 'loading'" class="loading">正在获取行情…</div>
+        <div v-else-if="status.realtime === 'error'" class="err">{{ errors.realtime }}<button @click="loadRealtime">重试</button></div>
+        <div v-else-if="!real.indices?.length" class="empty">暂无实时行情数据</div>
+        <div v-else class="indices">
+          <div v-for="ix in real.indices" :key="ix.name" class="index-card">
+            <small>{{ ix.name }}</small>
+            <b class="num">{{ ix.close != null ? ix.close.toFixed(2) : '-' }}</b>
+            <span class="pct" :class="ix.changePct>=0?'up':'down'">{{ ix.changePct>=0?'+':'' }}{{ ix.changePct?.toFixed(2) }}%</span>
+          </div>
+        </div>
+        <div class="breadth">
+          <div class="b-card"><small>涨停</small><b class="up num">{{ real.limitUpCount ?? '-' }}</b></div>
+          <div class="b-card"><small>领涨板块</small><b style="font-size:.95rem">{{ real.sectors?.[0]?.name || '-' }}</b></div>
+          <div class="b-card"><small>板块涨幅</small><b class="up num">{{ real.sectors?.[0]?.changePct != null ? real.sectors[0].changePct.toFixed(2)+'%' : '-' }}</b></div>
+          <div class="b-card"><small>更新于</small><b style="font-size:.85rem" class="num">{{ updatedTime }}</b></div>
+        </div>
+        <div v-if="real.indices?.length" class="panel"><h2>领涨板块 Top 5</h2>
+          <table><thead><tr><th>#</th><th>板块</th><th>涨跌幅</th></tr></thead>
+          <tbody><tr v-for="(s,i) in real.sectors" :key="s.name"><td>{{ i+1 }}</td><td>{{ s.name }}</td><td :class="s.changePct>=0?'up':'down'" class="num">{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</td></tr><tr v-if="!real.sectors?.length"><td colspan="3" class="empty">暂无板块数据</td></tr></tbody></table>
+        </div>
+        <div class="panel"><h2>涨停池</h2>
+          <table><thead><tr><th>个股</th><th>连板</th><th>板块</th></tr></thead>
+          <tbody><tr v-for="s in real.limitUpStocks" :key="s.code"><td>{{ s.name }}</td><td class="num">{{ s.streak }}</td><td>{{ s.sector }}</td></tr>
+          <tr v-if="!real.limitUpStocks?.length"><td colspan="3" class="empty">暂无涨停数据</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- 自选股 -->
+      <div v-else-if="view==='watch'">
+        <div class="addbar"><input v-model.trim="addCode" @keyup.enter="addStock" aria-label="股票代码" placeholder="输入代码，如 600519 或 300750"><button @click="addStock">添加自选</button><p v-if="formError" class="form-error" role="alert">{{ formError }}</p></div>
+        <div v-if="status.watch === 'loading'" class="loading">正在获取自选行情…</div>
+        <div v-else-if="status.watch === 'error'" class="err">{{ errors.watch }}<button @click="loadWatch">重试</button></div>
+        <div class="panel"><h2>自选股</h2>
+          <table><thead><tr><th>代码</th><th>名称</th><th>现价</th><th>涨跌</th><th>涨跌幅</th><th>K线</th><th></th></tr></thead>
+          <tbody><tr v-for="s in watchQuotes" :key="s.code">
+            <td class="num">{{ s.code }}</td><td>{{ s.name }}</td>
+            <td class="num">{{ s.latest.toFixed(2) }}</td>
+            <td :class="s.change>=0?'up':'down'" class="num">{{ s.change>=0?'+':'' }}{{ s.change.toFixed(2) }}</td>
+            <td :class="s.changePct>=0?'up':'down'" class="num">{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</td>
+            <td><button class="row-btn" @click="toggleKline(s.code)" :aria-label="(klineFor===s.code ? '收起' : '查看') + s.name + ' K线'">{{ klineFor===s.code ? '收起' : 'K线' }}</button></td>
+            <td><button class="row-btn danger" @click="removeStock(s)" :aria-label="'移除' + s.name">移除</button></td>
+          </tr>
+          <tr v-if="!watchQuotes.length"><td colspan="7" class="empty">还没有自选股，输入代码添加第一只。</td></tr></tbody></table>
+          <div class="kline-wrap" :class="{show:klineFor}">
+            <svg v-if="klineData.length" :viewBox="'0 0 600 200'" preserveAspectRatio="none">
+              <polyline :points="klinePoints" fill="none" stroke="#e34845" stroke-width="1.5"/>
+            </svg>
+            <div v-else-if="klineFor && status.kline === 'loading'" class="loading">加载 K 线中…</div>
+            <div v-else-if="klineFor && status.kline === 'error'" class="err">{{ errors.kline }}<button @click="loadKline(klineFor)">重试</button></div>
+            <div v-else-if="klineFor" class="empty">暂无 K 线数据</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 大盘概况 -->
+      <div v-else-if="view==='overview'">
+        <div class="breadth">
+          <div class="b-card"><small>两市成交额</small><b class="num" style="font-size:1rem">{{ totalAmount }} 亿</b></div>
+          <div class="b-card"><small>上涨指数</small><b class="up num">{{ upCount }}</b></div>
+          <div class="b-card"><small>下跌指数</small><b class="down num">{{ downCount }}</b></div>
+          <div class="b-card"><small>更新于</small><b style="font-size:.85rem" class="num">{{ updatedTime }}</b></div>
+        </div>
+        <div class="panel"><h2>主要指数</h2>
+          <table><thead><tr><th>指数</th><th>收盘</th><th>涨跌</th><th>涨跌幅</th><th>成交额(亿)</th></tr></thead>
+          <tbody><tr v-for="i in real.indices" :key="i.name"><td>{{ i.name }}</td><td class="num">{{ i.close?.toFixed(2) }}</td><td :class="i.change>=0?'up':'down'" class="num">{{ i.change>=0?'+':'' }}{{ i.change?.toFixed(2) }}</td><td :class="i.changePct>=0?'up':'down'" class="num">{{ i.changePct>=0?'+':'' }}{{ i.changePct?.toFixed(2) }}%</td><td class="num">{{ i.amountYi ?? '-' }}</td></tr></tbody></table>
+        </div>
+        <div class="panel"><h2>领涨板块 Top 5</h2>
+          <table><thead><tr><th>#</th><th>板块</th><th>涨跌幅</th></tr></thead>
+          <tbody><tr v-for="(s,i) in real.sectors" :key="s.name"><td>{{ i+1 }}</td><td>{{ s.name }}</td><td :class="s.changePct>=0?'up':'down'" class="num">{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- 每日复盘 -->
+      <div v-else-if="view==='review'">
+        <div v-if="status.review === 'loading'" class="loading">正在获取每日复盘…</div>
+        <div v-else-if="status.review === 'error'" class="err">{{ errors.review }}<button @click="openReview(review.date || todayStr())">重试</button></div>
+        <div v-else-if="review.temperature" class="review-grid">
+          <div class="panel full">
+            <h2>市场温度 · {{ review.date }}</h2>
+            <div class="temp-ring">
+              <div class="ring" :style="{'--p': review.temperature.score + '%'}"><div><b class="num">{{ review.temperature.score }}</b><small>/100</small></div></div>
+              <div class="temp-info"><b>{{ review.temperature.level }}</b><p>量价 {{ review.temperature.vp }} + 技术面 {{ review.temperature.tech ?? '暂缺' }}</p><p v-for="d in review.techDetail" :key="d">{{ d }}</p></div>
+            </div>
+          </div>
+          <div class="panel"><h2>A 股大盘概览</h2>
+            <table><thead><tr><th>指数</th><th>收盘</th><th>涨跌</th><th>涨跌幅</th><th>成交额(亿)</th></tr></thead>
+            <tbody><tr v-for="i in review.indices" :key="i.name"><td>{{ i.name }}</td><td class="num">{{ i.close?.toFixed(2) }}</td><td :class="i.change>=0?'up':'down'" class="num">{{ i.change>=0?'+':'' }}{{ i.change?.toFixed(2) }}</td><td :class="i.changePct>=0?'up':'down'" class="num">{{ i.changePct>=0?'+':'' }}{{ i.changePct?.toFixed(2) }}%</td><td class="num">{{ i.amountYi ?? '-' }}</td></tr></tbody></table>
+          </div>
+          <div class="panel"><h2>强势板块与资金流</h2>
+            <div class="chips"><span v-for="s in review.sectors" :key="s.name" class="chip">{{ s.name }} {{ s.changePct>=0?'+':'' }}{{ s.changePct?.toFixed(2) }}%</span></div>
+            <table style="margin-top:12px"><thead><tr><th>板块</th><th>涨幅</th><th>主力净流入(亿)</th></tr></thead><tbody><tr v-for="s in review.fundFlow" :key="s.name"><td>{{ s.name }}</td><td :class="s.changePct>=0?'up':'down'" class="num">{{ s.changePct>=0?'+':'' }}{{ s.changePct?.toFixed(2) }}%</td><td class="num">{{ s.inflowYi>=0?'+':'' }}{{ s.inflowYi?.toFixed(2) }}</td></tr><tr v-if="!review.fundFlow?.length"><td colspan="3" class="empty">暂无资金流数据</td></tr></tbody></table>
+            <p style="color:var(--muted);font-size:.82rem;margin:10px 0 0">涨停 {{ review.limitUpCount }} 家 · 统计指标仅供参考</p>
+          </div>
+          <div class="panel"><h2>龙虎榜</h2>
+            <table><thead><tr><th>个股</th><th>涨跌幅</th><th>净买入(亿)</th><th>上榜原因</th></tr></thead>
+            <tbody><tr v-for="(r,i) in review.dragon.slice(0,8)" :key="i"><td>{{ r.name }}</td><td :class="r.changePct>=0?'up':'down'" class="num">{{ r.changePct>=0?'+':'' }}{{ r.changePct.toFixed(2) }}%</td><td class="num">{{ r.netBuy.toFixed(2) }}</td><td style="font-size:.75rem;color:var(--muted)">{{ r.reason }}</td></tr><tr v-if="!review.dragon?.length"><td colspan="4" class="empty">该日无龙虎榜数据</td></tr></tbody></table>
+          </div>
+          <div class="panel"><h2>亚太及海外市场</h2>
+            <table><thead><tr><th>市场</th><th>指数</th><th>收盘</th><th>涨跌幅</th></tr></thead>
+            <tbody><tr v-for="g in review.global" :key="g.name"><td>{{ g.name.includes('恒生')?'港股':'美股' }}</td><td>{{ g.name }}</td><td class="num">{{ g.close.toFixed(2) }}</td><td :class="g.changePct>=0?'up':'down'" class="num">{{ g.changePct>=0?'+':'' }}{{ g.changePct.toFixed(2) }}%</td></tr></tbody></table>
+          </div>
+          <div class="panel"><h2>今日要闻</h2><ul class="news-list"><li v-for="n in review.news" :key="n.time + n.title"><span class="news-time">{{ n.time }}</span>{{ n.title }}<span v-if="n.digest" class="updated"> · {{ n.digest }}</span></li><li v-if="!review.news?.length" class="empty">暂无今日要闻</li></ul></div>
+          <div class="panel"><h2>自选股观察</h2><table><thead><tr><th>个股</th><th>现价</th><th>涨跌</th><th>涨跌幅</th></tr></thead><tbody><tr v-for="s in review.watchlist" :key="s.code"><td>{{ s.name }}</td><td class="num">{{ s.latest.toFixed(2) }}</td><td :class="s.change>=0?'up':'down'" class="num">{{ s.change>=0?'+':'' }}{{ s.change.toFixed(2) }}</td><td :class="s.changePct>=0?'up':'down'" class="num">{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</td></tr><tr v-if="!review.watchlist?.length"><td colspan="4" class="empty">暂无自选股数据</td></tr></tbody></table></div>
+          <div class="panel full"><h2>合规说明</h2><p class="updated">市场温度、资金流和技术指标均为统计性描述，不代表未来走势，不构成买卖信号。行情数据来自公开来源，仅供参考，不构成任何投资建议。</p></div>
+        </div>
+        <div v-else class="empty">暂无复盘数据</div>
+      </div>
+
+      <!-- 龙虎榜 -->
+      <div v-else-if="view==='dragon'">
+        <div v-if="status.dragon === 'loading'" class="loading">正在获取龙虎榜…</div>
+        <div v-else-if="status.dragon === 'error'" class="err">{{ errors.dragon }}<button @click="loadDragon">重试</button></div>
+        <div class="panel"><h2>龙虎榜 · {{ dragon.date || todayStr() }}</h2>
+          <table><thead><tr><th>个股</th><th>涨跌幅</th><th>净买入(亿)</th><th>买入(亿)</th><th>卖出(亿)</th><th>上榜原因</th></tr></thead>
+          <tbody><tr v-for="(r,i) in dragon.list" :key="i"><td>{{ r.name }}</td><td :class="r.changePct>=0?'up':'down'" class="num">{{ r.changePct>=0?'+':'' }}{{ r.changePct.toFixed(2) }}%</td><td class="num">{{ r.netBuy.toFixed(2) }}</td><td class="num">{{ r.buy.toFixed(2) }}</td><td class="num">{{ r.sell.toFixed(2) }}</td><td style="font-size:.75rem;color:var(--muted)">{{ r.reason }}</td></tr>
+          <tr v-if="!dragon.list?.length"><td colspan="6" class="empty">该日无龙虎榜数据</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- 历史报告 -->
+      <div v-else-if="view==='history'">
+        <div class="panel"><h2>历史复盘报告</h2>
+            <div v-for="d in historyDates" :key="d" class="his-row"><b>{{ d }}</b><button class="row-btn" @click="openReview(d)">查看</button></div>
+          <div v-if="!historyDates.length" class="empty">暂无历史报告</div>
+        </div>
+      </div>
+
+      <!-- 设置 -->
+      <div v-else-if="view==='settings'">
+        <div class="panel"><h2>设置</h2>
+          <div class="settings-grid">
+            <div class="set-item"><small>实时刷新频率</small><select v-model.number="refreshSec" @change="applyRefresh"><option :value="3">3 秒</option><option :value="5">5 秒</option><option :value="10">10 秒</option><option :value="0">手动</option></select></div>
+            <div class="set-item"><small>主题</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="dark" @change="applyTheme"> 暗色模式</label></div>
+            <div class="set-item"><small>收盘复盘通知</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="notify" @change="applyNotify"> 生成后提醒我</label></div>
+            <div class="set-item"><small>数据源</small><div style="color:var(--muted);font-size:.8rem">腾讯行情 + 东方财富（本地直连）</div></div>
+          </div>
+        </div>
+        <div class="panel"><h2>关于</h2>
+          <p style="color:var(--muted);font-size:.85rem">行情日报 Desktop · v0.1<br>仅提供行情数据的展示与整理，数据来自公开来源，仅供参考，<b>不构成任何投资建议</b>。<br>股市有风险，投资需谨慎。</p>
+        </div>
+      </div>
+    </main>
+    <footer><span>数据源：腾讯行情 + 东方财富（本地直连）</span><span>数据仅供参考 · 不构成投资建议</span></footer>
+  </div>
+
+  <script>
+    const { createApp } = Vue;
+    const todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    createApp({
+      data() { return {
+        view: 'realtime', real: {}, review: {}, dragon: {}, updatedTime: '-',
+        status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle', kline: 'idle' },
+        errors: { realtime: '', watch: '', review: '', dragon: '', kline: '' }, formError: '',
+        watch: JSON.parse(localStorage.getItem('hq_watch') || '[]'), addCode: '', watchQuotes: [], klineFor: '', klineData: [],
+        historyDates: [], refreshSec: Number(localStorage.getItem('hq_refresh') || 3), dark: localStorage.getItem('hq_dark') === '1', notify: localStorage.getItem('hq_notify') === '1', todayStr
+      }; },
+      computed: {
+        busy() { return Object.values(this.status).includes('loading'); },
+        totalAmount() { return this.real.indices?.reduce((s, i) => s + (i.amountYi || 0), 0) || 0; },
+        upCount() { return this.real.indices?.filter(i => i.changePct > 0).length || 0; },
+        downCount() { return this.real.indices?.filter(i => i.changePct < 0).length || 0; },
+        klinePoints() { if (!this.klineData.length) return ''; const lo = Math.min(...this.klineData), hi = Math.max(...this.klineData); const r = hi - lo || 1; return this.klineData.map((v, i) => `${(i / (this.klineData.length - 1) * 600).toFixed(1)},${(190 - (v - lo) / r * 180).toFixed(1)}`).join(' '); }
+      },
+      methods: {
+        async api(p) { const r = await fetch(p); const d = await r.json(); if (!r.ok) throw new Error(d.error || `请求失败（${r.status}）`); return d; },
+        async loadRealtime() { this.status.realtime = 'loading'; this.errors.realtime = ''; try { const d = await this.api('/api/realtime'); this.real = d; this.updatedTime = new Date().toLocaleTimeString('zh-CN', { hour12: false }); this.status.realtime = 'success'; } catch (e) { this.status.realtime = 'error'; this.errors.realtime = '行情获取失败：' + e.message; } },
+        async openReview(date) { this.view = 'review'; this.status.review = 'loading'; this.errors.review = ''; this.review = { date }; try { const query = '?date=' + encodeURIComponent(date) + '&codes=' + encodeURIComponent(this.watch.join(',')); const d = await this.api('/api/review' + query); this.review = d; this.status.review = 'success'; } catch (e) { this.status.review = 'error'; this.errors.review = '获取复盘失败：' + e.message; } },
+        async loadDragon() { this.status.dragon = 'loading'; this.errors.dragon = ''; try { this.dragon = await this.api('/api/dragon'); this.status.dragon = 'success'; } catch (e) { this.status.dragon = 'error'; this.errors.dragon = '龙虎榜获取失败：' + e.message; } },
+        async refreshAll() { const jobs = [this.loadRealtime()]; if (this.view === 'review') jobs.push(this.openReview(this.review.date || todayStr())); if (this.view === 'dragon') jobs.push(this.loadDragon()); if (this.view === 'watch') jobs.push(this.loadWatch()); await Promise.all(jobs); },
+        // 自选股
+        async loadWatch() { this.status.watch = 'loading'; this.errors.watch = ''; if (!this.watch.length) { this.watchQuotes = []; this.status.watch = 'success'; return; } try { this.watchQuotes = (await this.api('/api/stocks?codes=' + encodeURIComponent(this.watch.join(',')))).stocks || []; this.status.watch = 'success'; } catch (e) { this.status.watch = 'error'; this.errors.watch = '自选行情获取失败：' + e.message; } },
+        addStock() { const c = this.addCode.trim(); this.formError = ''; if (!c) { this.formError = '请输入 6 位股票代码'; return; } if (!/^\d{6}$/.test(c)) { this.formError = '请输入 6 位股票代码'; return; } if (!this.watch.includes(c)) this.watch.push(c); this.addCode = ''; this.saveWatch(); this.loadWatch(); },
+        removeStock(stock) { if (!window.confirm(`确定将「${stock.name}」移出自选股？`)) return; const c = stock.code; this.watch = this.watch.filter(x => x !== c); this.saveWatch(); this.loadWatch(); if (this.klineFor === c) { this.klineFor = ''; this.status.kline = 'idle'; } },
+        saveWatch() { localStorage.setItem('hq_watch', JSON.stringify(this.watch)); },
+        async toggleKline(code) { if (this.klineFor === code) { this.klineFor = ''; this.status.kline = 'idle'; return; } await this.loadKline(code); },
+        async loadKline(code) { this.klineFor = code; this.klineData = []; this.status.kline = 'loading'; this.errors.kline = ''; try { const d = await this.api('/api/kline?code=' + encodeURIComponent(code)); this.klineData = (d.kline || []).map(k => k.close); this.status.kline = 'success'; } catch (e) { this.status.kline = 'error'; this.errors.kline = 'K 线获取失败：' + e.message; } },
+        // 历史
+        buildHistory() { const out = []; const d = new Date(`${todayStr()}T00:00:00+08:00`); d.setDate(d.getDate() - 1); while (out.length < 15) { const w = d.getDay(); if (w !== 0 && w !== 6) out.push(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(d)); d.setDate(d.getDate() - 1); } this.historyDates = out; },
+        // 设置
+        applyRefresh() { localStorage.setItem('hq_refresh', String(this.refreshSec)); this.startAuto(); },
+        applyTheme() { localStorage.setItem('hq_dark', this.dark ? '1' : '0'); document.body.classList.toggle('dark', this.dark); },
+        applyNotify() { localStorage.setItem('hq_notify', this.notify ? '1' : '0'); },
+        startAuto() { if (this._timer) clearInterval(this._timer); this._timer = null; if (this.refreshSec > 0) this._timer = setInterval(() => this.loadRealtime(), this.refreshSec * 1000); }
+      },
+      mounted() {
+        document.body.classList.toggle('dark', this.dark);
+        this.loadRealtime(); this.startAuto();
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
