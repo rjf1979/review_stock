@@ -25,17 +25,7 @@ let lastAutoReviewDate = null;
 let saveQueue = Promise.resolve();
 function persist() { saveQueue = saveQueue.then(() => saveState(store)); return saveQueue; }
 function id(bytes = 18) { return crypto.randomBytes(bytes).toString('hex'); }
-function hashPassword(password, salt = id(16)) { return `${salt}:${crypto.scryptSync(password, salt, 64).toString('hex')}`; }
-function verifyPassword(password, encoded) {
-  try {
-    const [salt, hash] = String(encoded || '').split(':');
-    const expected = Buffer.from(hash, 'hex');
-    const actual = crypto.scryptSync(String(password || ''), salt, 64);
-    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-  } catch { return false; }
-}
 function cookieValue(req, name) { const raw = req.headers.cookie || ''; const part = raw.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`)); return part ? decodeURIComponent(part.slice(name.length + 1)) : ''; }
-function currentUser(req) { const token = cookieValue(req, 'sid'); const session = store.sessions.find(s => s.token === token && s.expiresAt > Date.now()); return session ? store.users.find(u => u.id === session.userId) : null; }
 function adminAuthenticated(req) { if (req.headers['x-admin-key'] === ADMIN_KEY) return true; const token = cookieValue(req, 'admin_sid'); return store.adminSessions?.some(session => session.token === token && session.expiresAt > Date.now()) || false; }
 function generateUploadKey() { return crypto.randomBytes(32).toString('base64url'); }
 function uploadAuthenticated(req) {
@@ -68,12 +58,8 @@ function latestAnalyzedDay() {
 function adminStats() {
   const byDate = {};
   for (const user of store.users) { const date = String(user.createdAt || '').slice(0, 10) || 'unknown'; byDate[date] = (byDate[date] || 0) + 1; }
-  const subscribed = store.users.filter(user => user.verified && user.subscriptions.includes('daily-review')).length;
-  const dailyProgress = store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(day => {
-    const records = store.deliveries.filter(item => item.reportDate === day.date);
-    return { date: day.date, analysisStatus: day.analysisStatus, expected: day.analysisStatus === 'analyzed' ? subscribed : 0, sent: records.filter(item => ['sent', 'preview'].includes(item.status)).length, failed: records.filter(item => item.status === 'failed').length, pending: Math.max(0, (day.analysisStatus === 'analyzed' ? subscribed : 0) - records.filter(item => ['sent', 'preview'].includes(item.status)).length) };
-  });
-  const reportList = store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(day => { const records = store.deliveries.filter(item => item.reportDate === day.date); return { date: day.date, reportPath: day.reportPath, analysisStatus: day.analysisStatus, renderStatus: day.analysisTask?.status || null, analysis: day.analysis || null, sendStatus: records.some(item => ['sent', 'preview'].includes(item.status)) ? 'sent' : records.some(item => item.status === 'failed') ? 'failed' : 'pending', sent: records.filter(item => ['sent', 'preview'].includes(item.status)).length, failed: records.filter(item => item.status === 'failed').length }; });
+  const dailyProgress = store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(day => ({ date: day.date, analysisStatus: day.analysisStatus, status: 'disabled', expected: 0, sent: 0, failed: 0, pending: 0 }));
+  const reportList = store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(day => ({ date: day.date, reportPath: day.reportPath, analysisStatus: day.analysisStatus, renderStatus: day.analysisTask?.status || null, analysis: day.analysis || null, sendStatus: 'disabled', sent: 0, failed: 0 }));
   return { registrations: { total: store.users.length, verified: store.users.filter(user => user.verified).length, unverified: store.users.filter(user => !user.verified).length, byDate: Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])).map(([date, count]) => ({ date, count })) }, dailyProgress, reportList, analysisTasks: store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(day => ({ date: day.date, status: day.analysisTask?.status || day.analysisStatus, trigger: day.analysisTask?.trigger || 'unknown', startedAt: day.analysisTask?.startedAt || null, completedAt: day.analysisTask?.completedAt || null, skills: day.analysisTask?.skills || [] })) };
 }
 function send(res, status, body, type = 'application/json') { res.writeHead(status, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(body) : body); }
@@ -103,22 +89,11 @@ function maskSecret(value) { const source = String(value || ''); return source ?
 function publicSettings() {
   const config = appConfig || {};
   return {
-    email: { apiKey: config.resendApiKey || '', apiKeyMasked: maskSecret(config.resendApiKey), from: config.emailFrom || '', enabled: config.emailEnabled !== false, updatedAt: config.updatedAt || null },
     upload: { key: config.uploadKey || '', keyMasked: maskSecret(config.uploadKey), updatedAt: config.updatedAt || null },
     ai: { provider: config.provider || 'OpenAI Compatible', protocol: config.protocol || 'openai_responses', baseUrl: config.baseUrl || '', apiKey: config.apiKey || '', apiKeyMasked: maskSecret(config.apiKey), model: config.model || '', timeoutSeconds: config.timeoutSeconds || 300, enabled: config.aiEnabled !== false }
   };
 }
 function validHttpUrl(value) { try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:'; } catch { return false; } }
-function mailSettings() { return { apiKey: appConfig?.emailEnabled !== false ? appConfig?.resendApiKey : '', from: appConfig?.emailFrom || '' }; }
-async function sendVerification(user) {
-  const link = `${APP_URL}/api/verify?token=${user.verifyToken}`;
-  const mail = mailSettings();
-  if (mail.apiKey) {
-    await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${mail.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: mail.from || '行情日报 <onboarding@resend.dev>', to: [user.email], subject: '验证你的行情日报账号', html: `<p>点击验证你的邮箱：</p><p><a href="${link}">${link}</a></p>` }) });
-  } else {
-    console.log(`\n[开发邮箱] ${user.email} 验证链接：${link}\n`);
-  }
-}
 function reportMeta() { const day = ensureTradingDay(); return { date: day.date, title: day.analysis?.title || '今日行情分析准备中', temperature: day.analysis?.temperature ?? null, summary: day.analysis?.summary || '等待外部分析报告上传。', analysisStatus: day.analysisStatus, reportPath: day.reportPath }; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
 function extractReportMeta(markdown) {
@@ -318,46 +293,17 @@ function sendReportError(res, error) {
   if (String(error?.message).includes('invalid json')) return send(res, 400, { error: '请求格式不正确。' });
   return send(res, 500, { error: String(error?.message || '报告写入失败。').slice(0, 240) });
 }
-async function sendDailyDigest() {
-  const day = ensureTradingDay();
-  if (day.analysisStatus !== 'analyzed') return { reportDate: day.date, recipients: 0, skipped: 'analysis_not_ready' };
-  const report = reportMeta();
-  const mail = mailSettings();
-  const recipients = store.users.filter(user => user.verified && user.subscriptions.includes('daily-review'));
-  for (const user of recipients) {
-    if (store.deliveries.some(item => item.userId === user.id && item.reportDate === report.date && item.status !== 'failed')) continue;
-    if (!user.unsubToken) user.unsubToken = id(24);
-    const delivery = { id: id(), userId: user.id, reportDate: report.date, status: 'queued', createdAt: new Date().toISOString() };
-    if (mail.apiKey) {
-      const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${mail.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: mail.from || '行情日报 <onboarding@resend.dev>', to: [user.email], subject: `${report.date} A股收盘复盘`, html: `<h1>${report.title}</h1><p>${report.summary}</p><p><a href="${APP_URL}${day.reportPath || '/'}">阅读完整报告</a></p><p><a href="${APP_URL}/api/unsubscribe?token=${user.unsubToken}">取消订阅</a></p>` }) });
-      delivery.status = response.ok ? 'sent' : 'failed';
-    } else { delivery.status = 'preview'; console.log(`[开发推送] ${user.email} <- ${APP_URL}${day.reportPath || '/'} `); }
-    store.deliveries.push(delivery);
-  }
-  persist();
-  return { reportDate: report.date, recipients: recipients.length, skipped: null };
-}
-
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, APP_URL);
-  if (req.method === 'GET' && url.pathname === '/api/me') return send(res, 200, { user: currentUser(req), report: reportMeta() });
+  const disabledEmailPaths = new Set(['/api/me', '/api/register', '/api/verify', '/api/login', '/api/logout', '/api/subscribe', '/api/unsubscribe']);
+  if (disabledEmailPaths.has(url.pathname)) return send(res, 410, { error: '邮件订阅功能已停用。', code: 'email_subscription_disabled' });
   if (req.method === 'GET' && url.pathname === '/api/today') { const latest = latestAnalyzedDay(); return send(res, 200, { ...publicDay(ensureTradingDay()), latestAnalyzed: latest ? publicDay(latest) : null }); }
   if (req.method === 'POST' && url.pathname === '/api/admin/login') { try { const body = await readBody(req); if (String(body.key || '') !== ADMIN_KEY) return send(res, 403, { error: '授权密码不正确。' }); const token = id(24); store.adminSessions = (store.adminSessions || []).filter(session => session.expiresAt > Date.now()); store.adminSessions.push({ token, expiresAt: Date.now() + 1000 * 60 * 60 * 8 }); persist(); res.setHeader('Set-Cookie', `admin_sid=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800`); return send(res, 200, { ok: true, expiresAt: Date.now() + 1000 * 60 * 60 * 8 }); } catch { return send(res, 400, { error: '请求格式不正确。' }); } }
   if (req.method === 'GET' && url.pathname === '/api/admin/session') return send(res, 200, { authenticated: adminAuthenticated(req) });
   if (req.method === 'POST' && url.pathname === '/api/admin/logout') { const token = cookieValue(req, 'admin_sid'); store.adminSessions = (store.adminSessions || []).filter(session => session.token !== token); persist(); res.setHeader('Set-Cookie', 'admin_sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'); return send(res, 200, { ok: true }); }
   if (req.method === 'GET' && url.pathname === '/api/admin/overview') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); const day = ensureTradingDay(); return send(res, 200, { today: publicDay(day), users: store.users.map(user => ({ id: user.id, email: user.email, verified: user.verified, subscriptions: user.subscriptions, createdAt: user.createdAt })), deliveries: store.deliveries.slice(-50).reverse(), tradingDays: store.tradingDays.slice().sort((a, b) => b.date.localeCompare(a.date)), ...adminStats() }); }
   if (req.method === 'GET' && url.pathname === '/api/admin/settings') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); return send(res, 200, publicSettings()); }
-  if (req.method === 'PUT' && url.pathname === '/api/admin/settings/email') {
-    if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' });
-    try {
-      const body = await readBody(req); const patch = {};
-      if ('from' in body) { const value = String(body.from || '').trim().slice(0, 200); if (value && !/^.+<[^<>\s]+@[^<>\s]+>$/.test(value) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return send(res, 400, { error: '请填写有效的发件人地址。' }); patch.emailFrom = value; }
-      if ('enabled' in body) patch.emailEnabled = body.enabled !== false;
-      const apiKey = String(body.apiKey || '').trim(); if (apiKey) patch.resendApiKey = apiKey;
-      if (!Object.keys(patch).length) return send(res, 400, { error: '没有可保存的邮件配置。' });
-      appConfig = await saveAppConfig(patch); return send(res, 200, { ok: true, settings: publicSettings().email });
-    } catch { return send(res, 400, { error: '邮件配置保存失败。' }); }
-  }
+  if (req.method === 'PUT' && url.pathname === '/api/admin/settings/email') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); return send(res, 410, { error: '邮件订阅功能已停用。', code: 'email_subscription_disabled' }); }
   if (req.method === 'PUT' && url.pathname === '/api/admin/settings/ai') {
     if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' });
     try {
@@ -456,45 +402,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, stats: { indices: result.indices, limitUp: result.limitUpCount, dragon: result.dragonCount, temperature: result.temperature }, ...applied });
     } catch (error) { return send(res, 500, { error: String(error?.message || '复盘任务执行失败。').slice(0, 240) }); }
   }
-  if (req.method === 'POST' && url.pathname === '/api/register') {
-    try {
-      const { email } = await readBody(req); const normalized = String(email || '').trim().toLowerCase();
-      if (!/^\S+@\S+\.\S+$/.test(normalized)) return send(res, 400, { error: '请输入有效邮箱地址。' });
-      const existing = store.users.find(user => user.email === normalized);
-      if (existing?.verified) {
-        if (!existing.subscriptions.includes('daily-review')) existing.subscriptions.push('daily-review');
-        const token = id(24); store.sessions.push({ token, userId: existing.id, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 }); persist();
-        res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
-        return send(res, 200, { ok: true, message: '该邮箱已验证，已登录并订阅每日日报。' });
-      }
-      if (existing) {
-        existing.verifyToken = id(24); await persist(); await sendVerification(existing);
-        return send(res, 200, { ok: true, message: '验证邮件已重新发送，请查收邮箱。' });
-      }
-      const user = { id: id(), email: normalized, verified: false, verifyToken: id(24), unsubToken: id(24), subscriptions: [], createdAt: new Date().toISOString() };
-      store.users.push(user); persist(); await sendVerification(user); return send(res, 201, { ok: true, message: '验证邮件已发送。开发环境请查看终端中的链接。' });
-    } catch { return send(res, 400, { error: '请求格式不正确。' }); }
-  }
-  if (req.method === 'GET' && url.pathname === '/api/verify') {
-    const user = store.users.find(u => u.verifyToken === url.searchParams.get('token'));
-    if (!user) return redirect(res, '/?verified=invalid'); user.verified = true; user.verifyToken = null; if (!user.subscriptions.includes('daily-review')) user.subscriptions.push('daily-review'); const token = id(24); store.sessions.push({ token, userId: user.id, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 }); persist(); res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`); return redirect(res, '/?verified=ok');
-  }
-  if (req.method === 'POST' && url.pathname === '/api/login') {
-    try { const { email, password } = await readBody(req); const user = store.users.find(u => u.email === String(email || '').trim().toLowerCase()); if (!user || !verifyPassword(password, user.passwordHash)) return send(res, 401, { error: '邮箱或密码不正确。' }); const token = id(24); store.sessions.push({ token, userId: user.id, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 }); persist(); res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`); return send(res, 200, { ok: true, user }); } catch { return send(res, 400, { error: '请求格式不正确。' }); }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/logout') { const token = cookieValue(req, 'sid'); store.sessions = store.sessions.filter(s => s.token !== token); persist(); res.setHeader('Set-Cookie', 'sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'); return send(res, 200, { ok: true }); }
-  if (req.method === 'POST' && url.pathname === '/api/subscribe') { const user = currentUser(req); if (!user) return send(res, 401, { error: '请先登录。' }); if (!user.verified) return send(res, 403, { error: '请先完成邮箱验证。' }); if (!user.subscriptions.includes('daily-review')) user.subscriptions.push('daily-review'); persist(); return send(res, 200, { ok: true, subscriptions: user.subscriptions }); }
-  if (req.method === 'POST' && url.pathname === '/api/unsubscribe') { const user = currentUser(req); if (!user) return send(res, 401, { error: '请先登录。' }); user.subscriptions = user.subscriptions.filter(v => v !== 'daily-review'); persist(); return send(res, 200, { ok: true, subscriptions: user.subscriptions }); }
-  if (req.method === 'GET' && url.pathname === '/api/unsubscribe') {
-    const token = url.searchParams.get('token');
-    const user = store.users.find(u => u.unsubToken && u.unsubToken === token);
-    if (!user) return send(res, 404, '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>退阅链接无效</title><body style="font-family:-apple-system,\'Segoe UI\',\'Microsoft YaHei\',sans-serif;max-width:520px;margin:60px auto;padding:32px;border:1px solid #dfe5e9;border-radius:12px;text-align:center;color:#17212b"><h2 style="margin-top:0">退阅链接无效或已失效</h2><p style="color:#697582">该链接可能已过期，或对应订阅记录不存在。</p><p><a href="/" style="color:#e34845;font-weight:700">返回行情日报首页</a></p></body></html>', 'text/html');
-    user.subscriptions = user.subscriptions.filter(v => v !== 'daily-review');
-    persist();
-    return send(res, 200, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>已退阅</title><body style="font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;max-width:520px;margin:60px auto;padding:32px;border:1px solid #dfe5e9;border-radius:12px;text-align:center;color:#17212b"><h2 style="margin-top:0">已成功退阅每日行情日报</h2><p style="color:#697582">${escapeHtml(user.email)} 将不再收到每日 A 股复盘邮件。</p><p>如需恢复订阅，访问 <a href="/" style="color:#e34845;font-weight:700">行情日报首页</a> 重新订阅。</p></body></html>`, 'text/html');
-  }
   if (req.method === 'POST' && url.pathname === '/api/admin/trading-days') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); try { const body = await readBody(req); const date = String(body.date || '').trim(); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return send(res, 400, { error: '请输入 YYYY-MM-DD 交易日。' }); const day = ensureTradingDay(date); day.marketStatus = body.marketStatus || day.marketStatus; day.updatedAt = new Date().toISOString(); persist(); return send(res, 201, publicDay(day)); } catch { return send(res, 400, { error: '请求格式不正确。' }); } }
-  if (req.method === 'POST' && url.pathname === '/api/admin/send-daily') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); try { return send(res, 200, { ok: true, ...(await sendDailyDigest()) }); } catch { return send(res, 502, { error: '邮件服务暂时不可用。' }); } }
+  if (req.method === 'POST' && url.pathname === '/api/admin/send-daily') { if (!adminAuthenticated(req)) return send(res, 403, { error: 'Forbidden' }); return send(res, 410, { error: '邮件订阅功能已停用，不能发送日报。', code: 'email_subscription_disabled' }); }
   if (req.method === 'GET' && url.pathname === '/api/report') return redirect(res, ensureTradingDay().reportPath || latestAnalyzedDay()?.reportPath || '/');
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/admin' || /^\/admin\/(today|report-upload|reports|analysis|progress|users|ai|email|api-manual)$/.test(url.pathname))) return send(res, 200, APP_SHELL, 'text/html');
   if (req.method === 'GET') {
@@ -506,7 +415,7 @@ const server = http.createServer(async (req, res) => {
     const insideRoot = file === rootPath || file.startsWith(rootPath + path.sep);
     if (insideRoot && (requested.startsWith('/assets/') || requested.startsWith('/reports/')) && fs.existsSync(file) && fs.statSync(file).isFile()) {
       const ext = path.extname(file).toLowerCase();
-      const type = ext === '.html' ? 'text/html' : ext === '.css' ? 'text/css' : ext === '.mjs' || ext === '.js' ? 'text/javascript' : ext === '.md' ? 'text/markdown' : 'application/octet-stream';
+      const type = ext === '.html' ? 'text/html' : ext === '.css' ? 'text/css' : ext === '.mjs' || ext === '.js' ? 'text/javascript' : ext === '.md' ? 'text/markdown' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.svg' ? 'image/svg+xml' : 'application/octet-stream';
       const stat = fs.statSync(file);
       const lastModified = stat.mtime.toUTCString();
       if (requested.startsWith('/assets/')) {
@@ -547,9 +456,5 @@ setInterval(async () => {
       try { await applyReport({ date: day, markdown: (await runDailyReview(day)).markdown }); console.log(`[内置复盘] ${day} 完成`); }
       catch (error) { console.error(`[内置复盘] ${day} 失败：`, error.message); }
     }
-  }
-  const scheduled = now.hour > 15 || (now.hour === 15 && now.minute >= 46);
-  if (scheduled && store.lastDispatchDate !== day) {
-    try { await sendDailyDigest(); store.lastDispatchDate = day; persist(); console.log(`[定时推送] ${day} 完成`); } catch (error) { console.error('[定时推送失败]', error.message); }
   }
 }, 60 * 1000);

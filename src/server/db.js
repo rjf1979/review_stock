@@ -5,7 +5,7 @@ const pool = new Pool({ connectionString, max: 4 });
 const emptyState = () => ({ users: [], sessions: [], adminSessions: [], deliveries: [], tradingDays: [], lastDispatchDate: null });
 const defaultAppConfig = () => ({
   provider: 'OpenAI Compatible', protocol: 'openai_responses', baseUrl: '', apiKey: '', model: '', timeoutSeconds: 300, aiEnabled: true,
-  resendApiKey: '', emailFrom: '', emailEnabled: true, uploadKey: '', updatedAt: null
+  uploadKey: '', updatedAt: null
 });
 
 function mapAppConfig(row) {
@@ -13,8 +13,7 @@ function mapAppConfig(row) {
     ...defaultAppConfig(),
     ...(row ? {
       provider: row.ai_provider, protocol: row.ai_protocol || 'openai_responses', baseUrl: row.ai_base_url || '', apiKey: row.ai_api_key || '', model: row.ai_model || '',
-      timeoutSeconds: row.ai_timeout_seconds, aiEnabled: row.ai_enabled, resendApiKey: row.resend_api_key || '',
-      emailFrom: row.email_from || '', emailEnabled: row.email_enabled, uploadKey: row.upload_key || '', updatedAt: row.updated_at
+      timeoutSeconds: row.ai_timeout_seconds, aiEnabled: row.ai_enabled, uploadKey: row.upload_key || '', updatedAt: row.updated_at
     } : {})
   };
 }
@@ -44,7 +43,7 @@ async function saveAppConfig(patch = {}) {
   const values = [];
   const allowed = {
     provider: 'ai_provider', protocol: 'ai_protocol', baseUrl: 'ai_base_url', apiKey: 'ai_api_key', model: 'ai_model', timeoutSeconds: 'ai_timeout_seconds',
-    aiEnabled: 'ai_enabled', resendApiKey: 'resend_api_key', emailFrom: 'email_from', emailEnabled: 'email_enabled', uploadKey: 'upload_key'
+    aiEnabled: 'ai_enabled', uploadKey: 'upload_key'
   };
   for (const [key, column] of Object.entries(allowed)) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) {

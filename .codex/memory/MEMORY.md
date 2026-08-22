@@ -1,21 +1,16 @@
 # 项目记忆 · 行情日报
 
-项目：A股收盘复盘日报平台（订阅注册 → 报告上传 → HTML 渲染 → 邮件推送）。
-位置：`D:\Projects\行情日报`；服务端 `src/server/index.js`（Node 原生 http），PostgreSQL 持久化，前端 Vue 3。
+项目：A股收盘复盘日报平台（报告上传 → HTML 渲染 → 后台查看）；邮件订阅已停用。
+位置：`D:\Projects\行情日报`；服务端 `src/server/index.js`，PostgreSQL 持久化，Vue 3 前端，Electron 桌面端在 `desktop/`。
 
-## 数据与接口约定
-- 平台自身不生成行情分析；每日行情由外部分析服务经 `POST /api/upload/report`（请求头 `x-upload-key`）上传 Markdown，服务端渲染 HTML 并推送订阅邮件。
-- **2026-08-21 起，上传接口 `date`（行情日期）字段必填**（`YYYY-MM-DD`，不能晚于今天），缺省为当天的行为已移除；后台 `/api/admin/reports/upload` 同样必填。调用方必须显式携带行情日期，避免行情被归到上传当天。
-- 完整对接手册：`docs/api-integration-manual.md`（2026-08-21 起**只保留上传每日行情 MD 接口** `POST /api/upload/report`，其余后台接口不在手册范围）。
-- 上传密钥（`app_settings.upload_key`）在后台「API 对接手册」页（`/admin/api-manual`）查看并复制；独立"上传密钥"管理页与 `PUT /api/admin/settings/upload-key` 接口已移除（2026-08-21）。
-
-## 鉴权（三套）
-- 后台管理：请求头 `x-admin-key`（`ADMIN_KEY`，默认 `local-admin-key`，生产必须更换）
-- 上传：请求头 `x-upload-key`（PG `app_settings.upload_key`，首次启动自动生成）
-- 订阅用户：`sid` Cookie（`/api/login` 下发，30 天有效）
-
-## 基础设施
-- 本地 PostgreSQL 免密可连：`postgresql://postgres@127.0.0.1:5432/postgres`
-- 业务数据全部存 PostgreSQL（`app_state` JSONB + `app_settings`），无本地 JSON 依赖。
-- 每日 15:46（Asia/Shanghai）定时推送已订阅用户日报。
-- 项目 Skill 基线在 `.agents/skills/`（A股复盘、行情数据、UI 等）。
+## 当前约定
+- 外部分析服务通过 `POST /api/upload/report` 携带 `x-upload-key` 上传 Markdown；`date` 必填，格式为 `YYYY-MM-DD` 且不得晚于今天。
+- 完整接口说明：`docs/api-integration-manual.md`；上传密钥在后台「API 对接手册」页查看。
+- 后台鉴权：`x-admin-key`；上传鉴权：`x-upload-key`。生产必须替换默认 `ADMIN_KEY`。
+- 邮件旧用户、会话、配置列和发送记录保留在 PostgreSQL 兼容历史数据，但运行时不再读取、修改或发送；旧订阅 API 返回 HTTP 410，定时发送已删除。
+- 桌面端工作日 15:35 后自动生成复盘，支持托盘常驻、系统通知和本地归档。
+- 桌面端亮/暗皮肤已完成：设置页切换，`hq_theme` 本地持久化，亮色沿用 Web 红白黑设计。
+- 桌面端刷新体验已完成：实时行情只做 Vue 局部静默更新；刷新期间保留数据，不整体刷新页面。其它视图使用内容区遮盖式 loading，避免布局抖动。
+- 桌面端交易时段已完成：A 股工作日 `09:30-11:30、13:00-15:00` 才轮询；闭市时显示闭市原因与下次开市时间，并单次获取、保留最后交易行情快照。
+- Electron 已加入单实例锁，避免重复启动造成 `3100` 端口占用弹框。
+- 生产环境：`https://dailystock.zhicha.io`，systemd 服务 `dailystock.service`，内部端口 `3002`；2026-08-22 已发布并重启验证。
