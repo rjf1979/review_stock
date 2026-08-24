@@ -267,7 +267,7 @@ description: 获取、校验并分析真实 A 股收盘数据，生成与 2026-0
 
 # 2026-08-18 报告视觉基线
 
-参考资产：`docs/每日A股复盘.jpg`。参考 HTML：`src/reports/2026-08-18/2026-08-18-a-share-public-final.html`。
+参考资产：`docs/每日A股复盘.jpg`。参考 HTML：`src/web/reports/2026-08-18/2026-08-18-a-share-public-final.html`。
 
 ## 固定层级
 

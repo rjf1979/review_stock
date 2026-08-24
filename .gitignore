@@ -3,7 +3,7 @@ node_modules/
 dist/
 build/
 out/
-desktop/release/
+src/desktop/release/
 
 # Local runtime state and logs
 .runtime/
