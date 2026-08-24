@@ -12,6 +12,14 @@ async function emJson(url) {
   return response.json();
 }
 
+function parseTencentQuoteTime(value) {
+  const raw = String(value || '');
+  if (!/^\d{14}$/.test(raw)) return null;
+  const iso = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T${raw.slice(8, 10)}:${raw.slice(10, 12)}:${raw.slice(12, 14)}+08:00`;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 // ── 腾讯行情（首选，单次可拿多标的） ──────────────
 const TX_SYMBOLS = {
   'sh000001': '上证指数', 'sz399001': '深证成指', 'sz399006': '创业板指', 'sh000688': '科创50',
@@ -29,7 +37,7 @@ async function fetchTencentQuotes(symbols) {
     if (!m) continue;
     const f = m[2].split('~');
     if (f.length < 6) continue;
-    out[m[1]] = { name: f[1], latest: Number(f[3]), prevClose: Number(f[4]) || Number(f[3]), open: Number(f[5]) || null, volume: Number(f[6]) || 0, amountWan: Number(f[37]) || 0, pe: Number(f[39]) || null };
+    out[m[1]] = { name: f[1], latest: Number(f[3]), prevClose: Number(f[4]) || Number(f[3]), open: Number(f[5]) || null, volume: Number(f[6]) || 0, amountWan: Number(f[37]) || 0, pe: Number(f[39]) || null, quoteAt: parseTencentQuoteTime(f[30]), capturedAt: new Date().toISOString() };
   }
   return out;
 }
@@ -42,7 +50,7 @@ async function fetchIndexEm(market, code) {
   const d = await emJson(`https://push2delay.eastmoney.com/api/qt/stock/get?secid=${market}.${code}&fields=${fields}`);
   const row = d?.data;
   if (!row) throw new Error(`${code} 无数据`);
-  return { name: String(row.f58 || ''), close: Number(row.f43) / 100, change: Number(row.f169) / 100, changePct: Number(row.f170) / 100, amountYi: Math.round((Number(row.f48) || 0) / 1e8 * 100) / 100, volume: Number(row.f47) || 0 };
+  return { name: String(row.f58 || ''), close: Number(row.f43) / 100, change: Number(row.f169) / 100, changePct: Number(row.f170) / 100, amountYi: Math.round((Number(row.f48) || 0) / 1e8 * 100) / 100, volume: Number(row.f47) || 0, capturedAt: new Date().toISOString() };
 }
 async function fetchMarketIndices() {
   let quotes;
@@ -53,7 +61,7 @@ async function fetchMarketIndices() {
     const name = TX_SYMBOLS[sym];
     if (quotes && quotes[sym] && quotes[sym].latest > 0) {
       const q = quotes[sym];
-      indices.push({ name, close: q.latest, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100, amountYi: q.amountWan ? Math.round(q.amountWan / 10000 * 100) / 100 : null, volume: q.volume, pe: q.pe });
+      indices.push({ name, close: q.latest, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100, amountYi: q.amountWan ? Math.round(q.amountWan / 10000 * 100) / 100 : null, volume: q.volume, pe: q.pe, quoteAt: q.quoteAt, capturedAt: q.capturedAt });
     } else {
       try {
         const [mkt, code] = EM_INDEX_FALLBACK[sym];
@@ -66,13 +74,234 @@ async function fetchMarketIndices() {
   return indices;
 }
 
-// ── E 块 · 行业板块涨幅（东财 push2delay，f62=主力净流入） ──
-async function fetchSectors() {
+// 期指公开行情约 15 分钟延时；多空拆分只能使用结算后的公开会员持仓。
+const INDEX_FUTURES = [
+  { market: 'IF', name: '沪深300', variety: 2 },
+  { market: 'IH', name: '上证50', variety: 3 },
+  { market: 'IC', name: '中证500', variety: 1 },
+  { market: 'IM', name: '中证1000', variety: 7 },
+];
+const futuresQuoteCache = new Map();
+const futuresPositionCache = new Map();
+const FUTURES_QUOTE_TTL_MS = 15000;
+const FUTURES_POSITION_TTL_MS = 10 * 60 * 1000;
+
+function parseJsonp(text) {
+  const source = String(text || '').trim();
+  return JSON.parse(source.replace(/^\s*\(/, '').replace(/\)\s*$/, ''));
+}
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+async function fetchFuturesQuote(item) {
+  const cached = futuresQuoteCache.get(item.market);
+  if (cached && Date.now() - cached.cachedAt < FUTURES_QUOTE_TTL_MS) return cached;
+  const url = `https://futsseapi.eastmoney.com/list/variety/220/${item.variety}?orderBy=dm&sort=asc&pageSize=20&pageIndex=0&token=8163b6a9200dc68c03113094df2db2c7&field=zde,dm,name,p,zdf,vol,ccl,zjsj&callbackName=`;
+  const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://quote.eastmoney.com/' }, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = parseJsonp(await response.text());
+  const rows = Array.isArray(data?.list) ? data.list : [];
+  // 选择持仓量大于零的最近实际合约，避免把已到期的连续合约用于多空对照。
+  const pattern = new RegExp(`^${item.market}\\d{4}$`);
+  const contract = rows.find(row => pattern.test(String(row.dm)) && Number(row.ccl) > 0) || rows.find(row => pattern.test(String(row.dm)));
+  if (!contract) throw new Error('没有可用的实际合约');
+  const result = {
+    status: 'available',
+    market: item.market,
+    name: item.name,
+    contractCode: String(contract.dm),
+    contractName: String(contract.name || contract.dm),
+    latest: finiteNumber(contract.p),
+    change: finiteNumber(contract.zde),
+    changePct: finiteNumber(contract.zdf),
+    volume: finiteNumber(contract.vol),
+    openInterest: finiteNumber(contract.ccl),
+    prevSettlement: finiteNumber(contract.zjsj),
+    sourceUrl: url,
+  };
+  if (result.latest == null || result.prevSettlement == null) throw new Error('行情字段不完整');
+  const output = { ...result, cachedAt: Date.now() };
+  futuresQuoteCache.set(item.market, output);
+  return output;
+}
+async function fetchFuturesPosition(contractCode, date) {
+  const cacheKey = `${contractCode}:${date}`;
+  const cached = futuresPositionCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < FUTURES_POSITION_TTL_MS) return cached.value;
+  const filter = `(TRADE_MARKET_CODE="069001009")(TRADE_DATE='${date}')(SECURITY_CODE="${contractCode}")`;
+  const params = new URLSearchParams({ reportName: 'RPT_FUTU_DAILYPOSITION', columns: 'ALL', filter, sortColumns: 'SECURITY_CODE', sortTypes: '1', pageNumber: '1', pageSize: '200', source: 'WEB', client: 'WEB' });
+  const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`;
+  const data = await emJson(url);
+  const rows = Array.isArray(data?.result?.data) ? data.result.data : [];
+  const summary = rows.find(row => row.TYPE === '1' && row.MEMBER_NAME_ABBR === '本日合计' && finiteNumber(row.LONG_POSITION) != null && finiteNumber(row.SHORT_POSITION) != null)
+    || rows.find(row => row.TYPE === '3' && row.MEMBER_NAME_ABBR === '本日合计' && finiteNumber(row.LONG_POSITION) != null && finiteNumber(row.SHORT_POSITION) != null);
+  if (!summary) throw new Error('公开结算接口未返回会员多空汇总');
+  const longPosition = finiteNumber(summary.LONG_POSITION);
+  const shortPosition = finiteNumber(summary.SHORT_POSITION);
+  const value = {
+    status: 'available',
+    date,
+    scope: '公开会员汇总',
+    longPosition,
+    shortPosition,
+    netPosition: longPosition != null && shortPosition != null ? longPosition - shortPosition : null,
+    longChange: finiteNumber(summary.LP_CHANGE),
+    shortChange: finiteNumber(summary.SP_CHANGE),
+    volume: finiteNumber(summary.VOLUME),
+    sourceUrl: url,
+  };
+  futuresPositionCache.set(cacheKey, { cachedAt: Date.now(), value });
+  return value;
+}
+async function fetchIndexFutures(date) {
+  const capturedAt = new Date().toISOString();
+  const items = [];
+  for (const item of INDEX_FUTURES) {
+    try {
+      const quote = await fetchFuturesQuote(item);
+      let position;
+      try {
+        position = await fetchFuturesPosition(quote.contractCode, date);
+      } catch (error) {
+        position = { status: 'unavailable', date, scope: '公开会员汇总', error: error.message };
+      }
+      items.push({ ...quote, capturedAt, position });
+    } catch (error) {
+      items.push({ market: item.market, name: item.name, status: 'unavailable', error: error.message, capturedAt, position: { status: 'unavailable', date, scope: '公开会员汇总', error: '行情合约不可用' } });
+    }
+    await sleep(REQUEST_GAP_MS);
+  }
+  const available = items.filter(item => item.status !== 'unavailable' && item.latest != null).length;
+  return {
+    status: available ? 'ready' : 'error',
+    quoteStatus: '公开延时行情',
+    positionStatus: '上一交易日结算持仓',
+    asOfDate: date,
+    capturedAt,
+    items,
+    source: {
+      quote: '东方财富公开期货行情（约 15 分钟延时）',
+      position: '东方财富公开会员持仓结算数据（上一交易日）',
+      realtimeLongShort: '盘中实时多空拆分需要商业数据授权，中金所 Level-1/Level-2 或合规数据服务商报价以最终合同为准',
+    },
+  };
+}
+
+// ── A+ 块 · 全市场广度（东财分页，避免把局部样本当成全市场） ──
+const MARKET_FS = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23';
+const MARKET_FIELDS = 'f12,f14,f2,f3,f6,f62,f184';
+async function fetchMarketBreadth() {
+  const pageSize = 100;
+  const firstUrl = `https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${MARKET_FS}&fields=${MARKET_FIELDS}`;
+  const first = await emJson(firstUrl);
+  const reportedCount = Number(first?.data?.total || 0);
+  const rows = [...(first?.data?.diff || [])];
+  const pageCount = Math.ceil(reportedCount / pageSize);
+  for (let page = 2; page <= pageCount; page++) {
+    await sleep(REQUEST_GAP_MS);
+    const d = await emJson(`https://push2delay.eastmoney.com/api/qt/clist/get?pn=${page}&pz=${pageSize}&po=1&np=1&fltt=2&invt=2&fid=f3&fs=${MARKET_FS}&fields=${MARKET_FIELDS}`);
+    const pageRows = d?.data?.diff || [];
+    if (!pageRows.length) break;
+    rows.push(...pageRows);
+  }
+  const stocks = [...new Map(rows.filter(row => row?.f12).map(row => [String(row.f12), row])).values()]
+    .filter(row => Number.isFinite(Number(row.f2)) && Number(row.f2) > 0 && Number.isFinite(Number(row.f3)));
+  if (reportedCount < 1000 || stocks.length < 1000) {
+    return { status: 'invalid', quality: 'insufficient', reportedCount, sampleCount: stocks.length, capturedAt: new Date().toISOString() };
+  }
+  const up = stocks.filter(row => Number(row.f3) > 0).length;
+  const down = stocks.filter(row => Number(row.f3) < 0).length;
+  const flat = stocks.length - up - down;
+  const turnoverYi = stocks.reduce((sum, row) => sum + (Number(row.f6) || 0), 0) / 1e8;
+  const viewStock = row => ({ code: String(row.f12), name: String(row.f14 || ''), close: Number(row.f2), changePct: Number(row.f3), amountYi: Math.round((Number(row.f6) || 0) / 1e8 * 100) / 100 });
+  const topGainers = [...stocks].sort((a, b) => Number(b.f3) - Number(a.f3)).slice(0, 8).map(viewStock);
+  const topLosers = [...stocks].sort((a, b) => Number(a.f3) - Number(b.f3)).slice(0, 8).map(viewStock);
+  const topTurnover = [...stocks].sort((a, b) => Number(b.f6 || 0) - Number(a.f6 || 0)).slice(0, 8).map(viewStock);
+  return {
+    status: 'ready', quality: 'verified', reportedCount, sampleCount: stocks.length, up, down, flat,
+    redRatio: Math.round(up / stocks.length * 10000) / 100,
+    upDownRatio: down ? Math.round(up / down * 100) / 100 : null,
+    turnoverYi: Math.round(turnoverYi * 100) / 100,
+    topGainers, topLosers, topTurnover,
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+// ── A++ 块 · 盘口异动（东方财富公开实时事件） ─────────
+const PANKOU_TYPES = [
+  { key: 'largeBuy', label: '大笔买入', type: '8193', tone: 'up', format: 'order' },
+  { key: 'largeSell', label: '大笔卖出', type: '8194', tone: 'down', format: 'order' },
+  { key: 'rapidRise', label: '急速拉升', type: '8201', tone: 'up', format: 'change' },
+  { key: 'strongPressure', label: '猛烈打压', type: '8204', tone: 'down', format: 'change' },
+  { key: 'limitUp', label: '封板涨停', type: '4', tone: 'up', format: 'limit' },
+  { key: 'limitDown', label: '封板跌停', type: '8', tone: 'down', format: 'limit' },
+  { key: 'openLimitUp', label: '打开涨停', type: '16', tone: 'down', format: 'open' },
+  { key: 'openLimitDown', label: '打开跌停', type: '32', tone: 'up', format: 'open' },
+];
+const pankouCache = new Map();
+const PANKOU_TTL_MS = 5000;
+
+function formatPankouTime(value) {
+  const raw = String(value || '').padStart(6, '0');
+  return /^\d{6}$/.test(raw) ? `${raw.slice(0, 2)}:${raw.slice(2, 4)}:${raw.slice(4, 6)}` : null;
+}
+function parsePankouEvent(row, definition) {
+  const parts = String(row.i || '').split(',').map(Number);
+  const finite = value => Number.isFinite(value) ? value : null;
+  const event = { time: formatPankouTime(row.tm), code: String(row.c || ''), name: String(row.n || ''), price: null, changePct: null, volume: null, amountYi: null };
+  if (definition.format === 'order') {
+    event.volume = finite(parts[0]); event.price = finite(parts[1]); event.changePct = finite(parts[2]) != null ? parts[2] * 100 : null; event.amountYi = finite(parts[3]) != null ? parts[3] / 1e8 : null;
+  } else if (definition.format === 'change') {
+    event.changePct = finite(parts[0]) != null ? parts[0] * 100 : null; event.price = finite(parts[1]);
+  } else if (definition.format === 'limit') {
+    event.price = finite(parts[0]); event.volume = finite(parts[1]); event.changePct = finite(parts[3]) != null ? parts[3] * 100 : null;
+  } else {
+    event.price = finite(parts[0]); event.changePct = finite(parts[1]) != null ? parts[1] * 100 : null;
+  }
+  return event;
+}
+async function fetchPankouCategory(definition) {
+  const cached = pankouCache.get(definition.key);
+  if (cached && Date.now() - cached.cachedAt < PANKOU_TTL_MS) return cached.value;
   try {
-    const d = await emJson('https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14,f3,f62');
+    const url = `https://push2ex.eastmoney.com/getAllStockChanges?type=${definition.type}&pageindex=0&pagesize=8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges`;
+    const d = await emJson(url);
+    const rows = Array.isArray(d?.data?.allstock) ? d.data.allstock : [];
+    const value = { key: definition.key, label: definition.label, tone: definition.tone, status: d?.rc === 0 ? 'ready' : 'error', events: rows.map(row => parsePankouEvent(row, definition)).filter(event => event.code && event.name && event.time), capturedAt: new Date().toISOString() };
+    pankouCache.set(definition.key, { cachedAt: Date.now(), value });
+    return value;
+  } catch (error) {
+    console.error(`[实时] ${definition.label}失败：`, error.message);
+    return { key: definition.key, label: definition.label, tone: definition.tone, status: 'error', events: [], capturedAt: new Date().toISOString(), error: error.message };
+  }
+}
+async function fetchPankouChanges() {
+  const categories = await Promise.all(PANKOU_TYPES.map(fetchPankouCategory));
+  return { status: categories.some(category => category.status === 'ready') ? 'ready' : 'error', categories, capturedAt: categories.map(category => category.capturedAt).filter(Boolean).sort().pop() || new Date().toISOString(), source: '东方财富公开盘口异动' };
+}
+
+// ── E 块 · 行业板块强弱（东财 push2delay，f62=主力净流入） ──
+async function fetchSectors(order = 'desc') {
+  try {
+    const d = await emJson(`https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=${order === 'asc' ? 0 : 1}&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14,f3,f62`);
     const rows = d?.data?.diff || [];
-    return rows.map(r => ({ name: String(r.f14 || ''), changePct: Number(r.f3) || 0, inflowYi: Math.round((Number(r.f62) || 0) / 1e8 * 100) / 100 })).filter(r => r.name);
+    return rows.map(r => ({ name: String(r.f14 || ''), changePct: Number(r.f3) || 0, inflowYi: Math.round((Number(r.f62) || 0) / 1e8 * 100) / 100 })).filter(r => r.name && (order !== 'asc' || r.changePct < 0));
   } catch (error) { console.error('[复盘] 行业板块失败：', error.message); return []; }
+}
+
+// ── E+ 块 · 概念板块强弱（东财 push2delay，过滤策略/市场分类） ──
+const NON_THEME_CONCEPT = /^(昨日|历史新高|近期新高|.*破净股|红利|大盘价值|融资融券|MSCI|富时罗素|标普|纳入|沪股通|深股通|转债|基金重仓|机构重仓|QFII重仓|社保重仓|养老金|证金持股).*|风格$/;
+async function fetchConcepts(order = 'desc') {
+  try {
+    const d = await emJson(`https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=20&po=${order === 'asc' ? 0 : 1}&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:3&fields=f12,f14,f3,f62`);
+    const rows = d?.data?.diff || [];
+    return rows.map(r => ({
+      name: String(r.f14 || '').trim(),
+      changePct: Number(r.f3),
+      inflowYi: Number.isFinite(Number(r.f62)) ? Math.round(Number(r.f62) / 1e8 * 100) / 100 : null,
+    })).filter(r => r.name && Number.isFinite(r.changePct) && !NON_THEME_CONCEPT.test(r.name) && (order !== 'asc' || r.changePct < 0)).slice(0, 5);
+  } catch (error) { console.error('[实时] 概念板块失败：', error.message); return []; }
 }
 
 // ── D 块 · 板块主力资金净流入 Top 5（东财 push2delay，fid=f62） ──
@@ -82,6 +311,14 @@ async function fetchSectorFundFlow() {
     const rows = d?.data?.diff || [];
     return rows.map(r => ({ name: String(r.f14 || ''), changePct: Number(r.f3) || 0, inflowYi: Math.round((Number(r.f62) || 0) / 1e8 * 100) / 100 })).filter(r => r.name && r.inflowYi > 0);
   } catch (error) { console.error('[复盘] 板块资金流失败：', error.message); return []; }
+}
+
+async function fetchSectorOutflow() {
+  try {
+    const d = await emJson('https://push2delay.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=0&np=1&fltt=2&invt=2&fid=f62&fs=m:90+t:2&fields=f12,f14,f3,f62');
+    const rows = d?.data?.diff || [];
+    return rows.map(r => ({ name: String(r.f14 || ''), changePct: Number(r.f3) || 0, inflowYi: Math.round((Number(r.f62) || 0) / 1e8 * 100) / 100 })).filter(r => r.name && r.inflowYi < 0);
+  } catch (error) { console.error('[复盘] 板块资金流出失败：', error.message); return []; }
 }
 
 // ── H 块 · 今日要闻（东财快讯，JSONP 需去前缀） ────
@@ -112,13 +349,18 @@ async function fetchGlobalIndices() {
   } catch (error) { console.error('[复盘] 港美股失败：', error.message); return []; }
 }
 
-// ── B 块 · 涨停池（连板梯队） ─────────────────────
-async function fetchLimitUpPool(dateYYYYMMDD) {
-  const d = await emJson(`https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=60&sort=fbt%3Aasc&date=${dateYYYYMMDD}`);
+// ── B 块 · 涨停/跌停/炸板池（连板梯队与风险异动） ─────
+async function fetchTopicPool(kind, dateYYYYMMDD) {
+  const endpoint = { limitUp: 'getTopicZTPool', limitDown: 'getTopicDTPool', broken: 'getTopicZBPool' }[kind];
+  if (!endpoint) throw new Error(`未知池类型：${kind}`);
+  const d = await emJson(`https://push2ex.eastmoney.com/${endpoint}?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=100&sort=fbt%3Aasc&date=${dateYYYYMMDD}`);
   const pool = d?.data?.pool || [];
-  const stocks = pool.map(p => ({ code: p.c, name: p.n, changePct: p.zdp, streak: p.lbc, sector: p.hybk || '' }));
-  return { count: pool.length, stocks };
+  const stocks = pool.map(p => ({ code: p.c, name: p.n, changePct: Number(p.zdp), streak: Number(p.lbc || p.zttj?.ct || 0), sector: p.hybk || '', brokenCount: Number(p.zbc || 0) }));
+  return { count: Number(d?.data?.tc ?? pool.length), stocks };
 }
+async function fetchLimitUpPool(dateYYYYMMDD) { return fetchTopicPool('limitUp', dateYYYYMMDD); }
+async function fetchLimitDownPool(dateYYYYMMDD) { return fetchTopicPool('limitDown', dateYYYYMMDD); }
+async function fetchBrokenBoardPool(dateYYYYMMDD) { return fetchTopicPool('broken', dateYYYYMMDD); }
 
 // ── F 块 · 龙虎榜（datacenter，稳定） ────────────
 async function fetchDragonTiger(date) {
@@ -215,7 +457,7 @@ function computeTemperature(indices, limitUpCount, tech = null) {
 // ── 报告生成 ─────────────────────────────────────
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 function buildMarkdown(date, data) {
-  const { indices, limitUp, dragon, global, sectors, fundFlow, tech, temperature, news, watchlist } = data;
+  const { indices, limitUp, global, sectors, fundFlow, tech, temperature, news, slotLabel = '收盘复盘' } = data;
   const sectorRows = (sectors || []).map((s, i) => `| ${i + 1} | **${s.name}** | ${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}% | ${s.inflowYi >= 0 ? '+' : ''}${s.inflowYi.toFixed(2)} |`).join('\n');
   const flowRows = (fundFlow || []).map((s, i) => `| ${i + 1} | **${s.name}** | ${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}% | ${s.inflowYi >= 0 ? '+' : ''}${s.inflowYi.toFixed(2)} |`).join('\n');
   const rows = indices.map(i =>
@@ -223,17 +465,15 @@ function buildMarkdown(date, data) {
   ).join('\n');
   const topUp = indices.filter(i => i.changePct > 0).sort((a, b) => b.changePct - a.changePct).slice(0, 3).map(i => `${i.name} ${i.changePct.toFixed(2)}%`).join('、');
   const ladder = limitUp.stocks.slice(0, 10).map(s => `| ${s.streak} 连板 | ${s.name} | ${s.sector} |`).join('\n');
-  const lhbRows = dragon.slice(0, 10).map(r => `| ${r.name} | ${r.changePct >= 0 ? '+' : ''}${r.changePct.toFixed(2)}% | ${r.netBuy.toFixed(2)} | ${r.reason} |`).join('\n');
   const globalRows = (global || []).map(g => `| ${g.name.includes('恒生') ? '港股' : g.name.includes('纳') || g.name.includes('标普') || g.name.includes('道') ? '美股' : '-'} | ${g.name} | ${g.close.toFixed(2)} | ${g.change >= 0 ? '+' : ''}${g.change.toFixed(2)} | ${g.changePct >= 0 ? '+' : ''}${g.changePct.toFixed(2)}% |`).join('\n');
   const newsRows = (news || []).map(n => `- **${n.time}** ${n.title}${n.digest ? `　— ${truncate(n.digest, 60)}` : ''}`).join('\n');
-  const watchRows = (watchlist || []).map(s => `| ${s.name} | ${s.latest.toFixed(2)} | ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)} | ${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}% |`).join('\n');
   const techLine = (tech && tech.detail && tech.detail.length) ? tech.detail.join('；') : '数据暂缺';
   const inflowTop = (fundFlow && fundFlow[0]) ? `${fundFlow[0].name}（主力净流入 ${fundFlow[0].inflowYi.toFixed(2)} 亿）` : '—';
   const topNews = (news && news[0]) ? `关注「${news[0].title}」等消息面扰动` : '关注消息面变化';
 
   return `# 📈 ${date} A 股每日行情复盘
 
-> 生成时间：${new Date().toISOString().slice(0, 16).replace('T', ' ')} | 数据来源：东方财富公开接口
+> 抓取时段：${slotLabel} | 生成时间：${new Date().toISOString().slice(0, 16).replace('T', ' ')} | 数据来源：东方财富公开接口
 
 ---
 
@@ -285,15 +525,7 @@ ${ladder || '| - | - | - |'}
 
 ---
 
-## 四、龙虎榜
-
-| 个股 | 涨跌幅 | 净买入(亿) | 上榜原因 |
-| --- | --- | --- | --- |
-${lhbRows || '| - | - | - |'}
-
----
-
-## 五、亚太及海外市场
+## 四、亚太及海外市场
 
 | 市场 | 指数 | 收盘 | 涨跌 | 涨跌幅 |
 | --- | --- | --- | --- | --- |
@@ -301,21 +533,13 @@ ${globalRows || '| - | - | - | - | - |'}
 
 ---
 
-## 六、今日要闻 📰
+## 五、今日要闻 📰
 
 ${newsRows || '- 暂无今日要闻'}
 
 ---
 
-## 七、自选股观察
-
-| 个股 | 现价 | 涨跌 | 涨跌幅 |
-| --- | --- | --- | --- |
-${watchRows || '| - | - | - | - |'}
-
----
-
-## 八、明日关注
+## 六、明日关注
 
 - **指数**：${upsLabel(indices)}${topUp ? `，领涨 ${topUp}` : ''}。
 - **资金**：主力资金净流入居前的是 ${inflowTop}，关注资金能否延续。
@@ -334,22 +558,21 @@ function upsLabel(indices) {
 }
 
 // ── 主入口：抓数据 → 生成 Markdown ─────────────
-async function runDailyReview(date) {
+async function runDailyReview(date, context = {}) {
   const dateCompact = date.replace(/-/g, '');
-  const [indices, limitUp, dragon, global, sectors, fundFlow, tech, news, watchlist] = await Promise.all([
+  const [indices, limitUp, global, sectors, fundFlow, tech, news] = await Promise.all([
     fetchMarketIndices(),
     fetchLimitUpPool(dateCompact),
-    fetchDragonTiger(date),
     fetchGlobalIndices(),
     fetchSectors(),
     fetchSectorFundFlow(),
     fetchTechnicalSentiment(date),
     fetchNews(date),
-    fetchStockQuotes(WATCHLIST),
   ]);
   const temperature = computeTemperature(indices, limitUp.count, tech);
-  const markdown = buildMarkdown(date, { indices, limitUp, dragon, global, sectors, fundFlow, tech, temperature, news, watchlist });
-  return { markdown, indices: indices.length, limitUpCount: limitUp.count, dragonCount: dragon.length, global: global.length, sectors: sectors.length, fundFlow: fundFlow.length, tech: tech.scores, temperature: temperature.score, news: news.length, watchlist: watchlist.length };
+  const slotLabel = context.slotLabel || (context.slot === 'midday' ? '午间快照' : '收盘复盘');
+  const markdown = buildMarkdown(date, { indices, limitUp, global, sectors, fundFlow, tech, temperature, news, slotLabel });
+  return { markdown, reviewSlot: context.slot || 'close', slotLabel, indices: indices.length, limitUpCount: limitUp.count, global: global.length, sectors: sectors.length, fundFlow: fundFlow.length, tech: tech.scores, temperature: temperature.score, news: news.length };
 }
 
 // ── I 块 · 自选股（默认列表，可在此调整） ────────
@@ -372,4 +595,4 @@ async function fetchStockQuotes(codes) {
   }).filter(Boolean);
 }
 
-module.exports = { runDailyReview, fetchMarketIndices, fetchLimitUpPool, fetchDragonTiger, fetchGlobalIndices, fetchSectors, fetchSectorFundFlow, fetchNews, fetchTechnicalSentiment, fetchTencentQuotes, fetchDailyKline, fetchStockQuotes, toTxSymbol, computeTemperature, WATCHLIST };
+module.exports = { runDailyReview, fetchMarketIndices, fetchMarketBreadth, fetchPankouChanges, fetchIndexFutures, fetchLimitUpPool, fetchLimitDownPool, fetchBrokenBoardPool, fetchDragonTiger, fetchGlobalIndices, fetchSectors, fetchConcepts, fetchSectorFundFlow, fetchSectorOutflow, fetchNews, fetchTechnicalSentiment, fetchTencentQuotes, fetchDailyKline, fetchStockQuotes, toTxSymbol, computeTemperature, WATCHLIST };

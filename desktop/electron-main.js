@@ -1,61 +1,65 @@
 // 行情日报 Desktop · Electron 外壳
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain } = require('electron');
-const fs = require('fs');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen } = require('electron');
 const path = require('path');
 const review = require('./review-core');
 const { createReviewScheduler } = require('./review-scheduler');
+const { startServer } = require('./server');
+const { createStorage } = require('./storage');
+
+if (process.platform === 'win32') app.setAppUserModelId('io.zhicha.dailystock');
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
-require('./server.js'); // 启动本地取数服务（端口 3100）
-
 const PORT = 3100;
-const CLOSE_TIME = '15:35';
+const REVIEW_TIMES = '12:00、16:00';
+const APP_ICON = path.join(__dirname, 'assets', 'icon.png');
 let win;
 let tray;
 let isQuitting = false;
 let notifyEnabled = false;
 let scheduler;
 let savedState = {};
+let storage;
+let localServer;
 
 function statePath() {
   return path.join(app.getPath('userData'), 'desktop-state.json');
 }
 
 function loadState() {
-  try {
-    savedState = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
-    notifyEnabled = savedState.notifyEnabled === true;
-  } catch {
-    savedState = {};
-  }
+  storage.migrateLegacyFiles();
+  savedState = storage.getSettings();
+  notifyEnabled = savedState.notify === true;
 }
 
 function saveState(patch) {
   savedState = { ...savedState, ...patch };
-  try {
-    fs.mkdirSync(path.dirname(statePath()), { recursive: true });
-    fs.writeFileSync(statePath(), JSON.stringify(savedState, null, 2), 'utf8');
-  } catch (error) {
-    console.error('[桌面端] 保存本地状态失败：', error.message);
-  }
+  storage.setSettings(patch);
 }
 
 function saveReviewMarkdown(date, markdown) {
-  const dir = path.join(app.getPath('userData'), 'reviews');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, date + '-analysis.md'), markdown, 'utf8');
+  storage.saveReview(date, markdown);
+}
+
+function fitWindowToDisplay() {
+  if (!win || win.isDestroyed()) return;
+  const display = screen.getDisplayMatching(win.getBounds());
+  win.setBounds(display.workArea, false);
 }
 
 function createWindow() {
+  const workArea = screen.getPrimaryDisplay().workArea;
   win = new BrowserWindow({
-    width: 1240,
-    height: 820,
-    minWidth: 900,
-    minHeight: 600,
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
+    frame: false,
+    fullscreenable: false,
     title: '行情日报 Desktop',
+    icon: APP_ICON,
     backgroundColor: '#f6f8f7',
     autoHideMenuBar: true,
     webPreferences: {
@@ -71,12 +75,14 @@ function createWindow() {
     event.preventDefault();
     win.hide();
   });
+  win.setResizable(false);
+  win.setMaximizable(false);
+  win.on('restore', () => setImmediate(fitWindowToDisplay));
   load();
 }
 
 function createTray() {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="3" fill="#17212b"/><path d="M3 11h2V7h2v4h2V4h2v7h2" fill="none" stroke="#e34845" stroke-width="1.5"/></svg>';
-  const icon = nativeImage.createFromDataURL('data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64'));
+  const icon = nativeImage.createFromPath(APP_ICON).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   tray.setToolTip('行情日报 Desktop');
   tray.on('double-click', showWindow);
@@ -89,15 +95,15 @@ function updateTrayMenu() {
     { label: '打开行情日报', click: showWindow },
     { type: 'separator' },
     {
-      label: '收盘复盘通知',
+      label: '每日复盘通知',
       type: 'checkbox',
       checked: notifyEnabled,
       click: item => {
         notifyEnabled = item.checked;
-        saveState({ notifyEnabled });
+        saveState({ notify: notifyEnabled });
       },
     },
-    { label: '复盘时间：工作日 ' + CLOSE_TIME + ' 后', enabled: false },
+    { label: '复盘时间：交易日 ' + REVIEW_TIMES, enabled: false },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit(); } },
   ]));
@@ -106,6 +112,7 @@ function updateTrayMenu() {
 function showWindow() {
   if (!win) return createWindow();
   if (win.isMinimized()) win.restore();
+  fitWindowToDisplay();
   win.show();
   win.focus();
 }
@@ -119,17 +126,18 @@ function notify(title, body) {
 
 function startReviewScheduler() {
   scheduler = createReviewScheduler({
-    runReview: date => review.runDailyReview(date),
+    runReview: (date, slot) => review.runDailyReview(date, { slot: slot.id, slotLabel: slot.label }),
     initialDate: savedState.lastReviewDate || '',
-    onSuccess: (result, date) => {
+    initialSlot: savedState.lastReviewSlot || '',
+    onSuccess: (result, date, slot) => {
       saveReviewMarkdown(date, result.markdown);
-      saveState({ lastReviewDate: date });
-      notify('每日复盘已生成', date + ' · 市场温度 ' + result.temperature + '°，打开行情日报查看');
-      console.log('[桌面端] 收盘复盘完成：' + date + '，温度 ' + result.temperature);
+      saveState({ lastReviewDate: date, lastReviewSlot: `${date}@${slot.id}` });
+      notify('每日复盘已生成', date + ' · ' + slot.label + ' · 市场温度 ' + result.temperature + '°，打开行情日报查看');
+      console.log('[桌面端] ' + slot.label + '完成：' + date + '，温度 ' + result.temperature);
     },
-    onError: (error, date) => {
-      notify('每日复盘生成失败', date + ' · 请检查网络后重试');
-      console.error('[桌面端] 收盘复盘失败：' + date, error.message);
+    onError: (error, date, slot) => {
+      notify('每日复盘生成失败', date + ' · ' + slot.label + ' · 请检查网络后重试');
+      console.error('[桌面端] ' + slot.label + '失败：' + date, error.message);
     },
   });
   scheduler.start();
@@ -137,21 +145,38 @@ function startReviewScheduler() {
 
 ipcMain.on('desktop:notify-setting', (_event, enabled) => {
   notifyEnabled = Boolean(enabled);
-  saveState({ notifyEnabled });
+  saveState({ notify: notifyEnabled });
   updateTrayMenu();
 });
 
-app.whenReady().then(() => {
+ipcMain.on('desktop:minimize-window', () => win?.minimize());
+ipcMain.on('desktop:close-window', () => win?.close());
+
+app.whenReady().then(async () => {
+  const userData = app.getPath('userData');
+  storage = await createStorage({
+    dbPath: path.join(userData, 'hangqing.sqlite'),
+    legacyStatePath: statePath(),
+    legacyReviewsDir: path.join(userData, 'reviews'),
+  });
   loadState();
+  localServer = await startServer({ storage, port: PORT });
   createWindow();
+  screen.on('display-metrics-changed', fitWindowToDisplay);
+  screen.on('display-removed', fitWindowToDisplay);
   createTray();
   startReviewScheduler();
   app.on('activate', showWindow);
+}).catch(error => {
+  console.error('[桌面端] 初始化失败：', error);
+  app.quit();
 });
 
 app.on('before-quit', () => {
   isQuitting = true;
   if (scheduler) scheduler.stop();
+  if (localServer) localServer.close();
+  if (storage) storage.close();
 });
 
 app.on('window-all-closed', () => {

@@ -1,15 +1,61 @@
 {
   "name": "hangqing-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "行情日报 Desktop - A股实时行情 + 每日复盘桌面工具（本地取数）",
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "build": "node server.js"
+    "check": "node --check storage.js && node --check review-core.js && node --check review-scheduler.js && node --check preload.js && node --check server.js && node --check electron-main.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.2"
+  },
+  "build": {
+    "appId": "io.zhicha.dailystock",
+    "productName": "行情日报 Desktop",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "server.js",
+      "storage.js",
+      "review-core.js",
+      "review-scheduler.js",
+      "assets/icon.png",
+      "frontend/**/*",
+      "!node_modules/sql.js/**",
+      "node_modules/sql.js/package.json",
+      "node_modules/sql.js/dist/sql-wasm.js",
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [{
+        "target": "nsis",
+        "arch": ["x64"]
+      }],
+      "artifactName": "hangqing-desktop-${version}-win-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": ["dmg"]
+    }
   }
 }
