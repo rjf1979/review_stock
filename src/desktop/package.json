@@ -1,6 +1,6 @@
 {
   "name": "hangqing-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "行情日报 Desktop - A股实时行情 + 每日复盘桌面工具（本地取数）",
   "main": "electron-main.js",
@@ -43,10 +43,14 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
-      "target": [{
-        "target": "nsis",
-        "arch": ["x64"]
-      }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "hangqing-desktop-${version}-win-x64.${ext}"
     },
     "nsis": {
@@ -55,7 +59,9 @@
       "perMachine": false
     },
     "mac": {
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ]
     }
   }
 }

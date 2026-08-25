@@ -66,8 +66,9 @@
     .breadth-events{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:11px}
     .breadth-event{display:flex;min-width:0;align-items:baseline;justify-content:space-between;gap:6px;padding-top:6px;border-top:1px solid var(--line)}
     .breadth-event small{color:var(--muted);font-size:.68rem;white-space:nowrap}.breadth-event strong{font-size:.94rem;font-variant-numeric:tabular-nums}
-    .pankou-stream{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}.pankou-stream-column{min-width:0}.pankou-stream-column+ .pankou-stream-column{padding-left:14px;border-left:1px solid var(--line)}
-    .pankou-stream-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:0 2px 5px;border-bottom:1px solid var(--line);color:var(--muted);font-size:.62rem}.pankou-stream-head span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pankou-stream-head span:last-child{text-align:right}
+    .pankou-stream{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 10px}.pankou-stream-row:nth-child(3n+2),.pankou-stream-row:nth-child(3n+3){padding-left:10px;border-left:1px solid var(--line)}
+    .pankou-stream-row{position:relative}
+    .pankou-move{transition:transform .24s ease}.pankou-enter-active,.pankou-leave-active{transition:opacity .24s ease,transform .24s ease}.pankou-enter-from{opacity:0;transform:translateY(-8px)}.pankou-leave-to{opacity:0;transform:translateY(8px)}.pankou-leave-active{position:absolute}
     .pankou-stream-row{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-content:center;column-gap:8px;row-gap:1px;min-width:0;min-height:34px;padding:3px 2px;border-bottom:1px solid var(--line);font-size:.72rem}.pankou-stream-row:last-child{border-bottom:0}
     .pankou-identity{display:flex;min-width:0;align-items:baseline;gap:6px;overflow:hidden;white-space:nowrap}.pankou-stock{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}.pankou-code,.pankou-time{color:var(--muted);font-size:.6rem;font-variant-numeric:tabular-nums;white-space:nowrap}.pankou-code{flex:0 0 auto}.pankou-time{grid-column:1;grid-row:2}.pankou-kind{grid-column:2;grid-row:1;display:inline-flex;align-items:center;justify-self:end;gap:5px;min-width:0;font-size:.62rem;font-weight:800;white-space:nowrap}.pankou-kind::before{width:5px;height:5px;border-radius:50%;background:currentColor;content:""}.pankou-value{grid-column:2;grid-row:2;justify-self:end;font-size:.66rem;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}.pankou-empty{grid-column:1/-1;padding:10px 0;color:var(--muted);font-size:.68rem}
     .pankou-kind.up,.pankou-value.up{color:var(--red)}.pankou-kind.down,.pankou-value.down{color:var(--green)}
@@ -153,7 +154,7 @@
       .dashboard-panel-head{align-items:flex-start;margin-bottom:5px;gap:6px}.dashboard-panel-head h2{padding-left:7px;border-left-width:3px;font-size:.76rem;line-height:1.35}.panel-meta{font-size:.56rem;line-height:1.35}
       .breadth-panel .width-summary{gap:10px}.width-primary{min-height:0;padding:3px 10px 3px 0}.width-primary-label,.width-primary small{font-size:.58rem}.width-primary strong{margin:3px 0;font-size:1.45rem}.width-numbers{gap:6px}.width-number{padding:0 0 5px}.width-number b{font-size:.86rem}.width-number small{font-size:.58rem}.breadth-track{height:5px;margin-top:7px}.breadth-foot{margin-top:4px;font-size:.56rem}
       .breadth-events{gap:6px;margin-top:6px}.breadth-event{padding-top:3px}.breadth-event small{font-size:.56rem}.breadth-event strong{font-size:.76rem}
-      .pankou-stream{gap:0 9px}.pankou-stream-column+ .pankou-stream-column{padding-left:9px}.pankou-stream-head{padding:0 1px 3px;font-size:.54rem}.pankou-stream-row{min-height:34px;padding:3px 1px;column-gap:5px;font-size:.64rem}.pankou-identity{gap:4px}.pankou-code,.pankou-time{font-size:.52rem}.pankou-kind{gap:3px;font-size:.56rem}.pankou-kind::before{width:4px;height:4px}.pankou-value{font-size:.57rem}.pankou-empty{padding:5px 0;font-size:.54rem}
+       .pankou-stream{gap:0 7px}.pankou-stream-row:nth-child(3n+2),.pankou-stream-row:nth-child(3n+3){padding-left:7px}.pankou-stream-row{min-height:34px;padding:3px 1px;column-gap:4px;font-size:.64rem}.pankou-identity{gap:3px}.pankou-code,.pankou-time{font-size:.52rem}.pankou-kind{gap:3px;font-size:.56rem}.pankou-kind::before{width:4px;height:4px}.pankou-value{font-size:.57rem}.pankou-empty{padding:5px 0;font-size:.54rem}
       .radar-grid>.panel .dashboard-panel-head{min-width:0}.radar-grid>.panel .dashboard-panel-head h2{flex:0 0 auto}.radar-grid>.panel .panel-meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .sector-list{gap:0}.sector-row{grid-template-columns:16px minmax(0,1fr) 48px;gap:4px;min-height:18px;font-size:.64rem;line-height:1.2}.sector-meter{display:none}.sector-rank{font-size:.54rem}
       .flow-row{grid-template-columns:minmax(0,1fr) 54px;gap:4px;min-height:18px;font-size:.64rem;line-height:1.2}.flow-meter{display:none}
@@ -173,15 +174,16 @@
       .dashboard-panel-head{margin-bottom:10px}.dashboard-panel-head h2{font-size:.9rem}.panel-meta{font-size:.66rem}
       .breadth-panel .width-summary{gap:14px}.width-primary{padding-right:14px}.width-primary-label,.width-primary small{font-size:.64rem}.width-primary strong{margin:5px 0;font-size:1.7rem}.width-numbers{gap:10px}.width-number{padding-bottom:7px}.width-number b{font-size:.96rem}.width-number small{font-size:.62rem}.breadth-track{height:6px;margin-top:10px}.breadth-foot{margin-top:6px;font-size:.61rem}
       .breadth-events{gap:8px;margin-top:9px}.breadth-event{padding-top:5px}.breadth-event small{font-size:.62rem}.breadth-event strong{font-size:.86rem}
-      .pankou-stream{gap:0 14px}.pankou-stream-column+ .pankou-stream-column{padding-left:14px}.pankou-stream-head{font-size:.6rem}.pankou-stream-row{min-height:34px;font-size:.7rem}.pankou-code,.pankou-time{font-size:.58rem}.pankou-kind{font-size:.61rem}.pankou-value{font-size:.64rem}
+       .pankou-stream{gap:0 10px}.pankou-stream-row:nth-child(3n+2),.pankou-stream-row:nth-child(3n+3){padding-left:10px}.pankou-stream-row{min-height:34px;font-size:.7rem}.pankou-code,.pankou-time{font-size:.58rem}.pankou-kind{font-size:.61rem}.pankou-value{font-size:.64rem}
       .sector-row{min-height:24px;gap:7px;font-size:.74rem}.sector-rank{font-size:.64rem}.flow-row{min-height:24px;gap:7px;font-size:.74rem}
       .stock-list{gap:0 18px}.stock-row{grid-template-columns:minmax(0,1fr) 58px 66px;gap:8px;min-height:38px;font-size:.76rem;line-height:1.3}.stock-name small,.stock-amount{font-size:.64rem}
       .stock-grid>.panel:nth-child(3) .stock-list{grid-template-columns:1fr}.stock-grid>.panel:nth-child(3) .stock-row{grid-template-columns:minmax(0,1fr) 74px 88px;min-height:30px}
       .event-summary{margin-bottom:8px;font-size:.7rem}.event-summary b{font-size:.9rem}.event-list{grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:0 18px}.event-row{min-height:30px;gap:10px;font-size:.72rem;line-height:1.3}.event-sector{max-width:96px}.event-sector,.event-badge{font-size:.62rem}.event-badge{padding:2px 5px}
       .futures-item{grid-template-columns:minmax(100px,.8fr) minmax(0,1.2fr);column-gap:12px;padding:0 14px}.futures-item-head b{font-size:.78rem}.futures-item-head small,.futures-metric small,.futures-position-grid small{font-size:.58rem}.futures-quote{padding:5px 0}.futures-quote strong{font-size:1.1rem}.futures-metrics{gap:5px 8px}.futures-metric b,.futures-position-grid strong{font-size:.67rem}.futures-position{grid-template-columns:90px minmax(0,1fr) minmax(0,1.25fr);gap:9px;padding-top:7px}.futures-unavailable{padding:8px 0;font-size:.61rem}.futures-unavailable b{font-size:.66rem}.futures-disclaimer{margin-top:8px;padding-top:6px;font-size:.58rem;line-height:1.45}
     }
-    @media (max-width:900px){header{height:auto;min-height:52px;align-items:flex-start;padding:8px 12px;gap:8px}header .logo{padding-top:8px;white-space:nowrap}nav{flex-wrap:wrap;justify-content:flex-end}main{padding:12px}.review-grid,.market-dashboard,.radar-grid,.event-grid,.stock-grid{grid-template-columns:1fr}.pankou-stream{grid-template-columns:1fr;gap:0}.pankou-stream-column+ .pankou-stream-column{padding-left:0;border-left:0}.futures-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 0}.futures-item:nth-child(3){padding-left:0;border-left:0}.futures-item:nth-child(3),.futures-item:nth-child(4){padding-top:14px;border-top:1px solid var(--line)}.realtime-heading{align-items:flex-start}}
-    @media (max-width:600px){header{display:block}header .logo{display:block;margin-bottom:4px}nav{justify-content:flex-start}main{overflow-x:hidden}.content-stage,.realtime-view,.indices{min-width:0;max-width:100%}.indices{grid-template-columns:1fr}.breadth{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{padding:12px}.realtime-heading{display:block}.data-stamp{justify-items:start;margin-top:10px}.width-summary{grid-template-columns:1fr;gap:12px}.width-primary{display:grid;grid-template-columns:1fr auto;min-height:0;padding:2px 0 12px;border-right:0;border-bottom:1px solid var(--line)}.width-primary-label{grid-column:1;grid-row:1}.width-primary strong{grid-column:2;grid-row:1/3;margin:0;font-size:1.8rem}.width-primary small{grid-column:1;grid-row:2}.width-numbers{gap:10px}.width-number b{font-size:1rem}.breadth-events{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}.pankou-stream{grid-template-columns:1fr;gap:0}.pankou-stream-head{font-size:.62rem}.pankou-stream-row{min-height:34px;font-size:.72rem}.pankou-code,.pankou-time{font-size:.6rem}.pankou-kind{font-size:.62rem}.pankou-value{font-size:.64rem}.futures-grid{grid-template-columns:1fr;gap:0}.futures-item,.futures-item:nth-child(3),.futures-item:nth-child(4){padding:14px 0 0;border-left:0;border-top:1px solid var(--line)}.futures-item:first-child{padding-top:0;border-top:0}.sector-row{grid-template-columns:24px minmax(65px,1fr) 70px 56px}.event-list{grid-template-columns:1fr}footer{height:auto;min-height:30px;padding:6px 12px;gap:10px;align-items:flex-start;flex-wrap:wrap}}
+    @media (max-width:900px){header{height:auto;min-height:52px;align-items:flex-start;padding:8px 12px;gap:8px}header .logo{padding-top:8px;white-space:nowrap}nav{flex-wrap:wrap;justify-content:flex-end}main{padding:12px}.review-grid,.market-dashboard,.radar-grid,.event-grid,.stock-grid{grid-template-columns:1fr}.pankou-stream{grid-template-columns:1fr;gap:0}.pankou-stream-row:nth-child(3n+2),.pankou-stream-row:nth-child(3n+3){padding-left:0;border-left:0}.futures-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 0}.futures-item:nth-child(3){padding-left:0;border-left:0}.futures-item:nth-child(3),.futures-item:nth-child(4){padding-top:14px;border-top:1px solid var(--line)}.realtime-heading{align-items:flex-start}}
+    @media (max-width:600px){header{display:block}header .logo{display:block;margin-bottom:4px}nav{justify-content:flex-start}main{overflow-x:hidden}.content-stage,.realtime-view,.indices{min-width:0;max-width:100%}.indices{grid-template-columns:1fr}.breadth{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{padding:12px}.realtime-heading{display:block}.data-stamp{justify-items:start;margin-top:10px}.width-summary{grid-template-columns:1fr;gap:12px}.width-primary{display:grid;grid-template-columns:1fr auto;min-height:0;padding:2px 0 12px;border-right:0;border-bottom:1px solid var(--line)}.width-primary-label{grid-column:1;grid-row:1}.width-primary strong{grid-column:2;grid-row:1/3;margin:0;font-size:1.8rem}.width-primary small{grid-column:1;grid-row:2}.width-numbers{gap:10px}.width-number b{font-size:1rem}.breadth-events{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}.pankou-stream{grid-template-columns:1fr;gap:0}.pankou-stream-row:nth-child(3n+2),.pankou-stream-row:nth-child(3n+3){padding-left:0;border-left:0}.pankou-stream-row{min-height:34px;font-size:.72rem}.pankou-code,.pankou-time{font-size:.6rem}.pankou-kind{font-size:.62rem}.pankou-value{font-size:.64rem}.futures-grid{grid-template-columns:1fr;gap:0}.futures-item,.futures-item:nth-child(3),.futures-item:nth-child(4){padding:14px 0 0;border-left:0;border-top:1px solid var(--line)}.futures-item:first-child{padding-top:0;border-top:0}.sector-row{grid-template-columns:24px minmax(65px,1fr) 70px 56px}.event-list{grid-template-columns:1fr}footer{height:auto;min-height:30px;padding:6px 12px;gap:10px;align-items:flex-start;flex-wrap:wrap}}
+    @media (min-width:901px){.pankou-stream{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
     /* Web-aligned light skin and its dark counterpart share the same semantic map. */
@@ -374,20 +376,17 @@
               </div>
             </div>
           </section>
-          <section ref="pankouPanel" class="panel pankou-panel">
+          <section class="panel pankou-panel">
             <div class="dashboard-panel-head"><h2>盘口异动</h2><span class="panel-meta">{{ freshnessLabel('pankou', pankouStatusLabel) }}</span></div>
-            <div class="pankou-stream" aria-live="polite">
-              <div v-for="(column, columnIndex) in pankouEventColumns" :key="'pankou-column-' + columnIndex" class="pankou-stream-column">
-                <div class="pankou-stream-head"><span>股票 / 代码 · 时间</span><span>异动 / 指标</span></div>
-                <div v-for="event in column" :key="event.key + '-' + event.code + '-' + event.time" class="pankou-stream-row">
-                  <div class="pankou-identity"><b class="pankou-stock">{{ event.name }}</b><span class="pankou-code">{{ event.code }}</span></div>
-                  <b class="pankou-kind" :class="event.tone">{{ event.label }}</b>
-                  <time class="pankou-time">{{ event.time || '-' }}</time>
-                  <strong class="pankou-value" :class="event.tone">{{ pankouValue(event, event.key) }}</strong>
-                </div>
+            <TransitionGroup name="pankou" tag="div" class="pankou-stream" aria-live="polite">
+              <div v-for="event in pankouEvents" :key="event.key + '-' + event.code + '-' + event.time" class="pankou-stream-row">
+                <div class="pankou-identity"><b class="pankou-stock">{{ event.name }}</b><span class="pankou-code">{{ event.code }}</span></div>
+                <b class="pankou-kind" :class="event.tone">{{ event.label }}</b>
+                <time class="pankou-time">{{ event.time || '-' }}</time>
+                <strong class="pankou-value" :class="event.tone">{{ pankouValue(event, event.key) }}</strong>
               </div>
-              <div v-if="!pankouEvents.length" class="pankou-empty">{{ real.pankou?.status === 'error' ? '盘口异动接口暂不可用' : '盘口异动数据更新中…' }}</div>
-            </div>
+            </TransitionGroup>
+            <div v-if="!pankouEvents.length" class="pankou-empty">{{ real.pankou?.status === 'error' ? '盘口异动接口暂不可用' : '盘口异动数据更新中…' }}</div>
           </section>
         </div>
         <p class="realtime-note">全市场宽度按东方财富 A 股分页快照计算，样本达到校验阈值后显示；采集期间保留上次可用快照。</p>
@@ -585,6 +584,11 @@
   <script>
     const { createApp } = Vue;
     const todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    const PANKOU_HISTORY_LIMIT = 120;
+    const PANKOU_SEEN_LIMIT = 2000;
+    const PANKOU_COLUMN_COUNT = 3;
+    const PANKOU_ROWS_PER_COLUMN = 3;
+    const PANKOU_INSERT_INTERVAL_MS = 260;
     const marketPart = (parts, type) => Number(parts.find(part => part.type === type)?.value || 0);
     const dateKey = date => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
     function getMarketStatus(now = new Date()) {
@@ -610,7 +614,7 @@
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle', kline: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '', kline: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]'), addCode: '', watchQuotes: [], klineFor: '', klineData: [],
-        historyDates: [], refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouPage: 0, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, pankouPanelHeight: 0, todayStr
+        historyDates: [], refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr
       }; },
       computed: {
         marketOpen() { return this.marketStatus.open; },
@@ -620,27 +624,11 @@
         breadthMeta() { return this.real.breadth?.quality === 'verified' ? 'A 股全市场' : '采集完成后更新'; },
         pankouStatusLabel() { const state = this.real.pankou?.status; return state === 'ready' ? '实时事件' : state === 'error' ? '接口异常' : '盘口更新中'; },
         pankouAllEvents() {
-          return (this.real.pankou?.categories || []).flatMap(group => (group.events || []).map(event => ({ ...event, key: group.key, label: group.label, tone: group.tone }))).sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
+          return this.pankouHistory;
         },
-        pankouColumnCount() { return this.viewportWidth <= 900 ? 1 : 2; },
-        pankouRowsPerColumn() {
-          if (this.viewportWidth > 900 && this.pankouPanelHeight > 0) {
-            const rowHeight = 34;
-            const reserved = 42;
-            return Math.max(2, Math.floor((this.pankouPanelHeight - reserved) / rowHeight));
-          }
-          return this.viewportWidth <= 600 ? 6 : this.viewportWidth <= 900 ? 8 : 4;
-        },
-        pankouVisibleCount() { return this.pankouColumnCount * this.pankouRowsPerColumn; },
+        pankouVisibleCount() { return PANKOU_COLUMN_COUNT * PANKOU_ROWS_PER_COLUMN; },
         pankouEvents() {
-          const all = this.pankouAllEvents; const count = this.pankouVisibleCount; if (!all.length || !count) return [];
-          const pageCount = Math.max(1, Math.ceil(all.length / count)); const page = Math.min(this.pankouPage, pageCount - 1);
-          return all.slice(page * count, page * count + count);
-        },
-        pankouEventColumns() {
-          const columns = []; const size = this.pankouRowsPerColumn;
-          for (let index = 0; index < this.pankouColumnCount; index++) columns.push(this.pankouEvents.slice(index * size, (index + 1) * size));
-          return columns;
+          const count = this.pankouVisibleCount; return count ? this.pankouAllEvents.slice(0, count) : [];
         },
         breadthCoverageLabel() { const b = this.real.breadth || {}; return b.sampleCount != null ? `${b.sampleCount} / ${b.reportedCount ?? b.sampleCount}` : '-'; },
         breadthAriaLabel() { const b = this.real.breadth || {}; return `上涨 ${b.up ?? '-'} 家，下跌 ${b.down ?? '-'} 家，平盘 ${b.flat ?? '-'} 家`; },
@@ -723,27 +711,43 @@
           if (event.changePct != null && Number.isFinite(Number(event.changePct))) return `${Number(event.changePct) >= 0 ? '+' : ''}${Number(event.changePct).toFixed(2)}%`;
           return event.price != null && Number.isFinite(Number(event.price)) ? Number(event.price).toFixed(2) : '-';
         },
-        normalizePankouPage() {
-          const pageCount = Math.max(1, Math.ceil(this.pankouAllEvents.length / this.pankouVisibleCount));
-          if (this.pankouPage >= pageCount) this.pankouPage = 0;
-        },
-        rotatePankou() {
-          const pageCount = Math.max(1, Math.ceil(this.pankouAllEvents.length / this.pankouVisibleCount));
-          this.pankouPage = pageCount > 1 ? (this.pankouPage + 1) % pageCount : 0;
-        },
-        observePankouPanel() {
-          const panel = this.$refs.pankouPanel;
-          if (!panel) return;
-          if (this._pankouObservedElement === panel) { this.pankouPanelHeight = Math.round(panel.getBoundingClientRect().height); this.normalizePankouPage(); return; }
-          this._pankouResizeObserver?.disconnect();
-          this._pankouObservedElement = panel;
-          this.pankouPanelHeight = Math.round(panel.getBoundingClientRect().height);
-          if (typeof ResizeObserver !== 'undefined') {
-            this._pankouResizeObserver = new ResizeObserver(entries => { const height = Math.round(entries[0]?.contentRect.height || 0); if (height) { this.pankouPanelHeight = height; this.normalizePankouPage(); } });
-            this._pankouResizeObserver.observe(panel);
+        mergePankouEvents(pankou, sourceDate = null) {
+          const isNewSession = !this.pankouHistoryDate || (sourceDate && sourceDate !== this.pankouHistoryDate);
+          if (sourceDate && this.pankouHistoryDate && sourceDate !== this.pankouHistoryDate) {
+            if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer);
+            this._pankouInsertTimer = null;
+            this.pankouHistory = [];
+            this.pankouPendingEvents = [];
+            this.pankouSeenKeys = [];
           }
+          if (sourceDate) this.pankouHistoryDate = sourceDate;
+          const incoming = (pankou?.categories || []).flatMap(group => (group.events || []).map(event => ({ ...event, key: group.key, label: group.label, tone: group.tone })));
+          const seen = new Set(this.pankouSeenKeys);
+          const additions = [];
+          for (const event of incoming) {
+            const eventKey = `${event.key}|${event.code}|${event.time}`;
+            if (!event.code || !event.time || seen.has(eventKey)) continue;
+            seen.add(eventKey);
+            additions.push(event);
+          }
+          additions.sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
+          this.pankouSeenKeys = [...seen].slice(-PANKOU_SEEN_LIMIT);
+          if (isNewSession) {
+            this.pankouHistory = additions.slice(0, PANKOU_COLUMN_COUNT * PANKOU_ROWS_PER_COLUMN);
+            return;
+          }
+          this.pankouPendingEvents = [...this.pankouPendingEvents, ...additions].sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
+          this.processPankouInsertQueue();
         },
-        updateViewport() { this.viewportWidth = window.innerWidth; this.viewportHeight = window.innerHeight; this.$nextTick(() => { this.observePankouPanel(); this.normalizePankouPage(); }); },
+        processPankouInsertQueue() {
+          if (this._pankouInsertTimer || !this.pankouPendingEvents.length) return;
+          const event = this.pankouPendingEvents.shift();
+          this.pankouHistory = [event, ...this.pankouHistory].slice(0, PANKOU_HISTORY_LIMIT);
+          this._pankouInsertTimer = setTimeout(() => {
+            this._pankouInsertTimer = null;
+            this.processPankouInsertQueue();
+          }, PANKOU_INSERT_INTERVAL_MS);
+        },
         formatReviewPct(value) { const number = Number(value); return Number.isFinite(number) ? `${number >= 0 ? '+' : ''}${number.toFixed(2)}%` : '待补充'; },
         reviewBreadthWidth(key) { const b = this.review.breadth || {}; const total = Number(b.up || 0) + Number(b.down || 0) + Number(b.flat || 0); return total && b[key] != null ? `${Math.max(0, Number(b[key]) / total * 100)}%` : '0%'; },
         reviewIndexWidth(value) { const values = (this.review.indices || []).map(index => Math.abs(Number(index.changePct))).filter(Number.isFinite); const max = Math.max(0.01, ...values); const number = Math.abs(Number(value)); return Number.isFinite(number) ? `${Math.max(8, Math.min(100, number / max * 100))}%` : '0%'; },
@@ -756,7 +760,7 @@
           const job = silent ? null : this.beginLoading('实时行情刷新中…');
           this._realtimeLoading = (async () => {
             this.status.realtime = 'loading'; this.errors.realtime = '';
-            try { const d = await this.api('/api/realtime'); this.real = d; this.updatedTime = this.formatDataTime(d.updatedAt); this.normalizePankouPage(); this.$nextTick(() => this.observePankouPanel()); this.status.realtime = 'success'; }
+            try { const d = await this.api('/api/realtime'); this.real = d; this.updatedTime = this.formatDataTime(d.updatedAt); this.mergePankouEvents(d.pankou, d.asOfDate || d.marketSession?.date); this.status.realtime = 'success'; }
             catch (e) { this.status.realtime = 'error'; this.errors.realtime = '行情获取失败：' + e.message; }
             finally { if (job) this.endLoading(job); this._realtimeLoading = null; }
           })();
@@ -809,16 +813,15 @@
         applyNotify(persist = true) { localStorage.setItem('hq_notify', this.notify ? '1' : '0'); if (persist) this.persistSettings({ notify: this.notify }); window.desktopBridge?.setNotifyEnabled(this.notify); },
          startMarketClock() { if (this._marketTimer) clearInterval(this._marketTimer); this._marketTimer = setInterval(() => this.updateMarketStatus(), 30000); },
          startAuto() { if (this._timer) clearInterval(this._timer); this._timer = null; if (this.refreshSec > 0) this._timer = setInterval(() => { this.updateMarketStatus(); if (this.marketOpen && this.view === 'realtime') this.loadRealtime({ silent: true }); }, this.refreshSec * 1000); },
-         startPankouRotation() { if (this._pankouTimer) clearInterval(this._pankouTimer); this._pankouTimer = setInterval(() => this.rotatePankou(), 5000); }
        },
        mounted() {
         this.applyTheme(this.theme, false);
         document.getElementById('boot-screen')?.classList.add('is-ready');
         window.desktopBridge?.setNotifyEnabled(this.notify);
-         this.updateMarketStatus(); this.startMarketClock(); this.startPankouRotation(); window.addEventListener('resize', this.updateViewport);
+         this.updateMarketStatus(); this.startMarketClock();
          this.loadLocalSettings().catch(error => console.warn('[桌面端] SQLite 设置读取失败：', error.message)).finally(() => { this.updateMarketStatus(); this.loadRealtime({ silent: true, allowClosed: true }); this.startAuto(); });
        },
-       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouTimer) clearInterval(this._pankouTimer); this._pankouResizeObserver?.disconnect(); window.removeEventListener('resize', this.updateViewport); }
+       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); }
     }).mount('#app');
   </script>
 </body>
