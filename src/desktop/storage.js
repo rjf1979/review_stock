@@ -4,6 +4,7 @@ const path = require('path');
 const initSqlJs = require('sql.js');
 
 const DEFAULT_SETTINGS = { theme: 'light', refreshSec: 3, notify: false };
+const WATCHLIST_LIMIT = 100;
 
 function parseValue(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
@@ -87,6 +88,21 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     catch (error) { try { db.run('ROLLBACK'); } catch {} throw error; }
   }
 
+  const reviewColumns = new Set(queryAll('PRAGMA table_info(reviews)').map(column => column.name));
+  const reviewMigrations = [
+    ['payload', 'TEXT'],
+    ['report_mode', 'TEXT'],
+    ['quality_status', 'TEXT'],
+    ['as_of', 'TEXT'],
+  ];
+  let reviewSchemaChanged = false;
+  for (const [name, type] of reviewMigrations) {
+    if (reviewColumns.has(name)) continue;
+    db.run(`ALTER TABLE reviews ADD COLUMN ${name} ${type}`);
+    reviewSchemaChanged = true;
+  }
+  if (reviewSchemaChanged) persist();
+
   function getMeta(key) { return queryOne('SELECT value FROM schema_meta WHERE key = $key', { $key: key })?.value || null; }
   function setMeta(key, value) { execute('INSERT OR REPLACE INTO schema_meta(key, value) VALUES ($key, $value)', { $key: key, $value: String(value) }); }
   function getSetting(key, fallback = null) {
@@ -104,9 +120,9 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
   function setSettings(values) {
     transaction(() => Object.entries(values || {}).forEach(([key, value]) => setSetting(key, value)));
   }
-  function getWatchlist() { return queryAll('SELECT code FROM watchlist ORDER BY position, code').map(row => row.code); }
+  function getWatchlist() { return queryAll('SELECT code FROM watchlist ORDER BY position, code').map(row => row.code).slice(0, WATCHLIST_LIMIT); }
   function replaceWatchlist(codes) {
-    const clean = [...new Set((Array.isArray(codes) ? codes : []).filter(code => /^\d{6}$/.test(String(code))).map(String))];
+    const clean = [...new Set((Array.isArray(codes) ? codes : []).filter(code => /^\d{6}$/.test(String(code))).map(String))].slice(0, WATCHLIST_LIMIT);
     transaction(() => {
       execute('DELETE FROM watchlist');
       clean.forEach((code, position) => execute('INSERT INTO watchlist(code, position) VALUES ($code, $position)', { $code: code, $position: position }));
@@ -124,11 +140,42 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     return payload ? { ...payload, cachedAt: row.captured_at, fromCache: true } : null;
   }
   function saveReview(date, markdown, temperature = null) {
-    execute(`INSERT OR REPLACE INTO reviews(date, markdown, temperature, created_at, updated_at)
-      VALUES ($date, $markdown, $temperature, COALESCE((SELECT created_at FROM reviews WHERE date = $date), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)`, { $date: date, $markdown: String(markdown || ''), $temperature: temperature });
+    execute(`INSERT OR REPLACE INTO reviews(date, markdown, temperature, payload, report_mode, quality_status, as_of, created_at, updated_at)
+      VALUES ($date, $markdown, $temperature,
+        (SELECT payload FROM reviews WHERE date = $date),
+        (SELECT report_mode FROM reviews WHERE date = $date),
+        (SELECT quality_status FROM reviews WHERE date = $date),
+        (SELECT as_of FROM reviews WHERE date = $date),
+        COALESCE((SELECT created_at FROM reviews WHERE date = $date), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)`, { $date: date, $markdown: String(markdown || ''), $temperature: temperature });
     persist();
   }
-  function getReviewDates() { return queryAll('SELECT date, temperature, updated_at FROM reviews ORDER BY date DESC').map(row => ({ date: row.date, temperature: row.temperature, updatedAt: row.updated_at })); }
+  function saveReviewSnapshot(date, payload) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !payload || typeof payload !== 'object') throw new Error('复盘快照格式不正确');
+    const tradeDate = payload.meta?.trade_date || payload.date;
+    if (tradeDate !== date) throw new Error(`复盘交易日期不一致：${tradeDate || '缺失'} / ${date}`);
+    const reportMode = payload.meta?.report_mode || 'snapshot';
+    const existing = queryOne('SELECT report_mode, payload FROM reviews WHERE date = $date', { $date: date });
+    if (existing?.report_mode === 'close' && reportMode !== 'close') return parseValue(existing.payload, null);
+    const temperature = Number.isFinite(Number(payload.temperature?.score)) ? Number(payload.temperature.score) : null;
+    const qualityStatus = payload.quality?.status || null;
+    const asOf = payload.meta?.as_of || payload.generatedAt || new Date().toISOString();
+    execute(`INSERT OR REPLACE INTO reviews(date, markdown, temperature, payload, report_mode, quality_status, as_of, created_at, updated_at)
+      VALUES ($date, COALESCE((SELECT markdown FROM reviews WHERE date = $date), ''), $temperature, $payload, $reportMode, $qualityStatus, $asOf,
+        COALESCE((SELECT created_at FROM reviews WHERE date = $date), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)`, {
+      $date: date, $temperature: temperature, $payload: JSON.stringify(payload), $reportMode: reportMode, $qualityStatus: qualityStatus, $asOf: asOf,
+    });
+    persist();
+    return payload;
+  }
+  function getReviewSnapshot(date) {
+    const row = queryOne('SELECT payload, report_mode, quality_status, as_of, updated_at FROM reviews WHERE date = $date', { $date: date });
+    const payload = parseValue(row?.payload, null);
+    return payload ? { ...payload, persisted: true, persistedAt: row.updated_at } : null;
+  }
+  function getReviewDates() {
+    return queryAll('SELECT date, temperature, report_mode, quality_status, as_of, updated_at FROM reviews WHERE payload IS NOT NULL ORDER BY date DESC')
+      .map(row => ({ date: row.date, temperature: row.temperature, reportMode: row.report_mode, qualityStatus: row.quality_status, asOf: row.as_of, updatedAt: row.updated_at }));
+  }
 
   function migrateLegacyFiles() {
     if (getMeta('legacy_files_v1')) return false;
@@ -157,7 +204,7 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
       if (!queryOne('SELECT key FROM settings WHERE key = $key', { $key: 'refreshSec' }) && [0, 3, 5, 10].includes(Number(data?.refreshSec))) setSetting('refreshSec', Number(data.refreshSec));
       if (!queryOne('SELECT key FROM settings WHERE key = $key', { $key: 'notify' }) && typeof data?.notify === 'boolean') setSetting('notify', data.notify);
       if (!getWatchlist().length && Array.isArray(data?.watchlist)) {
-        const clean = [...new Set(data.watchlist.filter(code => /^\d{6}$/.test(String(code))).map(String))];
+        const clean = [...new Set(data.watchlist.filter(code => /^\d{6}$/.test(String(code))).map(String))].slice(0, WATCHLIST_LIMIT);
         clean.forEach((code, position) => execute('INSERT OR IGNORE INTO watchlist(code, position) VALUES ($code, $position)', { $code: code, $position: position }));
       }
       setMeta('legacy_frontend_v1', new Date().toISOString());
@@ -175,6 +222,8 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     saveSnapshot,
     getSnapshot,
     saveReview,
+    saveReviewSnapshot,
+    getReviewSnapshot,
     getReviewDates,
     migrateLegacyFiles,
     importLegacyFrontend,

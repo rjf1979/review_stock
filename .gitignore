@@ -23,3 +23,6 @@ src/desktop/release/
 Thumbs.db
 .idea/
 .vscode/
+
+# Private source asset; the sanitized bundled copy lives under src/desktop/frontend/assets.
+docs/赞助收款码.jpg

@@ -106,22 +106,86 @@ function validDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00+08:00`));
 }
 
-async function buildReviewData(date, breadth = null) {
+function previousWeekdayISO(date) {
+  const value = new Date(`${date}T00:00:00+08:00`);
+  do { value.setDate(value.getDate() - 1); } while ([0, 6].includes(value.getDay()));
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(value);
+}
+
+function reviewReportMode(date, currentDate) {
+  if (date !== currentDate) return 'historical';
+  const parts = shanghaiParts();
+  const weekday = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00Z`).getUTCDay();
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  return weekday === 0 || weekday === 6 || minutes >= 15 * 60 + 10 ? 'close' : 'intraday';
+}
+
+function buildHeightDistribution(stocks) {
+  const groups = new Map();
+  for (const stock of stocks || []) {
+    const height = Number(stock.streak) || 1;
+    if (!groups.has(height)) groups.set(height, []);
+    groups.get(height).push(stock.name);
+  }
+  return [...groups.entries()].sort((a, b) => b[0] - a[0]).map(([boardHeight, leaders]) => ({ boardHeight, count: leaders.length, leaders }));
+}
+
+function computeContractTemperature({ breadth, limitUpCount, brokenCount, maxBoardHeight, promotionRate }) {
+  if (breadth?.status !== 'ready') return null;
+  const redRate = Number(breadth.redRatio) / 100;
+  const sealRate = limitUpCount + brokenCount > 0 ? limitUpCount / (limitUpCount + brokenCount) : null;
+  const components = {
+    breadth: Math.min(redRate / 0.8, 1) * 25,
+    limitUp: Math.min(limitUpCount / 120, 1) * 20,
+    seal: sealRate == null ? 0 : Math.min(sealRate / 0.85, 1) * 15,
+    height: Math.min(maxBoardHeight / 8, 1) * 15,
+    promotion: promotionRate == null ? 0 : Math.min(promotionRate / 0.65, 1) * 10,
+    mainline: 0,
+    riskDeduction: 0,
+  };
+  const score = Math.round(Math.max(0, Math.min(100, components.breadth + components.limitUp + components.seal + components.height + components.promotion + components.mainline - components.riskDeduction)));
+  const level = score <= 20 ? '冰点' : score <= 40 ? '低迷' : score <= 60 ? '修复' : score <= 75 ? '活跃' : score <= 85 ? '高温' : '过热';
+  return { score, level, zone: level, components };
+}
+
+async function buildReviewData(date, breadth = null, currentDate = latestTradingISO()) {
   const dateCompact = date.replace(/-/g, '');
-  const [indices, limitUp, limitDown, broken, global, sectors, fundFlow, tech, news] = await Promise.all([
-    review.fetchMarketIndices(),
+  const isCurrent = date === currentDate;
+  const previousDate = previousWeekdayISO(date);
+  const [indices, limitUp, limitDown, broken, previousLimitUp, sectors, fundFlow, tech, news] = await Promise.all([
+    isCurrent ? review.fetchMarketIndices() : [],
     review.fetchLimitUpPool(dateCompact),
     review.fetchLimitDownPool(dateCompact),
     review.fetchBrokenBoardPool(dateCompact),
-    review.fetchGlobalIndices(),
-    review.fetchSectors(),
-    review.fetchSectorFundFlow(),
+    review.fetchLimitUpPool(previousDate.replace(/-/g, '')).catch(() => ({ count: 0, stocks: [] })),
+    isCurrent ? review.fetchSectors() : [],
+    isCurrent ? review.fetchSectorFundFlow() : [],
     review.fetchTechnicalSentiment(date),
     review.fetchNews(date),
   ]);
-  const temperature = review.computeTemperature(indices, limitUp.count, tech);
+  const currentCodes = new Set(limitUp.stocks.map(stock => stock.code));
+  const tradedCodes = new Set(breadth?.tradedCodes || []);
+  const promotionBase = previousLimitUp.stocks.filter(stock => tradedCodes.has(stock.code));
+  const promotionSuccessCount = promotionBase.filter(stock => currentCodes.has(stock.code)).length;
+  const promotionRate = promotionBase.length ? promotionSuccessCount / promotionBase.length : null;
+  const heightDistribution = buildHeightDistribution(limitUp.stocks);
+  const maxBoardHeight = heightDistribution[0]?.boardHeight || 0;
+  const sealRate = limitUp.count + broken.count > 0 ? limitUp.count / (limitUp.count + broken.count) : null;
+  const enrichedBreadth = breadth ? { ...breadth, limitUp: limitUp.count, limitDown: limitDown.count, broken: broken.count, sealRate: sealRate == null ? null : sealRate * 100, promotionRate: promotionRate == null ? null : promotionRate * 100 } : null;
+  const missingFields = [];
+  if (!enrichedBreadth || enrichedBreadth.status !== 'ready') missingFields.push('breadth');
+  if (enrichedBreadth?.previousTurnoverYi == null) missingFields.push('breadth.previous_turnover_yuan', 'breadth.turnover_change_rate');
+  if (promotionRate == null) missingFields.push('sentiment.promotion_rate');
+  if (!isCurrent) missingFields.push('indices', 'industries', 'mainlines');
+  const warnings = [];
+  if (enrichedBreadth?.sampleCount && enrichedBreadth.sampleCount < 5000) warnings.push(`有效交易样本 ${enrichedBreadth.sampleCount} 只，低于约 5000 只的完整市场目标`);
+  if (!isCurrent) warnings.push('历史日期仅使用带日期的池数据；未持久化的指数、广度、行业和资金数据不以当前快照替代');
+  const temperature = computeContractTemperature({ breadth: enrichedBreadth, limitUpCount: limitUp.count, brokenCount: broken.count, maxBoardHeight, promotionRate });
+  const generatedAt = new Date().toISOString();
+  const asOf = [enrichedBreadth?.capturedAt, ...indices.map(index => index.quoteAt || index.capturedAt)].filter(Boolean).sort().pop() || generatedAt;
   return {
     date,
+    meta: { requested_date: date, trade_date: date, as_of: asOf, report_mode: reviewReportMode(date, currentDate), currency: 'CNY' },
     indices,
     limitUpCount: limitUp.count,
     limitUpStocks: [...limitUp.stocks].sort((a, b) => (b.streak || 0) - (a.streak || 0) || (b.changePct || 0) - (a.changePct || 0)).slice(0, 20),
@@ -129,15 +193,17 @@ async function buildReviewData(date, breadth = null) {
     limitDownStocks: limitDown.stocks.slice(0, 10),
     brokenCount: broken.count,
     brokenStocks: broken.stocks.slice(0, 10),
-    breadth,
-    global,
+    breadth: enrichedBreadth,
+    sentiment: { limitUpCount: limitUp.count, limitDownCount: limitDown.count, brokenLimitCount: broken.count, sealRate, maxBoardHeight, promotionSuccessCount, promotionBaseCount: promotionBase.length || null, promotionRate },
+    heightDistribution,
     sectors,
     fundFlow,
     news,
     techScore: tech.scores,
     techDetail: tech.detail,
     temperature,
-    generatedAt: new Date().toISOString(),
+    quality: { status: missingFields.length ? 'partial' : 'ok', confidence: missingFields.length ? 'medium' : 'high', missingFields, warnings, conflicts: [], fieldLineage: { indices: '腾讯财经', breadth: '东方财富全市场分页', sentiment: '东方财富涨停/跌停/炸板池', industries: '东方财富行业行情', fundFlow: '东方财富行业资金流' } },
+    generatedAt,
   };
 }
 
@@ -146,9 +212,17 @@ function createHttpServer(storage) {
   let breadthSnapshot = null;
   let breadthJob = null;
   let latestRealtimePayload = null;
+  const responseCache = new Map();
+  const cached = async (key, ttl, loader, force = false) => {
+    const hit = responseCache.get(key);
+    if (!force && hit && Date.now() - hit.savedAt < ttl) return hit.value;
+    const value = await loader();
+    responseCache.set(key, { savedAt: Date.now(), value });
+    return value;
+  };
 
   function startBreadthCollection() {
-    if (breadthJob) return;
+    if (breadthJob) return breadthJob;
     breadthJob = review.fetchMarketBreadth()
       .then(result => {
         breadthSnapshot = result;
@@ -162,6 +236,7 @@ function createHttpServer(storage) {
         breadthSnapshot = { status: 'error', quality: 'unavailable', error: error.message, capturedAt: new Date().toISOString() };
       })
       .finally(() => { breadthJob = null; });
+    return breadthJob;
   }
 
   return http.createServer(async (req, res) => {
@@ -241,30 +316,45 @@ function createHttpServer(storage) {
     }
     if (url.pathname === '/api/review') {
       const date = url.searchParams.get('date') || todayISO();
+      const force = url.searchParams.get('refresh') === '1';
       if (!validDate(date)) return json(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
       const currentDate = latestTradingISO();
-      if (date === currentDate && (!breadthSnapshot || breadthSnapshot.status !== 'ready')) startBreadthCollection();
+      const persisted = storage.getReviewSnapshot(date);
+      if (persisted && !force) return json(res, 200, persisted);
+      if (date !== currentDate) {
+        if (persisted) return json(res, 200, persisted);
+        return json(res, 404, { error: '该日期没有已保存的完整复盘快照' });
+      }
+      const breadthIsStale = !breadthSnapshot?.capturedAt || Date.now() - Date.parse(breadthSnapshot.capturedAt) > 5 * 60 * 1000;
+      if (date === currentDate && (breadthSnapshot?.status !== 'ready' || breadthIsStale)) await startBreadthCollection();
       const breadth = date === currentDate ? (breadthSnapshot || { status: 'collecting', quality: 'pending', capturedAt: null }) : null;
-      return json(res, 200, await buildReviewData(date, breadth));
+      const payload = await buildReviewData(date, breadth, currentDate);
+      storage.saveReviewSnapshot(date, payload);
+      return json(res, 200, { ...payload, persisted: true, persistedAt: new Date().toISOString() });
     }
+    if (url.pathname === '/api/reviews') return json(res, 200, { reviews: storage.getReviewDates() });
     if (url.pathname === '/api/dragon') {
       const date = url.searchParams.get('date') || todayISO();
       if (!validDate(date)) return json(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
-      return json(res, 200, { date, list: await review.fetchDragonTiger(date) });
+      const ttl = date === latestTradingISO() ? 10 * 60 * 1000 : Number.POSITIVE_INFINITY;
+      return json(res, 200, await cached(`dragon:${date}`, ttl, async () => ({ date, list: await review.fetchDragonTiger(date) })));
     }
     if (url.pathname === '/api/global') {
       return json(res, 200, { global: await review.fetchGlobalIndices() });
     }
     if (url.pathname === '/api/stocks') {
       const codes = url.searchParams.get('codes') || '';
-      return json(res, 200, { stocks: await review.fetchStockQuotes(codes) });
+      const ttl = getMarketSession().isTrading ? 3000 : 15 * 60 * 1000;
+      return json(res, 200, await cached(`stocks:${codes}`, ttl, async () => ({ stocks: await review.fetchStockQuotes(codes) })));
     }
     if (url.pathname === '/api/kline') {
       const code = url.searchParams.get('code') || '';
       const date = url.searchParams.get('date') || todayISO();
       const symbol = review.toTxSymbol ? review.toTxSymbol(code) : '';
       if (!symbol) return json(res, 400, { error: '代码格式不正确' });
-      return json(res, 200, { code, kline: await review.fetchDailyKline(symbol, date) });
+      const current = date === latestTradingISO();
+      const ttl = current && getMarketSession().isTrading ? 60 * 1000 : Number.POSITIVE_INFINITY;
+      return json(res, 200, await cached(`kline:${code}:${date}`, ttl, async () => ({ code, kline: await review.fetchDailyKline(symbol, date) })));
     }
     // 静态：前端
     const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);

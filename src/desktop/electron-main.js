@@ -129,8 +129,13 @@ function startReviewScheduler() {
     runReview: (date, slot) => review.runDailyReview(date, { slot: slot.id, slotLabel: slot.label }),
     initialDate: savedState.lastReviewDate || '',
     initialSlot: savedState.lastReviewSlot || '',
-    onSuccess: (result, date, slot) => {
+    onSuccess: async (result, date, slot) => {
       saveReviewMarkdown(date, result.markdown);
+      if (slot.id === 'close') {
+        const response = await fetch(`http://127.0.0.1:${PORT}/api/review?date=${encodeURIComponent(date)}&refresh=1`, { signal: AbortSignal.timeout(180000) });
+        if (!response.ok) throw new Error(`完整复盘快照保存失败：HTTP ${response.status}`);
+        await response.json();
+      }
       saveState({ lastReviewDate: date, lastReviewSlot: `${date}@${slot.id}` });
       notify('每日复盘已生成', date + ' · ' + slot.label + ' · 市场温度 ' + result.temperature + '°，打开行情日报查看');
       console.log('[桌面端] ' + slot.label + '完成：' + date + '，温度 ' + result.temperature);

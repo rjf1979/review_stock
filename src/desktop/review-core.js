@@ -1,5 +1,5 @@
 // 内置 A 股每日复盘：腾讯（首选，不封IP）+ 东方财富（深度数据）取数 → 温度 → 生成复盘 Markdown
-// 由 server/index.js 定时调度，生成结果走 applyReport（AI 排版 + 首页提炼）
+// 由本地定时任务调度，按固定模板生成可审计的复盘数据。
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const REQUEST_GAP_MS = 1100; // 东财 2025 起风控加强：所有东财请求串行限流 ≥1s
 
@@ -223,6 +223,7 @@ async function fetchMarketBreadth() {
     redRatio: Math.round(up / stocks.length * 10000) / 100,
     upDownRatio: down ? Math.round(up / down * 100) / 100 : null,
     turnoverYi: Math.round(turnoverYi * 100) / 100,
+    tradedCodes: stocks.map(row => String(row.f12)),
     topGainers, topLosers, topTurnover,
     capturedAt: new Date().toISOString(),
   };
@@ -362,19 +363,46 @@ async function fetchLimitUpPool(dateYYYYMMDD) { return fetchTopicPool('limitUp',
 async function fetchLimitDownPool(dateYYYYMMDD) { return fetchTopicPool('limitDown', dateYYYYMMDD); }
 async function fetchBrokenBoardPool(dateYYYYMMDD) { return fetchTopicPool('broken', dateYYYYMMDD); }
 
-// ── F 块 · 龙虎榜（datacenter，稳定） ────────────
-async function fetchDragonTiger(date) {
+// ── F 块 · 龙虎榜（个股汇总 + 买卖席位明细） ──────
+async function fetchDragonTigerReport(reportName, date) {
   const filter = encodeURIComponent(`(TRADE_DATE>='${date}')(TRADE_DATE<='${date}')`);
-  const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_DAILYBILLBOARD_DETAILSNEW&columns=SECURITY_CODE,SECURITY_NAME_ABBR,TRADE_DATE,EXPLANATION,CLOSE_PRICE,CHANGE_RATE,BILLBOARD_NET_AMT,BILLBOARD_BUY_AMT,BILLBOARD_SELL_AMT,TURNOVERRATE&filter=${filter}&pageNumber=1&pageSize=20&sortColumns=BILLBOARD_NET_AMT&sortTypes=-1&source=WEB&client=WEB`;
+  const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&columns=ALL&filter=${filter}&pageNumber=1&pageSize=500&source=WEB&client=WEB`;
   const d = await emJson(url);
-  const rows = d?.result?.data || [];
-  return rows.map(r => ({
-    name: String(r.SECURITY_NAME_ABBR || ''), code: String(r.SECURITY_CODE || ''),
-    changePct: Number(r.CHANGE_RATE || 0), netBuy: Math.round((Number(r.BILLBOARD_NET_AMT) || 0) / 1e8 * 100) / 100,
-    buy: Math.round((Number(r.BILLBOARD_BUY_AMT) || 0) / 1e8 * 100) / 100,
-    sell: Math.round((Number(r.BILLBOARD_SELL_AMT) || 0) / 1e8 * 100) / 100,
-    reason: String(r.EXPLANATION || ''),
-  })).filter(r => r.name);
+  return Array.isArray(d?.result?.data) ? d.result.data : [];
+}
+function dragonSeatType(name) {
+  if (name === '机构专用') return '机构专用';
+  if (/^(沪股通|深股通)专用$/.test(name)) return '互联互通专用席位';
+  return '证券营业部';
+}
+function mapDragonSeat(row) {
+  const name = String(row.OPERATEDEPT_NAME || '').trim() || '营业部名称未披露';
+  const toYi = value => Math.round((Number(value) || 0) / 1e8 * 10000) / 10000;
+  return { name, type: dragonSeatType(name), buyYi: toYi(row.BUY), sellYi: toYi(row.SELL), netYi: toYi(row.NET) };
+}
+async function fetchDragonTiger(date) {
+  const summaryRows = await fetchDragonTigerReport('RPT_BILLBOARD_DAILYDETAILS', date);
+  await sleep(REQUEST_GAP_MS);
+  const buyerRows = await fetchDragonTigerReport('RPT_BILLBOARD_DAILYDETAILSBUY', date);
+  await sleep(REQUEST_GAP_MS);
+  const sellerRows = await fetchDragonTigerReport('RPT_BILLBOARD_DAILYDETAILSSELL', date);
+  const keyOf = row => `${String(row.SECURITY_CODE || '')}|${String(row.TRADE_ID || '')}`;
+  const groupSeats = rows => rows.reduce((groups, row) => {
+    const key = keyOf(row); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(mapDragonSeat(row)); return groups;
+  }, new Map());
+  const buyersByTrade = groupSeats(buyerRows);
+  const sellersByTrade = groupSeats(sellerRows);
+  const toYi = value => Math.round((Number(value) || 0) / 1e8 * 10000) / 10000;
+  return summaryRows.map(row => {
+    const key = keyOf(row);
+    return {
+      tradeId: String(row.TRADE_ID || ''), name: String(row.SECURITY_NAME_ABBR || ''), code: String(row.SECURITY_CODE || ''),
+      changePct: Number(row.CHANGE_RATE), netBuy: toYi(row.TOTAL_NET), buy: toYi(row.TOTAL_BUY), sell: toYi(row.TOTAL_SELL),
+      reason: String(row.EXPLANATION || ''),
+      buyers: (buyersByTrade.get(key) || []).sort((a, b) => b.buyYi - a.buyYi).slice(0, 5),
+      sellers: (sellersByTrade.get(key) || []).sort((a, b) => b.sellYi - a.sellYi).slice(0, 5),
+    };
+  }).filter(row => row.name && row.code).sort((a, b) => b.netBuy - a.netBuy);
 }
 
 // ── C 块 · 技术指标（东财 push2his 日K 计算） ───
@@ -384,7 +412,7 @@ async function fetchDailyKline(symbol, date, lmt = 60) {
   const d = await response.json();
   const node = d?.data?.[symbol];
   const arr = node?.qfqday || node?.day || [];
-  return arr.filter(k => k[0] <= date).map(k => ({ date: k[0], open: Number(k[1]), close: Number(k[2]), high: Number(k[3]), low: Number(k[4]) }));
+  return arr.filter(k => k[0] <= date).map(k => ({ date: k[0], open: Number(k[1]), close: Number(k[2]), high: Number(k[3]), low: Number(k[4]), volume: Number(k[5]) || 0 }));
 }
 function addDays(iso, days) {
   const d = new Date(iso + 'T00:00:00+08:00');
@@ -457,7 +485,7 @@ function computeTemperature(indices, limitUpCount, tech = null) {
 // ── 报告生成 ─────────────────────────────────────
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 function buildMarkdown(date, data) {
-  const { indices, limitUp, global, sectors, fundFlow, tech, temperature, news, slotLabel = '收盘复盘' } = data;
+  const { indices, limitUp, sectors, fundFlow, tech, temperature, news, slotLabel = '收盘复盘' } = data;
   const sectorRows = (sectors || []).map((s, i) => `| ${i + 1} | **${s.name}** | ${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}% | ${s.inflowYi >= 0 ? '+' : ''}${s.inflowYi.toFixed(2)} |`).join('\n');
   const flowRows = (fundFlow || []).map((s, i) => `| ${i + 1} | **${s.name}** | ${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(2)}% | ${s.inflowYi >= 0 ? '+' : ''}${s.inflowYi.toFixed(2)} |`).join('\n');
   const rows = indices.map(i =>
@@ -465,11 +493,10 @@ function buildMarkdown(date, data) {
   ).join('\n');
   const topUp = indices.filter(i => i.changePct > 0).sort((a, b) => b.changePct - a.changePct).slice(0, 3).map(i => `${i.name} ${i.changePct.toFixed(2)}%`).join('、');
   const ladder = limitUp.stocks.slice(0, 10).map(s => `| ${s.streak} 连板 | ${s.name} | ${s.sector} |`).join('\n');
-  const globalRows = (global || []).map(g => `| ${g.name.includes('恒生') ? '港股' : g.name.includes('纳') || g.name.includes('标普') || g.name.includes('道') ? '美股' : '-'} | ${g.name} | ${g.close.toFixed(2)} | ${g.change >= 0 ? '+' : ''}${g.change.toFixed(2)} | ${g.changePct >= 0 ? '+' : ''}${g.changePct.toFixed(2)}% |`).join('\n');
   const newsRows = (news || []).map(n => `- **${n.time}** ${n.title}${n.digest ? `　— ${truncate(n.digest, 60)}` : ''}`).join('\n');
   const techLine = (tech && tech.detail && tech.detail.length) ? tech.detail.join('；') : '数据暂缺';
   const inflowTop = (fundFlow && fundFlow[0]) ? `${fundFlow[0].name}（主力净流入 ${fundFlow[0].inflowYi.toFixed(2)} 亿）` : '—';
-  const topNews = (news && news[0]) ? `关注「${news[0].title}」等消息面扰动` : '关注消息面变化';
+  const topNews = (news && news[0]) ? `最新条目为「${news[0].title}」` : '当日快讯数据暂缺';
 
   return `# 📈 ${date} A 股每日行情复盘
 
@@ -525,27 +552,19 @@ ${ladder || '| - | - | - |'}
 
 ---
 
-## 四、亚太及海外市场
-
-| 市场 | 指数 | 收盘 | 涨跌 | 涨跌幅 |
-| --- | --- | --- | --- | --- |
-${globalRows || '| - | - | - | - | - |'}
-
----
-
-## 五、今日要闻 📰
+## 四、今日要闻 📰
 
 ${newsRows || '- 暂无今日要闻'}
 
 ---
 
-## 六、明日关注
+## 五、数据核对
 
-- **指数**：${upsLabel(indices)}${topUp ? `，领涨 ${topUp}` : ''}。
-- **资金**：主力资金净流入居前的是 ${inflowTop}，关注资金能否延续。
+- **指数**：${upsLabel(indices)}${topUp ? `；涨幅居前 ${topUp}` : ''}。
+- **资金**：主力资金净流入首位为 ${inflowTop}。
 - **技术面**：${techLine}。
 - **消息面**：${topNews}。
-- 关注领涨板块持续性及量能变化。
+- 以上内容由固定规则计算和排序，不包含走势预测。
 
 ---
 
@@ -560,10 +579,9 @@ function upsLabel(indices) {
 // ── 主入口：抓数据 → 生成 Markdown ─────────────
 async function runDailyReview(date, context = {}) {
   const dateCompact = date.replace(/-/g, '');
-  const [indices, limitUp, global, sectors, fundFlow, tech, news] = await Promise.all([
+  const [indices, limitUp, sectors, fundFlow, tech, news] = await Promise.all([
     fetchMarketIndices(),
     fetchLimitUpPool(dateCompact),
-    fetchGlobalIndices(),
     fetchSectors(),
     fetchSectorFundFlow(),
     fetchTechnicalSentiment(date),
@@ -571,12 +589,12 @@ async function runDailyReview(date, context = {}) {
   ]);
   const temperature = computeTemperature(indices, limitUp.count, tech);
   const slotLabel = context.slotLabel || (context.slot === 'midday' ? '午间快照' : '收盘复盘');
-  const markdown = buildMarkdown(date, { indices, limitUp, global, sectors, fundFlow, tech, temperature, news, slotLabel });
-  return { markdown, reviewSlot: context.slot || 'close', slotLabel, indices: indices.length, limitUpCount: limitUp.count, global: global.length, sectors: sectors.length, fundFlow: fundFlow.length, tech: tech.scores, temperature: temperature.score, news: news.length };
+  const markdown = buildMarkdown(date, { indices, limitUp, sectors, fundFlow, tech, temperature, news, slotLabel });
+  return { markdown, reviewSlot: context.slot || 'close', slotLabel, indices: indices.length, limitUpCount: limitUp.count, sectors: sectors.length, fundFlow: fundFlow.length, tech: tech.scores, temperature: temperature.score, news: news.length };
 }
 
 // ── I 块 · 自选股（默认列表，可在此调整） ────────
-const WATCHLIST = '600519,300750,601318,600036,000858,002594,601899,600900'; // 茅台/宁德/平安/招行/五粮液/比亚迪/紫金/长电
+const WATCHLIST = '600519,300750,601318,600036,000858,002594'; // 默认最多 6 只
 
 // ── 个股（自选股） ─────────────────────────────
 function toTxSymbol(code) {
@@ -591,7 +609,7 @@ async function fetchStockQuotes(codes) {
   const quotes = await fetchTencentQuotes(syms);
   return syms.map(s => {
     const q = quotes[s];
-    return q && q.latest > 0 ? { symbol: s, name: q.name.replace(/\s+/g, ''), code: s.slice(2), latest: q.latest, prevClose: q.prevClose, open: q.open, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100 } : null;
+    return q && q.latest > 0 ? { symbol: s, name: q.name.replace(/\s+/g, ''), code: s.slice(2), latest: q.latest, prevClose: q.prevClose, open: q.open, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100, quoteAt: q.quoteAt, capturedAt: q.capturedAt } : null;
   }).filter(Boolean);
 }
 
