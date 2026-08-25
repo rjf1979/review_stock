@@ -8,7 +8,7 @@ export default defineConfig({
   root: 'client',
   build: {
     outDir: path.resolve(__dirname, 'public/assets'),
-    emptyOutDir: false,
+    emptyOutDir: true,
     lib: { entry: path.resolve(__dirname, 'client/src/main.js'), formats: ['es'], fileName: 'app' }
   }
 });

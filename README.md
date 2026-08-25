@@ -4,7 +4,7 @@
   <img src="src/desktop/assets/icon.png" width="96" height="96" alt="行情日报 Desktop 图标">
 </p>
 
-行情日报是一套面向 A 股盘面观察与收盘整理的本地优先工具。当前主产品是 Windows Electron 桌面版，提供实时行情、市场宽度、概念与资金、盘口异动、自选股、龙虎榜和每日复盘；仓库同时保留配套的 Web 报告平台，用于接收和展示外部分析服务上传的 Markdown 报告。
+行情日报是一套面向 A 股盘面观察与收盘整理的本地优先工具。当前主产品是 Windows Electron 桌面版，提供实时行情、市场宽度、概念与资金、盘口异动、自选股、龙虎榜和每日复盘；仓库同时保留一个简单的 Web 官网，用于介绍桌面版和提供安装包下载入口。未来可能增加独立的 App 端。
 
 > 本项目只展示和整理公开行情数据，不提供荐股、交易指令或收益承诺。所有指标仅供参考，不构成投资建议。
 
@@ -29,12 +29,17 @@
 - **桌面体验**：默认适配当前屏幕工作区，窗口锁定最大化布局，支持最小化、关闭到托盘和单实例运行。
 - **本地数据**：设置、自选股、行情快照和复盘记录保存在当前 Windows 用户的 SQLite 数据库中，无需注册账号或安装数据库服务。
 
-### Web 报告平台
+### Web 官网
 
-- 接收外部分析服务上传的 Markdown 日报。
-- 异步渲染报告 HTML，并提炼首页所需结构化摘要。
-- 提供交易日状态、历史报告和后台配置管理。
-- PostgreSQL 保存平台业务数据；桌面版不依赖该平台即可运行。
+- **产品介绍**：说明桌面版的定位、功能、工作方式和本地数据特点。
+- **安装下载**：提供 Windows x64、Windows 32 位安装包和 GitHub Release 入口。
+- **当前边界**：官网不承载行情采集、报告服务、后台管理、邮件订阅或用户数据。
+
+### 未来 App 端
+
+- `src/app/` 目前只是移动端工程占位，没有可运行代码。
+- 后续将单独确定平台、技术栈、数据访问、同步、离线、通知和发布策略。
+- 移动端不直接依赖 Electron 桌面端主进程或本地 HTTP 服务。
 
 ## 技术架构
 
@@ -47,10 +52,13 @@ src/desktop/
     └─ sql.js SQLite 用户数据
 
 src/web/
-  Node.js Web 服务
-    ├─ Vue 3 + Vite 前端
-    ├─ PostgreSQL
-    └─ 外部 Markdown 报告上传与异步渲染
+  Vue 3 + Vite 官网
+    ├─ 桌面版产品介绍
+    ├─ Windows 安装包下载入口
+    └─ 静态资源服务 :3000
+
+src/app/
+  未来 App 端工程占位
 ```
 
 ## 快速开始
@@ -77,7 +85,7 @@ npm start
 
 ### 运行 Web 平台
 
-Web 平台需要 Node.js、npm 和 PostgreSQL。
+Web 端当前是桌面版官网，需要 Node.js 和 npm，不需要 PostgreSQL 或其他业务服务。
 
 ```powershell
 cd src/web
@@ -87,7 +95,7 @@ npm run build
 npm start
 ```
 
-默认访问地址为 `http://localhost:3000`，后台入口为 `http://localhost:3000/admin`。生产环境必须修改 `.env` 中的 `ADMIN_KEY` 和数据库连接信息，且不得提交 `.env`。
+默认访问地址为 `http://localhost:3000`。官网服务只读取 `PORT` 环境变量（默认 `3000`），不需要 `.env`、数据库或后台授权配置。
 
 ## Windows 打包
 
@@ -143,26 +151,14 @@ hangqing-desktop-<version>-win-ia32-setup.exe
 - 免费公开接口可能限流、延迟、调整字段或暂时不可用。应用会尽量使用最近有效快照，不伪造缺失数据。
 - 当前定时复盘按上海时区工作日判断，尚未接入完整交易所节假日日历。
 
-## 报告上传
-
-Web 平台不在服务端自行分析行情。外部分析服务通过以下接口上传 Markdown：
-
-```text
-POST /api/upload/report
-Headers: x-upload-key: <上传密钥>
-Content-Type: application/json
-```
-
-完整字段、响应和示例见 [后台管理 API 对接手册](docs/api-integration-manual.md)。上传密钥只保存在本地或生产环境配置中，不得写入代码、README 或提交记录。
-
 ## 目录说明
 
 | 路径 | 内容 |
 | --- | --- |
 | `src/desktop/` | Electron 桌面应用、本地行情服务、SQLite 和安装器 |
-| `src/web/` | Web 官网、报告平台及后台 |
-| `src/app/` | 未来移动端工程边界与占位说明 |
-| `docs/` | 设计、安装、接口和数据源说明 |
+| `src/web/` | Vue 官网、下载入口和静态服务 |
+| `src/app/` | 未来 App 端工程边界与占位说明 |
+| `docs/` | 桌面版设计、安装和数据源说明 |
 | `.agents/skills/` | 本项目行情采集、日报与 UI 工程规则 |
 | `.codex/memory/` | 项目决策与短期开发记录 |
 
@@ -182,10 +178,9 @@ git diff --check
 
 - [桌面版设计方案](docs/desktop-design.md)
 - [桌面安装与本地数据说明](docs/desktop-install.md)
-- [后台管理 API 对接手册](docs/api-integration-manual.md)
 - [v0.1.1 发布说明](docs/releases/v0.1.1.md)
 - [源码目录说明](src/README.md)
-- [Web 平台说明](src/web/README.md)
+- [Web 官网说明](src/web/README.md)
 
 ## 免责声明
 
