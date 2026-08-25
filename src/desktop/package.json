@@ -47,11 +47,12 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "x64",
+            "ia32"
           ]
         }
       ],
-      "artifactName": "hangqing-desktop-${version}-win-x64.${ext}"
+      "artifactName": "hangqing-desktop-${version}-win-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
