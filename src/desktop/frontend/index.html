@@ -491,7 +491,7 @@
               <div class="watch-quote"><strong>{{ s.latest.toFixed(2) }}</strong><div :class="s.change>=0?'up':'down'"><b>{{ s.change>=0?'+':'' }}{{ s.change.toFixed(2) }}</b><span>{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</span></div></div>
               <div class="watch-meta"><span>{{ s.change>=0 ? '上涨' : '下跌' }} · {{ quoteTimeLabel(s.quoteAt || s.capturedAt) }}</span><span>{{ marketOpen ? '盘中' : '最近交易' }}</span></div>
               <section class="watch-chart-block" aria-label="日 K 线走势">
-                <div class="watch-chart-title"><strong>日 K 蜡烛图</strong><span>MA 5/10/20/60 · VOL</span></div>
+                <div class="watch-chart-title"><strong>日 K 蜡烛图</strong><span>{{ watchChartDateLabel(s.code) }} · MA 5/10/20/60 · VOL</span></div>
                 <div class="watch-chart-frame">
                   <div v-if="watchChartState(s.code, 'daily') === 'loading'" class="watch-chart-state">获取日 K 中…</div>
                   <div v-else-if="watchChartState(s.code, 'daily') === 'error'" class="watch-chart-state chart-error">日 K 暂不可用</div>
@@ -666,7 +666,7 @@
     const PANKOU_COLUMN_COUNT = 3;
     const PANKOU_ROWS_PER_COLUMN = 3;
     const PANKOU_INSERT_INTERVAL_MS = 260;
-    const WATCHLIST_LIMIT = 100;
+    const WATCHLIST_LIMIT = 9;
     const marketPart = (parts, type) => Number(parts.find(part => part.type === type)?.value || 0);
     const dateKey = date => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
     function getMarketStatus(now = new Date()) {
@@ -899,7 +899,16 @@
         // 自选股
         watchSeries(code, type) { return this.watchChartData[code]?.[type]?.data || []; },
         watchChartState(code, type) { return this.watchChartData[code]?.[type]?.status || 'loading'; },
-        normalizeDailyBars(rows) { return (rows || []).map(k => ({ timestamp: Date.parse(`${k.date}T00:00:00+08:00`), open: Number(k.open), high: Number(k.high), low: Number(k.low), close: Number(k.close), volume: Number(k.volume) || 0 })).filter(k => Number.isFinite(k.timestamp) && [k.open, k.high, k.low, k.close].every(Number.isFinite)); },
+        watchChartDateLabel(code) { const daily=this.watchChartData[code]?.daily; return daily?.latestDate ? `截至 ${daily.latestDate}${daily.quoteFilled ? '（报价补齐）' : ''}` : '日期待更新'; },
+        quoteDate(stock) { if (!stock?.quoteAt) return null; try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date(stock.quoteAt)); } catch { return null; } },
+        normalizeDailyBars(rows, stock = null) {
+          const bars = (rows || []).map(k => ({ date: k.date, timestamp: Date.parse(`${k.date}T00:00:00+08:00`), open: Number(k.open), high: Number(k.high), low: Number(k.low), close: Number(k.close), volume: Number(k.volume) || 0 })).filter(k => Number.isFinite(k.timestamp) && [k.open, k.high, k.low, k.close].every(Number.isFinite));
+          const date = this.quoteDate(stock); const latest = bars.at(-1);
+          if (!date || !stock?.latest || (latest?.date && latest.date > date)) return bars;
+          const quoteBar = { date, timestamp: Date.parse(`${date}T00:00:00+08:00`), open: Number(stock.open) || Number(stock.latest), high: Number(stock.high) || Math.max(Number(stock.open) || Number(stock.latest), Number(stock.latest)), low: Number(stock.low) || Math.min(Number(stock.open) || Number(stock.latest), Number(stock.latest)), close: Number(stock.latest), volume: Number(stock.volume) || 0 };
+          if (latest?.date === date) bars[bars.length - 1] = quoteBar; else bars.push(quoteBar);
+          return bars;
+        },
         chartPalette() { const styles = getComputedStyle(document.body); const read = key => styles.getPropertyValue(key).trim(); return { paper: read('--paper') || '#f6f8f7', ink: read('--ink') || '#17212b', muted: read('--muted') || '#697582', line: read('--line') || '#dfe5e9', red: read('--red') || '#e34845', green: read('--green') || '#168b72' }; },
         destroyWatchCharts() { this.watchChartObserver?.disconnect(); this.watchChartObserver = null; for (const chart of Object.values(this.watchCharts || {})) { try { window.klinecharts?.dispose(chart); } catch (error) { console.warn('[桌面端] 图表释放失败：', error.message); } } this.watchCharts = {}; },
         initWatchChart(element, data) {
@@ -933,8 +942,9 @@
             this.watchChartData = Object.fromEntries(this.watchQuotes.map(stock => [stock.code, { daily: { status: 'loading', data: [] } }]));
             const chartRows = await this.mapWithConcurrency(this.watchQuotes, 6, async stock => {
               const [dailyResult] = await Promise.allSettled([this.api('/api/kline?code=' + encodeURIComponent(stock.code))]);
-              const success = (result, data, mapper = value => value) => result.status === 'fulfilled' ? { status: 'success', data: mapper(result.value?.[data] || []) } : { status: 'error', data: [], error: result.reason?.message || '接口暂不可用' };
-              return [stock.code, { daily: success(dailyResult, 'kline', rows => this.normalizeDailyBars(rows)) }];
+              if (dailyResult.status !== 'fulfilled') return [stock.code, { daily: { status: 'error', data: [], error: dailyResult.reason?.message || '接口暂不可用' } }];
+              const response = dailyResult.value || {}; const data = this.normalizeDailyBars(response.kline || [], stock); const quoteDate = this.quoteDate(stock); const sourceLatestDate = response.latestDate || null;
+              return [stock.code, { daily: { status: 'success', data, latestDate: data.at(-1)?.date || null, sourceLatestDate, quoteFilled: Boolean(quoteDate && sourceLatestDate !== quoteDate) } }];
             });
             this.watchChartData = Object.fromEntries(chartRows);
             this.status.watch = 'success'; await this.$nextTick(); this.renderWatchCharts();
@@ -944,8 +954,8 @@
         },
         async mapWithConcurrency(items, limit, task) { const results = new Array(items.length); let next = 0; const worker = async () => { while (next < items.length) { const index = next++; results[index] = await task(items[index], index); } }; await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker)); return results; },
         isWatched(code) { return this.watch.includes(String(code)); },
-        addDragonStock(stock) { this.dragonWatchNotice = ''; if (this.isWatched(stock.code)) { this.dragonWatchNotice = `${stock.name}已在自选股中`; return; } if (this.watch.length >= WATCHLIST_LIMIT) { this.dragonWatchNotice = '自选股已达到 100 只上限'; return; } this.watch.push(String(stock.code)); this.saveWatch(); this.dragonWatchNotice = `${stock.name}已加入自选股（${this.watch.length}/100）`; },
-        addStock() { const c = this.addCode.trim(); this.formError = ''; if (this.watch.length >= WATCHLIST_LIMIT) { this.formError = '最多只能添加 100 只自选股'; return; } if (!c) { this.formError = '请输入 6 位股票代码'; return; } if (!/^\d{6}$/.test(c)) { this.formError = '请输入 6 位股票代码'; return; } if (this.watch.includes(c)) { this.formError = '该股票已在自选股中'; return; } this.watch.push(c); this.addCode = ''; this.saveWatch(); this.loadWatch(); },
+        addDragonStock(stock) { this.dragonWatchNotice = ''; if (this.isWatched(stock.code)) { this.dragonWatchNotice = `${stock.name}已在自选股中`; return; } if (this.watch.length >= WATCHLIST_LIMIT) { this.dragonWatchNotice = '免费版自选股已达到 9 只上限'; return; } this.watch.push(String(stock.code)); this.saveWatch(); this.dragonWatchNotice = `${stock.name}已加入自选股（${this.watch.length}/9）`; },
+        addStock() { const c = this.addCode.trim(); this.formError = ''; if (this.watch.length >= WATCHLIST_LIMIT) { this.formError = '免费版最多添加 9 只自选股'; return; } if (!c) { this.formError = '请输入 6 位股票代码'; return; } if (!/^\d{6}$/.test(c)) { this.formError = '请输入 6 位股票代码'; return; } if (this.watch.includes(c)) { this.formError = '该股票已在自选股中'; return; } this.watch.push(c); this.addCode = ''; this.saveWatch(); this.loadWatch(); },
         removeStock(stock) { if (!window.confirm(`确定将「${stock.name}」移出自选股？`)) return; const c = stock.code; this.watch = this.watch.filter(x => x !== c); this.saveWatch(); this.loadWatch(); },
         saveWatch() { localStorage.setItem('hq_watch', JSON.stringify(this.watch)); this.api('/api/watchlist', { method: 'POST', body: JSON.stringify({ watchlist: this.watch }) }).catch(error => console.warn('[桌面端] SQLite 自选股保存失败：', error.message)); },
         // 历史

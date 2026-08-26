@@ -73,6 +73,10 @@ function canReuseClosedSnapshot(snapshot, session = getMarketSession()) {
 function stockQuoteCacheKey(codes, session = getMarketSession()) {
   return `stocks:${expectedSnapshotDate(session)}:${codes}`;
 }
+function klineCacheTtl(date, session = getMarketSession()) {
+  if (date !== expectedSnapshotDate(session)) return Number.POSITIVE_INFINITY;
+  return session.isTrading ? 60 * 1000 : 5 * 60 * 1000;
+}
 function buildDataMeta(session, indices, indexFutures, breadth, pankou = null) {
   const indexSourceAt = latestSourceAt(indices);
   const indexSourceDate = shanghaiDate(indexSourceAt);
@@ -373,12 +377,16 @@ function createHttpServer(storage) {
     }
     if (url.pathname === '/api/kline') {
       const code = url.searchParams.get('code') || '';
-      const date = url.searchParams.get('date') || todayISO();
+      const marketSession = getMarketSession();
+      const date = url.searchParams.get('date') || expectedSnapshotDate(marketSession);
       const symbol = review.toTxSymbol ? review.toTxSymbol(code) : '';
       if (!symbol) return json(res, 400, { error: '代码格式不正确' });
-      const current = date === latestTradingISO();
-      const ttl = current && getMarketSession().isTrading ? 60 * 1000 : Number.POSITIVE_INFINITY;
-      return json(res, 200, await cached(`kline:${code}:${date}`, ttl, async () => ({ code, kline: await review.fetchDailyKline(symbol, date) })));
+      const ttl = klineCacheTtl(date, marketSession);
+      return json(res, 200, await cached(`kline:${code}:${date}`, ttl, async () => {
+        const kline = await review.fetchDailyKline(symbol, date);
+        const latestDate = kline.at(-1)?.date || null;
+        return { code, tradeDate: date, latestDate, isFresh: latestDate === date, kline };
+      }));
     }
     // 静态：前端
     const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
@@ -409,4 +417,4 @@ async function startServer({ storage, port = PORT } = {}) {
 
 if (require.main === module) startServer().catch(error => { console.error('[桌面端] 本地服务启动失败：', error); process.exitCode = 1; });
 
-module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey };
+module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl };

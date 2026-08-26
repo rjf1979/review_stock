@@ -6,17 +6,28 @@
 
 行情日报是一套面向 A 股盘面观察与收盘整理的本地优先工具。当前主产品是 Windows Electron 桌面版，提供实时行情、市场宽度、概念与资金、盘口异动、自选股、龙虎榜和每日复盘；仓库同时保留一个简单的 Web 官网，用于介绍桌面版和提供安装包下载入口。未来可能增加独立的 App 端。
 
+官网：[https://dailystock.zhicha.io](https://dailystock.zhicha.io)
+
 > 本项目只展示和整理公开行情数据，不提供荐股、交易指令或收益承诺。所有指标仅供参考，不构成投资建议。
 
 ## 下载
 
-当前 Windows 版本：`0.2.2`
+当前 Windows 版本：`0.2.3`
 
-- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.2/hangqing-desktop-0.2.2-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.2/hangqing-desktop-0.2.2-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
+- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-ia32-setup.exe)：仅用于 32 位 Windows。
 - [查看全部版本与发布说明](https://github.com/rjf1979/review_stock/releases)。
 
 安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从本仓库 Release 页面下载并核对发布页提供的 SHA-256。
+
+## 使用许可
+
+本项目采用 [Hangqing Personal Non-Commercial Source License 1.0](LICENSE)，属于源码可见的个人非商业许可，不是 OSI 定义的开源许可证。
+
+- 允许个人为非商业目的查看、运行、复制和修改。
+- 未经版权方事先书面授权，禁止公司内部使用、收费服务、广告获利、代开发、转售、SaaS、商业产品集成以及其他直接或间接商业使用。
+- 未经授权的商业使用将导致许可自动终止，版权方保留停止侵权、追究责任和索赔损失的权利。
+- 第三方依赖、图表库及素材仍按各自许可证和 NOTICE 文件执行。
 
 ## 功能概览
 
@@ -40,7 +51,7 @@
 
 #### 自选股
 
-采用一行三列的图表布局，一屏可观察 6 只股票。每张行情卡包含日 K 蜡烛图、MA5/10/20/60 均线和 VOL 成交量，自选股最多保存 100 只。
+采用一行三列的图表布局，一屏可观察 6 只股票。每张行情卡包含日 K 蜡烛图、MA5/10/20/60 均线和 VOL 成交量，免费版自选股最多保存 9 只。
 
 ![行情日报 Desktop 自选股蜡烛图页面](docs/screenshots/desktop/watchlist.png)
 
@@ -107,14 +118,14 @@ npm run check
 npm run desktop
 ```
 
-桌面应用会在内部启动 `http://localhost:3100`。只调试本地服务与浏览器界面时可运行：
+桌面应用会自动启动内置本地服务。只调试本地服务与浏览器界面时可运行：
 
 ```powershell
 cd src/desktop
 npm start
 ```
 
-然后访问 `http://localhost:3100`。
+启动后通过终端提示的本地调试地址访问。
 
 ### 运行 Web 平台
 
@@ -128,11 +139,11 @@ npm run build
 npm start
 ```
 
-默认访问地址为 `http://localhost:3000`。官网服务只读取 `PORT` 环境变量（默认 `3000`），不需要 `.env`、数据库或后台授权配置。
+线上官网地址为 [https://dailystock.zhicha.io](https://dailystock.zhicha.io)。官网服务只读取 `PORT` 环境变量，不需要数据库或后台授权配置。
 
 ## Windows 打包
 
-桌面版当前版本为 `0.2.2`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.2.3`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop

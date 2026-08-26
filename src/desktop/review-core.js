@@ -37,7 +37,7 @@ async function fetchTencentQuotes(symbols) {
     if (!m) continue;
     const f = m[2].split('~');
     if (f.length < 6) continue;
-    out[m[1]] = { name: f[1], latest: Number(f[3]), prevClose: Number(f[4]) || Number(f[3]), open: Number(f[5]) || null, volume: Number(f[6]) || 0, amountWan: Number(f[37]) || 0, pe: Number(f[39]) || null, quoteAt: parseTencentQuoteTime(f[30]), capturedAt: new Date().toISOString() };
+    out[m[1]] = { name: f[1], latest: Number(f[3]), prevClose: Number(f[4]) || Number(f[3]), open: Number(f[5]) || null, volume: Number(f[6]) || 0, high: Number(f[33]) || null, low: Number(f[34]) || null, amountWan: Number(f[37]) || 0, pe: Number(f[39]) || null, quoteAt: parseTencentQuoteTime(f[30]), capturedAt: new Date().toISOString() };
   }
   return out;
 }
@@ -609,7 +609,7 @@ async function fetchStockQuotes(codes) {
   const quotes = await fetchTencentQuotes(syms);
   return syms.map(s => {
     const q = quotes[s];
-    return q && q.latest > 0 ? { symbol: s, name: q.name.replace(/\s+/g, ''), code: s.slice(2), latest: q.latest, prevClose: q.prevClose, open: q.open, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100, quoteAt: q.quoteAt, capturedAt: q.capturedAt } : null;
+    return q && q.latest > 0 ? { symbol: s, name: q.name.replace(/\s+/g, ''), code: s.slice(2), latest: q.latest, prevClose: q.prevClose, open: q.open, high: q.high, low: q.low, volume: q.volume, change: Math.round((q.latest - q.prevClose) * 100) / 100, changePct: Math.round((q.latest - q.prevClose) / q.prevClose * 10000) / 100, quoteAt: q.quoteAt, capturedAt: q.capturedAt } : null;
   }).filter(Boolean);
 }
 

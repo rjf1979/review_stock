@@ -13,7 +13,7 @@ npm run build
 node server/index.js
 ```
 
-打开 `http://localhost:3000`。
+正式官网地址：[https://dailystock.zhicha.io](https://dailystock.zhicha.io)。本地开发时通过启动命令输出的调试地址访问。
 
 ## 未来 App 端
 

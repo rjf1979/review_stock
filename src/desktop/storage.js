@@ -4,7 +4,7 @@ const path = require('path');
 const initSqlJs = require('sql.js');
 
 const DEFAULT_SETTINGS = { theme: 'light', refreshSec: 3, notify: false };
-const WATCHLIST_LIMIT = 100;
+const WATCHLIST_LIMIT = 9;
 
 function parseValue(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }

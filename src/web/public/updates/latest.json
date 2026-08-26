@@ -1,22 +1,22 @@
 {
-  "version": "0.2.2",
-  "publishedAt": "2026-08-26T09:59:36.412Z",
+  "version": "0.2.3",
+  "publishedAt": "2026-08-26T11:19:31.462Z",
   "notes": [
-    "新增启动后自动检查更新与每 6 小时定时检查。",
-    "支持按 Windows 架构下载升级包并显示下载进度。",
-    "升级前校验文件大小与 SHA-256，校验通过后可重启升级。",
-    "设置页新增手动检查、失败重试和版本更新状态。"
+    "免费版自选股上限调整为 9 只，并在本地存储层强制校验。",
+    "修复闭市后日 K 图可能停留在上一交易日的问题。",
+    "当 K 线源短暂落后时使用最新报价补齐当日 K 棒，并标注数据日期。",
+    "项目许可调整为个人可用、禁止未经授权的商业使用。"
   ],
   "assets": {
     "x64": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.2-win-x64-setup.exe",
-      "size": 84580082,
-      "sha256": "194e133c6f1b5b31e7fd0d039878b4bf88e00b58451b5462d34bc1724c808b82"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.3-win-x64-setup.exe",
+      "size": 84572908,
+      "sha256": "e7fde41ae63988848abb52118fd2b4f0a93c8a40495c7e6340a121d91440e7e2"
     },
     "ia32": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.2-win-ia32-setup.exe",
-      "size": 79834034,
-      "sha256": "31fc6f69123d5808184e3a5bdddd8bb461149fbefdb27d43aca882ad94766e21"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.3-win-ia32-setup.exe",
+      "size": 79903061,
+      "sha256": "ca8dffede80435e6a8b31890cde9f54679f1621d34c397d74b5363fec4c94c54"
     }
   }
 }
