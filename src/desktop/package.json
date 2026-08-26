@@ -1,13 +1,14 @@
 {
   "name": "hangqing-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "行情日报 Desktop - A股实时行情 + 每日复盘桌面工具（本地取数）",
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "check": "node --check storage.js && node --check review-core.js && node --check review-scheduler.js && node --check preload.js && node --check server.js && node --check electron-main.js && node scripts/check-changelog.js",
+    "check": "node --check storage.js && node --check review-core.js && node --check review-scheduler.js && node --check preload.js && node --check server.js && node --check server.test.js && node --check electron-main.js && node scripts/check-changelog.js",
+    "test": "node server.test.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },

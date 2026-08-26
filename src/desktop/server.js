@@ -51,6 +51,28 @@ function shanghaiDate(value) {
 function latestSourceAt(indices = []) {
   return indices.map(item => item.quoteAt || item.capturedAt).filter(Boolean).sort().pop() || null;
 }
+function snapshotTradeDate(snapshot) {
+  if (!snapshot) return null;
+  return snapshot.dataMeta?.aShare?.sourceDate
+    || shanghaiDate(latestSourceAt(snapshot.indices))
+    || snapshot.asOfDate
+    || null;
+}
+function expectedSnapshotDate(session) {
+  if (session.state === 'preopen') return previousWeekdayISO(session.date);
+  if (session.state === 'weekend') {
+    let date = session.date;
+    while ([0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay())) date = previousWeekdayISO(date);
+    return date;
+  }
+  return session.date;
+}
+function canReuseClosedSnapshot(snapshot, session = getMarketSession()) {
+  return Boolean(snapshot && snapshotTradeDate(snapshot) === expectedSnapshotDate(session));
+}
+function stockQuoteCacheKey(codes, session = getMarketSession()) {
+  return `stocks:${expectedSnapshotDate(session)}:${codes}`;
+}
 function buildDataMeta(session, indices, indexFutures, breadth, pankou = null) {
   const indexSourceAt = latestSourceAt(indices);
   const indexSourceDate = shanghaiDate(indexSourceAt);
@@ -263,8 +285,9 @@ function createHttpServer(storage) {
         const cached = storage.getSnapshot();
         if (!breadthSnapshot && cached?.breadth) breadthSnapshot = cached.breadth;
         const marketSession = getMarketSession();
-        if (!marketSession.isTrading && (latestRealtimePayload || cached)) {
-          return json(res, 200, decorateCachedSnapshot(latestRealtimePayload || cached));
+        const availableSnapshot = latestRealtimePayload || cached;
+        if (!marketSession.isTrading && canReuseClosedSnapshot(availableSnapshot, marketSession)) {
+          return json(res, 200, decorateCachedSnapshot(availableSnapshot));
         }
         const date = todayCompact();
         const [indices, indexFutures, limitUp, limitDown, broken, sectors, fallingSectors, concepts, fallingConcepts, fundFlow, outflow, pankou] = await Promise.all([
@@ -344,8 +367,9 @@ function createHttpServer(storage) {
     }
     if (url.pathname === '/api/stocks') {
       const codes = url.searchParams.get('codes') || '';
-      const ttl = getMarketSession().isTrading ? 3000 : 15 * 60 * 1000;
-      return json(res, 200, await cached(`stocks:${codes}`, ttl, async () => ({ stocks: await review.fetchStockQuotes(codes) })));
+      const marketSession = getMarketSession();
+      const ttl = marketSession.isTrading ? 3000 : 15 * 60 * 1000;
+      return json(res, 200, await cached(stockQuoteCacheKey(codes, marketSession), ttl, async () => ({ stocks: await review.fetchStockQuotes(codes) })));
     }
     if (url.pathname === '/api/kline') {
       const code = url.searchParams.get('code') || '';
@@ -385,4 +409,4 @@ async function startServer({ storage, port = PORT } = {}) {
 
 if (require.main === module) startServer().catch(error => { console.error('[桌面端] 本地服务启动失败：', error); process.exitCode = 1; });
 
-module.exports = { startServer };
+module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey };
