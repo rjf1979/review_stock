@@ -25,6 +25,7 @@
     .window-control:hover,.window-control:focus-visible{background:var(--header-active);color:var(--header-ink)}
     .window-control.close:hover,.window-control.close:focus-visible{background:#c42b1c;color:#fff}
     .sponsor-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(8,15,20,.56);-webkit-app-region:no-drag}.sponsor-dialog{position:relative;width:min(380px,100%);max-height:calc(100vh - 28px);overflow:auto;padding:20px 24px;background:var(--card-bg);border:1px solid var(--line);border-top:4px solid var(--red);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.3);text-align:center}.sponsor-close{position:absolute;top:10px;right:10px;width:36px;height:36px;border:0;border-radius:6px;background:var(--card-bg);color:var(--muted);font:500 24px/1 system-ui;cursor:pointer}.sponsor-close:hover,.sponsor-close:focus-visible{background:var(--header-active);color:var(--red)}.sponsor-dialog h2{margin:2px 36px 4px;font-size:1.12rem}.sponsor-dialog>p{margin:0 0 12px;color:var(--muted);font-size:.78rem}.sponsor-qr-frame{display:grid;width:min(270px,100%);aspect-ratio:9/16;margin:0 auto;overflow:hidden;place-items:center;border:1px solid var(--line);border-radius:7px;background:#fff}.sponsor-qr-frame img{display:block;width:100%;height:100%;object-fit:contain}.sponsor-qr-empty{display:grid;height:100%;place-items:center;padding:20px;color:#697582;border:1px dashed #c9d1d5;font-size:.78rem}.sponsor-note{display:block;margin-top:10px;color:var(--muted);font-size:.7rem}
+    .confirm-actions{display:flex;justify-content:center;gap:10px;margin-top:10px}.confirm-actions button{min-width:88px;padding:8px 14px;border-radius:6px;font:500 .88rem system-ui;cursor:pointer}.confirm-actions .confirm-cancel{border:1px solid var(--line);background:var(--card-bg);color:var(--ink)}.confirm-actions .confirm-cancel:hover,.confirm-actions .confirm-cancel:focus-visible{border-color:var(--muted);color:var(--red)}.confirm-actions .confirm-ok{border:1px solid var(--red);background:var(--red);color:#fff}.confirm-actions .confirm-ok:hover,.confirm-actions .confirm-ok:focus-visible{opacity:.88}.confirm-detail{margin:6px 0 0;padding:8px 10px;background:var(--header-active);border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:.74rem;line-height:1.5;text-align:left}
     main{flex:1;overflow:auto;padding:16px 20px}
     button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
     .indices{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
@@ -486,7 +487,7 @@
             <article v-for="s in watchQuotes" :key="s.code" class="watch-card" :class="s.change>=0?'is-up':'is-down'">
               <div class="watch-card-head">
                 <div class="watch-identity"><strong>{{ s.name }}</strong><span>{{ s.code }}</span></div>
-                <button type="button" class="watch-remove" @click="removeStock(s)" :aria-label="'移除' + s.name" :title="'移除' + s.name">×</button>
+                <button type="button" class="watch-remove" @click="requestRemove(s)" :aria-label="'移除' + s.name" :title="'移除' + s.name">×</button>
               </div>
               <div class="watch-quote"><strong>{{ s.latest.toFixed(2) }}</strong><div :class="s.change>=0?'up':'down'"><b>{{ s.change>=0?'+':'' }}{{ s.change.toFixed(2) }}</b><span>{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</span></div></div>
               <div class="watch-meta"><span>{{ s.change>=0 ? '上涨' : '下跌' }} · {{ quoteTimeLabel(s.quoteAt || s.capturedAt) }}</span><span>{{ marketOpen ? '盘中' : '最近交易' }}</span></div>
@@ -656,6 +657,17 @@
         <small class="sponsor-note">请在支付前核对收款方信息</small>
       </section>
     </div>
+    <div v-if="confirmDialog" class="sponsor-backdrop" role="presentation" @click.self="resolveConfirm(false)" @keydown.esc.window="resolveConfirm(false)">
+      <section ref="confirmDialog" class="sponsor-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-desc">
+        <h2 id="confirm-title">{{ confirmDialog.title }}</h2>
+        <p id="confirm-desc">{{ confirmDialog.message }}</p>
+        <p v-if="confirmDialog.detail" class="confirm-detail">{{ confirmDialog.detail }}</p>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-cancel" @click="resolveConfirm(false)">{{ confirmDialog.cancelLabel || '取消' }}</button>
+          <button type="button" class="confirm-ok" @click="resolveConfirm(true)">{{ confirmDialog.okLabel || '确定' }}</button>
+        </div>
+      </section>
+    </div>
   </div>
 
   <script>
@@ -688,7 +700,7 @@
     }
     createApp({
       data() { return {
-        view: 'realtime', real: {}, review: {}, reviewCache: {}, dragon: {}, dragonWatchNotice: '', sponsorOpen: false, sponsorQrAvailable: true, updatedTime: '-', marketStatus: getMarketStatus(),
+        view: 'realtime', real: {}, review: {}, reviewCache: {}, dragon: {}, dragonWatchNotice: '', sponsorOpen: false, sponsorQrAvailable: true, confirmDialog: null, updatedTime: '-', marketStatus: getMarketStatus(),
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
@@ -934,7 +946,7 @@
           document.querySelectorAll('.watch-chart[data-chart-key]').forEach(element => this.watchChartObserver.observe(element));
         },
         async loadWatch() {
-          this.status.watch = 'loading'; this.errors.watch = ''; const job = this.beginLoading('自选行情刷新中…');
+          this.status.watch = 'loading'; this.errors.watch = '';
           try {
             if (!this.watch.length) { this.destroyWatchCharts(); this.watchQuotes = []; this.watchChartData = {}; this.status.watch = 'success'; return; }
             this.destroyWatchCharts();
@@ -950,13 +962,14 @@
             this.status.watch = 'success'; await this.$nextTick(); this.renderWatchCharts();
           }
           catch (e) { this.status.watch = 'error'; this.errors.watch = '自选行情获取失败：' + e.message; }
-          finally { this.endLoading(job); }
         },
         async mapWithConcurrency(items, limit, task) { const results = new Array(items.length); let next = 0; const worker = async () => { while (next < items.length) { const index = next++; results[index] = await task(items[index], index); } }; await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker)); return results; },
         isWatched(code) { return this.watch.includes(String(code)); },
-        addDragonStock(stock) { this.dragonWatchNotice = ''; if (this.isWatched(stock.code)) { this.dragonWatchNotice = `${stock.name}已在自选股中`; return; } if (this.watch.length >= WATCHLIST_LIMIT) { this.dragonWatchNotice = '免费版自选股已达到 9 只上限'; return; } this.watch.push(String(stock.code)); this.saveWatch(); this.dragonWatchNotice = `${stock.name}已加入自选股（${this.watch.length}/9）`; },
-        addStock() { const c = this.addCode.trim(); this.formError = ''; if (this.watch.length >= WATCHLIST_LIMIT) { this.formError = '免费版最多添加 9 只自选股'; return; } if (!c) { this.formError = '请输入 6 位股票代码'; return; } if (!/^\d{6}$/.test(c)) { this.formError = '请输入 6 位股票代码'; return; } if (this.watch.includes(c)) { this.formError = '该股票已在自选股中'; return; } this.watch.push(c); this.addCode = ''; this.saveWatch(); this.loadWatch(); },
-        removeStock(stock) { if (!window.confirm(`确定将「${stock.name}」移出自选股？`)) return; const c = stock.code; this.watch = this.watch.filter(x => x !== c); this.saveWatch(); this.loadWatch(); },
+        addDragonStock(stock) { this.dragonWatchNotice = ''; if (this.isWatched(stock.code)) { this.dragonWatchNotice = `${stock.name}已在自选股中`; return; } if (this.watch.length >= WATCHLIST_LIMIT) { this.dragonWatchNotice = '免费版自选股已达到 9 只上限'; return; } this.watch.unshift(String(stock.code)); this.saveWatch(); this.dragonWatchNotice = `${stock.name}已加入自选股（${this.watch.length}/9）`; },
+        addStock() { const c = this.addCode.trim(); this.formError = ''; if (this.watch.length >= WATCHLIST_LIMIT) { this.formError = '免费版最多添加 9 只自选股'; return; } if (!c) { this.formError = '请输入 6 位股票代码'; return; } if (!/^\d{6}$/.test(c)) { this.formError = '请输入 6 位股票代码'; return; } if (this.watch.includes(c)) { this.formError = '该股票已在自选股中'; return; } this.watch.unshift(c); this.addCode = ''; this.saveWatch(); this.loadWatch(); },
+        requestConfirm(options) { return new Promise(resolve => { this.confirmDialog = { ...options, resolve }; this.$nextTick(() => this.$refs.confirmDialog?.querySelector('.confirm-ok')?.focus()); }); },
+        resolveConfirm(ok) { const dialog = this.confirmDialog; if (!dialog) return; this.confirmDialog = null; const confirmed = Boolean(ok); if (dialog.requestId) window.desktopBridge?.confirmResult(dialog.requestId, confirmed); else dialog.resolve?.(confirmed); if (this.view === 'watch') document.getElementById('watch-code')?.focus(); },
+        async requestRemove(stock) { const confirmed = await this.requestConfirm({ title: '移出自选股', message: `确定将「${stock.name}」移出自选股？`, okLabel: '移除', cancelLabel: '取消' }); if (!confirmed) return; const c = stock.code; this.watch = this.watch.filter(x => x !== c); this.saveWatch(); this.loadWatch(); document.getElementById('watch-code')?.focus(); },
         saveWatch() { localStorage.setItem('hq_watch', JSON.stringify(this.watch)); this.api('/api/watchlist', { method: 'POST', body: JSON.stringify({ watchlist: this.watch }) }).catch(error => console.warn('[桌面端] SQLite 自选股保存失败：', error.message)); },
         // 历史
         async buildHistory() { const data = await this.api('/api/reviews'); this.historyDates = (data.reviews || []).map(item => item.date); },
@@ -975,12 +988,13 @@
         this.loadChangelog();
         this.loadUpdateState().catch(error => console.warn('[桌面端] 更新状态读取失败：', error.message));
         this._removeUpdateListener=window.desktopBridge?.onUpdateState?.(state => { this.updateState=state; this.appVersion=state.currentVersion || this.appVersion; });
+        this._removeConfirmListener=window.desktopBridge?.onConfirm?.(payload => { this.confirmDialog={ requestId: payload.id, title: payload.title, message: payload.message, detail: payload.detail, okLabel: payload.okLabel, cancelLabel: payload.cancelLabel }; this.$nextTick(() => this.$refs.confirmDialog?.querySelector('.confirm-ok')?.focus()); });
         document.getElementById('boot-screen')?.classList.add('is-ready');
         window.desktopBridge?.setNotifyEnabled(this.notify);
          this.updateMarketStatus(); this.startMarketClock();
          this.loadLocalSettings().catch(error => console.warn('[桌面端] SQLite 设置读取失败：', error.message)).finally(() => { this.updateMarketStatus(); this.loadRealtime({ silent: true, allowClosed: true }); this.startAuto(); });
        },
-       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); this._removeUpdateListener?.(); }
+       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); this._removeUpdateListener?.(); this._removeConfirmListener?.(); }
     }).mount('#app');
   </script>
 </body>

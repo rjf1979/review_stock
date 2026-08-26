@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   installUpdate() {
     return ipcRenderer.invoke('desktop:install-update');
   },
+  onConfirm(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('desktop:show-confirm', listener);
+    return () => ipcRenderer.removeListener('desktop:show-confirm', listener);
+  },
+  confirmResult(id, ok) {
+    ipcRenderer.send('desktop:confirm-result', { id, ok: Boolean(ok) });
+  },
   onUpdateState(callback) {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop:update-state-changed', listener);

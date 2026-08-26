@@ -1,5 +1,5 @@
 // 行情日报 Desktop · Electron 外壳
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -81,14 +81,33 @@ async function downloadAvailableUpdate() {
   return updateJob;
 }
 
+let confirmSeq = 0;
+const confirmWaiters = new Map();
+function confirmFromWindow(payload) {
+  if (!win || win.isDestroyed() || !win.webContents) return Promise.resolve(false);
+  return new Promise(resolve => {
+    confirmSeq += 1;
+    const id = confirmSeq;
+    confirmWaiters.set(id, resolve);
+    win.webContents.send('desktop:show-confirm', { id, ...payload });
+  });
+}
+ipcMain.on('desktop:confirm-result', (_event, { id, ok }) => {
+  const resolve = confirmWaiters.get(id);
+  if (resolve) { confirmWaiters.delete(id); resolve(Boolean(ok)); }
+});
+
 async function installDownloadedUpdate() {
   if (!downloadedInstaller || !fs.existsSync(downloadedInstaller)) throw new Error('尚未下载可安装的升级包');
-  const choice = await dialog.showMessageBox(win, {
-    type: 'question', buttons: ['立即升级', '稍后'], defaultId: 0, cancelId: 1,
-    title: '安装行情日报更新', message: `已准备好 v${updateManifest?.version || ''}，升级时应用将自动关闭。`,
-    detail: '自选股、设置、行情快照和历史复盘会继续保留。', noLink: true,
+  const proceed = await confirmFromWindow({
+    type: 'question',
+    title: '安装行情日报更新',
+    message: `已准备好 v${updateManifest?.version || ''}，升级时应用将自动关闭。`,
+    detail: '自选股、设置、行情快照和历史复盘会继续保留。',
+    okLabel: '立即升级',
+    cancelLabel: '稍后',
   });
-  if (choice.response !== 0) return updateState;
+  if (!proceed) return updateState;
   const child = spawn(downloadedInstaller, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();
   publishUpdateState({ status: 'installing' });
