@@ -3658,9 +3658,9 @@ const Yo = { class: "app-shell" }, zo = {
   __name: "App",
   setup(e) {
     const t = {
-      x64: "https://github.com/rjf1979/review_stock/releases/download/v0.1.2/hangqing-desktop-0.1.2-win-x64-setup.exe",
-      ia32: "https://github.com/rjf1979/review_stock/releases/download/v0.1.2/hangqing-desktop-0.1.2-win-ia32-setup.exe",
-      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.1.2"
+      x64: "https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-x64-setup.exe",
+      ia32: "https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-ia32-setup.exe",
+      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.2.3"
     };
     return (s, n) => (io(), lo("div", Yo, [
       n[12] || (n[12] = Mt('<header class="nav"><a class="logo" href="#top" aria-label="返回行情日报首页">行情日报<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
@@ -3691,9 +3691,9 @@ const Yo = { class: "app-shell" }, zo = {
         n[10] || (n[10] = Mt('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数与自选股实时报价，刷新频率可调，涨跌语义清晰。</p></article><article><span class="feature-index">02</span><h3>每日复盘</h3><p>市场温度、大盘概览、资金流、海外市场和要闻集中呈现。</p></article><article><span class="feature-index">03</span><h3>板块与龙虎榜</h3><p>领涨板块、涨停连板梯队和龙虎榜净买入，收盘后一次看完。</p></article><article><span class="feature-index">04</span><h3>本地数据</h3><p>公开行情在本机整理，自选股、设置和复盘记录保存在本地。</p></article></div></section><section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 2)),
         I("section", Qo, [
           n[9] || (n[9] = I("div", null, [
-            I("p", { class: "kicker" }, "DESKTOP RELEASE · V0.1.2"),
+            I("p", { class: "kicker" }, "DESKTOP RELEASE · V0.2.3"),
             I("h2", null, "把行情日报放在桌面上"),
-            I("p", null, "当前提供 Windows x64 和 32 位安装包。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。")
+            I("p", null, "当前提供 Windows x64 和 32 位安装包，仅限个人非商业使用。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。")
           ], -1)),
           I("div", el, [
             I("a", {

@@ -1,8 +1,8 @@
 <script setup>
 const downloads = {
-  x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.1.2/hangqing-desktop-0.1.2-win-x64-setup.exe',
-  ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.1.2/hangqing-desktop-0.1.2-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.1.2'
+  x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-x64-setup.exe',
+  ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.2.3'
 }
 </script>
 
@@ -64,7 +64,7 @@ const downloads = {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.1.2</p><h2>把行情日报放在桌面上</h2><p>当前提供 Windows x64 和 32 位安装包。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.2.3</p><h2>把行情日报放在桌面上</h2><p>当前提供 Windows x64 和 32 位安装包，仅限个人非商业使用。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
         <div class="download-options">
           <a class="download-option" :href="downloads.x64"><span>Windows x64</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
