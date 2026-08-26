@@ -14,7 +14,9 @@ const MIME_TYPES = {
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.exe': 'application/octet-stream'
 };
 
 function send(res, status, body, type = 'text/html') {
@@ -29,16 +31,28 @@ function assetPath(urlPath) {
   return file === root || file.startsWith(root + path.sep) ? file : null;
 }
 
+function publicFile(urlPath) {
+  const file = path.resolve(PUBLIC_DIR, '.' + decodeURIComponent(urlPath));
+  return file !== PUBLIC_DIR && file.startsWith(PUBLIC_DIR + path.sep) ? file : null;
+}
+
+function sendFile(req, res, file, cacheControl) {
+  if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(res, 404, 'Not Found', 'text/plain');
+  const stat = fs.statSync(file);
+  const type = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
+  res.writeHead(200, { 'Content-Type': type, 'Content-Length': stat.size, 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' });
+  return req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
+}
+
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method Not Allowed', 'text/plain');
   const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   if (pathname.startsWith('/assets/')) {
     const file = assetPath(pathname);
-    if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(res, 404, 'Not Found', 'text/plain');
-    const type = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'public, max-age=600' });
-    return req.method === 'HEAD' ? res.end() : res.end(fs.readFileSync(file));
+    return sendFile(req, res, file, 'public, max-age=600');
   }
+  if (pathname === '/updates/latest.json') return sendFile(req, res, publicFile(pathname), 'no-store');
+  if (pathname.startsWith('/updates/files/')) return sendFile(req, res, publicFile(pathname), 'public, max-age=31536000, immutable');
   if (pathname === '/' || pathname === '/index.html') return send(res, 200, APP_SHELL);
   return send(res, 404, 'Not Found', 'text/plain');
 });

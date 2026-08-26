@@ -5,7 +5,7 @@ SetCompressor /SOLID lzma
 !insertmacro VersionCompare
 
 !define PRODUCT_NAME "Hangqing Desktop"
-!define PRODUCT_VERSION "0.2.1"
+!define PRODUCT_VERSION "0.2.2"
 !define PRODUCT_EXE "HangqingDesktop.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hangqing Desktop"
 !ifndef BUILD_ARCH

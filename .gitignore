@@ -4,6 +4,7 @@ dist/
 build/
 out/
 src/desktop/release/
+src/web/public/updates/files/*.exe
 
 # Local runtime state and logs
 .runtime/

@@ -10,10 +10,10 @@
 
 ## 下载
 
-当前 Windows 版本：`0.2.1`
+当前 Windows 版本：`0.2.2`
 
-- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.1/hangqing-desktop-0.2.1-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.1/hangqing-desktop-0.2.1-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.2/hangqing-desktop-0.2.2-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
+- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.2/hangqing-desktop-0.2.2-win-ia32-setup.exe)：仅用于 32 位 Windows。
 - [查看全部版本与发布说明](https://github.com/rjf1979/review_stock/releases)。
 
 安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从本仓库 Release 页面下载并核对发布页提供的 SHA-256。
@@ -27,6 +27,7 @@
 - **每日复盘**：工作日 `12:00` 生成午间快照，`16:00` 生成收盘复盘，并保存到本地历史记录。
 - **独立工具**：自选股、K 线、龙虎榜、历史报告、亮色/暗色主题和系统通知。
 - **桌面体验**：默认适配当前屏幕工作区，窗口锁定最大化布局，支持最小化、关闭到托盘和单实例运行。
+- **在线升级**：启动后检查官网版本，此后每 6 小时复查；按系统架构下载并校验 SHA-256 后重启升级。
 - **本地数据**：设置、自选股、行情快照和复盘记录保存在当前 Windows 用户的 SQLite 数据库中，无需注册账号或安装数据库服务。
 
 ### 桌面版页面预览
@@ -131,7 +132,7 @@ npm start
 
 ## Windows 打包
 
-桌面版当前版本为 `0.2.1`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.2.2`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop
@@ -153,7 +154,10 @@ hangqing-desktop-<version>-win-ia32-setup.exe
 - 安装包版本低于已安装版本时阻止降级。
 - 卸载会删除程序、依赖、快捷方式和卸载登记，但保留本地数据库、复盘、设置和缓存。
 
+在线升级发布时，将最终 x64/ia32 安装包放入 `src/desktop/release/`，运行 `npm run updates:manifest` 自动生成官网升级清单。先上传两个安装包到官网 `/updates/files/`，验证 HTTPS 下载与 SHA-256 后，再替换 `/updates/latest.json`；清单必须最后发布，避免客户端提前看到尚未就绪的版本。
+
 详见 [桌面安装与本地数据说明](docs/desktop-install.md)。
+在线升级的清单格式、官网目录、发布顺序与回滚方式见 [桌面版在线升级](docs/desktop-update.md)。
 
 ## 本地数据
 

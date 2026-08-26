@@ -14,6 +14,7 @@
     header .logo span{color:#a9b8c0;font-size:.6rem;margin-left:8px}
     nav{display:flex;gap:2px;align-items:center;margin-left:auto;overflow-x:auto;-webkit-app-region:no-drag}
     nav button{border:0;background:transparent;color:#c4d0d5;padding:8px 12px;border-radius:6px;font-weight:800;font-size:.83rem;cursor:pointer;white-space:nowrap;min-height:36px}
+    .update-nav-label{margin-left:5px;padding:2px 5px;border-radius:4px;background:var(--red);color:#fff;font-size:.58rem;vertical-align:1px}
     nav button.active{background:#273742;color:#fff}
     nav .refresh{background:#e34845;color:#fff;min-width:72px}
     .header-actions{display:flex;align-items:center;gap:7px;margin-left:9px;-webkit-app-region:no-drag}
@@ -146,6 +147,7 @@
     .set-item select,.set-item input[type=checkbox]{font:inherit}
     .set-item select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card-bg);color:var(--ink);min-height:36px}
     .release-list{display:grid;gap:0}.release-item{display:grid;grid-template-columns:112px minmax(0,1fr);gap:18px;padding:15px 0;border-bottom:1px solid var(--line)}.release-item:last-child{padding-bottom:0;border-bottom:0}.release-version{font-variant-numeric:tabular-nums}.release-version b{display:block;color:var(--red);font-size:.92rem}.release-version time{color:var(--muted);font-size:.68rem}.release-copy h3{margin:0 0 7px;font-size:.86rem}.release-copy ul{display:grid;gap:5px;margin:0;padding-left:18px;color:var(--muted);font-size:.78rem}.release-empty{padding:18px;color:var(--muted);text-align:center}
+    .update-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px}.update-copy{min-width:0}.update-copy strong{display:block;font-size:.88rem}.update-copy p{margin:5px 0 0;color:var(--muted);font-size:.76rem;line-height:1.55}.update-actions{display:flex;align-items:center;gap:8px}.update-actions .row-btn{min-height:44px;padding:8px 14px}.update-progress{height:6px;margin-top:10px;overflow:hidden;border-radius:3px;background:var(--line)}.update-progress span{display:block;height:100%;background:var(--red);transition:width .2s ease}.update-notes{margin:9px 0 0;padding-left:18px;color:var(--muted);font-size:.74rem}.update-error{color:var(--red)!important}
     .review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     .review-grid .panel{margin-bottom:0}
     .review-grid .panel.full{grid-column:1/-1}
@@ -213,7 +215,8 @@
       .watch-chart-frame{height:clamp(170px,calc((100vh - 400px)/2),240px)}
     }
     @media (max-width:1080px){.sponsor-button{width:40px;justify-content:center;padding:0}.sponsor-button span:last-child{display:none}.header-actions{margin-left:5px}.window-controls{margin-left:4px}}
-    @media (max-width:600px){.release-item{grid-template-columns:1fr;gap:7px}.release-version{display:flex;align-items:baseline;gap:8px}}
+    @media (max-width:600px){.release-item{grid-template-columns:1fr;gap:7px}.release-version{display:flex;align-items:baseline;gap:8px}.update-row{grid-template-columns:1fr}.update-actions{justify-content:flex-start}}
+    @media (prefers-reduced-motion:reduce){.update-progress span{transition:none}}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
     /* Web-aligned light skin and its dark counterpart share the same semantic map. */
@@ -332,7 +335,7 @@
         <button :class="{active:view==='review'}" :aria-current="view==='review'?'page':null" @click="openReview(todayStr());view='review'">每日复盘</button>
         <button :class="{active:view==='dragon'}" :aria-current="view==='dragon'?'page':null" @click="view='dragon';loadDragon()">龙虎榜</button>
         <button :class="{active:view==='history'}" @click="buildHistory();view='history'">历史报告</button>
-        <button :class="{active:view==='settings'}" @click="view='settings'">设置</button>
+        <button :class="{active:view==='settings'}" @click="view='settings'">设置<span v-if="['available','downloaded'].includes(updateState.status)" class="update-nav-label">新版本</span></button>
         <button v-if="view !== 'settings'" class="refresh" :disabled="busy" @click="refreshAll">{{ busy ? '刷新中…' : '刷新' }}</button>
       </nav>
       <div class="header-actions" aria-label="外观与赞助">
@@ -609,6 +612,21 @@
             <div class="set-item"><small>数据源</small><div style="color:var(--muted);font-size:.8rem">腾讯行情 + 东方财富（本地直连）</div></div>
           </div>
         </div>
+        <div class="panel"><h2>软件更新</h2>
+          <div class="update-row" aria-live="polite">
+            <div class="update-copy">
+              <strong>{{ updateHeadline }}</strong>
+              <p :class="{'update-error':updateState.status==='error'}">{{ updateDetail }}</p>
+              <div v-if="updateState.status==='downloading'" class="update-progress" role="progressbar" :aria-valuenow="updateState.progress?.percent ?? null" aria-valuemin="0" aria-valuemax="100"><span :style="{width:(updateState.progress?.percent || 0)+'%'}"></span></div>
+              <ul v-if="updateState.status==='available' && updateState.notes?.length" class="update-notes"><li v-for="note in updateState.notes" :key="note">{{ note }}</li></ul>
+            </div>
+            <div class="update-actions">
+              <button v-if="updateState.status==='available'" type="button" class="row-btn" @click="downloadAppUpdate">下载更新</button>
+              <button v-else-if="updateState.status==='downloaded'" type="button" class="row-btn" @click="installAppUpdate">立即升级</button>
+              <button v-else type="button" class="row-btn" :disabled="['checking','downloading','installing'].includes(updateState.status)" @click="checkAppUpdate">{{ updateState.status==='error' ? '重试' : '检查更新' }}</button>
+            </div>
+          </div>
+        </div>
         <div class="panel"><h2>更新日志 <span class="updated">当前版本 v{{ appVersion }}</span></h2>
           <div v-if="changelog.length" class="release-list">
             <article v-for="release in changelog" :key="release.version" class="release-item">
@@ -674,7 +692,7 @@
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
-        historyDates: [], appVersion: '-', changelog: [], refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr
+        historyDates: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr
       }; },
       computed: {
         marketOpen() { return this.marketStatus.open; },
@@ -744,13 +762,19 @@
           if (!this.watchQuotes.length) return '输入股票代码后生成行情卡。';
           const unavailable = this.watchQuotes.reduce((count, stock) => count + (this.watchChartState(stock.code, 'daily') === 'error' ? 1 : 0), 0);
           return unavailable ? `${this.watchQuotes.length} 只自选 · ${unavailable} 只图表数据暂不可用` : `${this.watchQuotes.length} 只自选 · 图表数据已更新`;
-        }
+        },
+        updateHeadline() { const s=this.updateState; if(s.status==='available') return `发现新版本 v${s.availableVersion}`; if(s.status==='downloaded') return `v${s.availableVersion} 已下载并校验`; if(s.status==='downloading') return `正在下载 v${s.availableVersion || ''}`; if(s.status==='installing') return '正在启动升级程序'; if(s.status==='current') return `当前已是最新版 v${s.currentVersion}`; if(s.status==='error') return '更新检查未完成'; return `当前版本 v${s.currentVersion || this.appVersion}`; },
+        updateDetail() { const s=this.updateState; if(s.status==='checking') return '正在连接官网检查版本…'; if(s.status==='downloading') return s.progress?.percent != null ? `下载进度 ${s.progress.percent}%` : '正在下载安装文件…'; if(s.status==='downloaded') return '安装文件 SHA-256 校验通过，可以重启升级。'; if(s.status==='available') return '升级包来自行情日报官网，下载完成后会先校验完整性。'; if(s.status==='error') return s.error || '请检查网络后重试。'; if(s.checkedAt) return `最近检查 ${this.formatDataTime(s.checkedAt)}`; return '启动后自动检查，此后每 6 小时检查一次。'; }
       },
       methods: {
         minimizeWindow() { window.desktopBridge?.minimizeWindow(); },
         closeWindow() { window.desktopBridge?.closeWindow(); },
         async api(p, options = {}) { const r = await fetch(p, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), ...(options.headers || {}) } }); const d = await r.json(); if (!r.ok) throw new Error(d.error || `请求失败（${r.status}）`); return d; },
-        async loadChangelog() { try { const data = await this.api('/changelog.json'); this.changelog = Array.isArray(data.releases) ? data.releases : []; this.appVersion = this.changelog[0]?.version || '-'; } catch (error) { console.warn('[桌面端] 更新日志读取失败：', error.message); } },
+        async loadChangelog() { try { const data = await this.api('/changelog.json'); this.changelog = Array.isArray(data.releases) ? data.releases : []; if(this.appVersion==='-') this.appVersion = this.changelog[0]?.version || '-'; } catch (error) { console.warn('[桌面端] 更新日志读取失败：', error.message); } },
+        async loadUpdateState() { if(!window.desktopBridge?.getUpdateState) return; this.updateState=await window.desktopBridge.getUpdateState(); this.appVersion=this.updateState.currentVersion || this.appVersion; },
+        async checkAppUpdate() { try { this.updateState=await window.desktopBridge.checkForUpdates(); } catch(error) { this.updateState={...this.updateState,status:'error',error:error.message}; } },
+        async downloadAppUpdate() { try { this.updateState=await window.desktopBridge.downloadUpdate(); } catch(error) { this.updateState={...this.updateState,status:'error',error:error.message}; } },
+        async installAppUpdate() { try { this.updateState=await window.desktopBridge.installUpdate(); } catch(error) { this.updateState={...this.updateState,status:'error',error:error.message}; } },
         persistSettings(values) { return this.api('/api/settings', { method: 'POST', body: JSON.stringify(values) }).catch(error => console.warn('[桌面端] SQLite 设置保存失败：', error.message)); },
         async loadLocalSettings() {
           const legacy = { watchlist: this.watch, refreshSec: this.refreshSec, theme: this.theme, notify: this.notify };
@@ -939,12 +963,14 @@
        mounted() {
         this.applyTheme(this.theme, false);
         this.loadChangelog();
+        this.loadUpdateState().catch(error => console.warn('[桌面端] 更新状态读取失败：', error.message));
+        this._removeUpdateListener=window.desktopBridge?.onUpdateState?.(state => { this.updateState=state; this.appVersion=state.currentVersion || this.appVersion; });
         document.getElementById('boot-screen')?.classList.add('is-ready');
         window.desktopBridge?.setNotifyEnabled(this.notify);
          this.updateMarketStatus(); this.startMarketClock();
          this.loadLocalSettings().catch(error => console.warn('[桌面端] SQLite 设置读取失败：', error.message)).finally(() => { this.updateMarketStatus(); this.loadRealtime({ silent: true, allowClosed: true }); this.startAuto(); });
        },
-       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); }
+       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); this._removeUpdateListener?.(); }
     }).mount('#app');
   </script>
 </body>

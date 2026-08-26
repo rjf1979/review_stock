@@ -1,10 +1,13 @@
 // 行情日报 Desktop · Electron 外壳
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen, dialog } = require('electron');
+const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const review = require('./review-core');
 const { createReviewScheduler } = require('./review-scheduler');
 const { startServer } = require('./server');
 const { createStorage } = require('./storage');
+const { DEFAULT_MANIFEST_URL, CHECK_INTERVAL_MS, compareVersions, selectAsset, fetchManifest, downloadUpdate } = require('./updater');
 
 if (process.platform === 'win32') app.setAppUserModelId('io.zhicha.dailystock');
 
@@ -23,6 +26,81 @@ let scheduler;
 let savedState = {};
 let storage;
 let localServer;
+let updateTimer;
+let updateJob;
+let updateManifest;
+let downloadedInstaller;
+let updateState = { status: 'idle', currentVersion: app.getVersion(), availableVersion: null, progress: null, error: null, checkedAt: null };
+
+function publishUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  if (win && !win.isDestroyed()) win.webContents.send('desktop:update-state-changed', updateState);
+  return updateState;
+}
+
+async function checkForUpdates({ silent = false } = {}) {
+  if (updateJob) return updateJob;
+  updateJob = (async () => {
+    publishUpdateState({ status: 'checking', error: null });
+    try {
+      const manifest = await fetchManifest(process.env.UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL);
+      const hasUpdate = compareVersions(manifest.version, app.getVersion()) > 0;
+      updateManifest = hasUpdate ? manifest : null;
+      if (!hasUpdate) downloadedInstaller = null;
+      return publishUpdateState({ status: hasUpdate ? 'available' : 'current', availableVersion: hasUpdate ? manifest.version : null, notes: hasUpdate ? manifest.notes || [] : [], progress: null, error: null, checkedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error('[桌面端] 检查更新失败：', error.message);
+      return publishUpdateState({ status: silent ? 'idle' : 'error', error: silent ? null : error.message, checkedAt: new Date().toISOString() });
+    } finally {
+      updateJob = null;
+    }
+  })();
+  return updateJob;
+}
+
+async function downloadAvailableUpdate() {
+  if (updateJob) return updateJob;
+  if (!updateManifest) await checkForUpdates();
+  if (!updateManifest) return updateState;
+  updateJob = (async () => {
+    try {
+      const asset = selectAsset(updateManifest, process.arch);
+      const filename = `hangqing-desktop-${updateManifest.version}-win-${process.arch}-setup.exe`;
+      const destination = path.join(app.getPath('userData'), 'updates', filename);
+      publishUpdateState({ status: 'downloading', progress: { received: 0, total: Number(asset.size) || null, percent: 0 }, error: null });
+      await downloadUpdate({ asset, destination, onProgress: progress => publishUpdateState({ status: 'downloading', progress }) });
+      downloadedInstaller = destination;
+      return publishUpdateState({ status: 'downloaded', progress: { received: Number(asset.size) || null, total: Number(asset.size) || null, percent: 100 } });
+    } catch (error) {
+      console.error('[桌面端] 下载更新失败：', error.message);
+      return publishUpdateState({ status: 'error', error: error.message });
+    } finally {
+      updateJob = null;
+    }
+  })();
+  return updateJob;
+}
+
+async function installDownloadedUpdate() {
+  if (!downloadedInstaller || !fs.existsSync(downloadedInstaller)) throw new Error('尚未下载可安装的升级包');
+  const choice = await dialog.showMessageBox(win, {
+    type: 'question', buttons: ['立即升级', '稍后'], defaultId: 0, cancelId: 1,
+    title: '安装行情日报更新', message: `已准备好 v${updateManifest?.version || ''}，升级时应用将自动关闭。`,
+    detail: '自选股、设置、行情快照和历史复盘会继续保留。', noLink: true,
+  });
+  if (choice.response !== 0) return updateState;
+  const child = spawn(downloadedInstaller, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  publishUpdateState({ status: 'installing' });
+  isQuitting = true;
+  setTimeout(() => app.quit(), 300);
+  return updateState;
+}
+
+function startUpdateChecks() {
+  setTimeout(() => checkForUpdates({ silent: true }), 15000);
+  updateTimer = setInterval(() => checkForUpdates({ silent: true }), CHECK_INTERVAL_MS);
+}
 
 function statePath() {
   return path.join(app.getPath('userData'), 'desktop-state.json');
@@ -156,6 +234,10 @@ ipcMain.on('desktop:notify-setting', (_event, enabled) => {
 
 ipcMain.on('desktop:minimize-window', () => win?.minimize());
 ipcMain.on('desktop:close-window', () => win?.close());
+ipcMain.handle('desktop:update-state', () => updateState);
+ipcMain.handle('desktop:check-update', () => checkForUpdates());
+ipcMain.handle('desktop:download-update', () => downloadAvailableUpdate());
+ipcMain.handle('desktop:install-update', () => installDownloadedUpdate());
 
 app.whenReady().then(async () => {
   const userData = app.getPath('userData');
@@ -171,6 +253,7 @@ app.whenReady().then(async () => {
   screen.on('display-removed', fitWindowToDisplay);
   createTray();
   startReviewScheduler();
+  startUpdateChecks();
   app.on('activate', showWindow);
 }).catch(error => {
   console.error('[桌面端] 初始化失败：', error);
@@ -180,6 +263,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   isQuitting = true;
   if (scheduler) scheduler.stop();
+  if (updateTimer) clearInterval(updateTimer);
   if (localServer) localServer.close();
   if (storage) storage.close();
 });

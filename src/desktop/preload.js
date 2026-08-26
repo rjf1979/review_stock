@@ -10,4 +10,21 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   closeWindow() {
     ipcRenderer.send('desktop:close-window');
   },
+  getUpdateState() {
+    return ipcRenderer.invoke('desktop:update-state');
+  },
+  checkForUpdates() {
+    return ipcRenderer.invoke('desktop:check-update');
+  },
+  downloadUpdate() {
+    return ipcRenderer.invoke('desktop:download-update');
+  },
+  installUpdate() {
+    return ipcRenderer.invoke('desktop:install-update');
+  },
+  onUpdateState(callback) {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('desktop:update-state-changed', listener);
+    return () => ipcRenderer.removeListener('desktop:update-state-changed', listener);
+  },
 });
