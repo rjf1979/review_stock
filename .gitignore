@@ -15,6 +15,7 @@ src/web/public/updates/files/*.exe
 .env.*
 !.env.example
 .deploy/
+docs/云服务器配置.txt
 
 # Local helper binaries
 .runtime-ssh-askpass.exe
