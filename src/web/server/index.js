@@ -4,7 +4,7 @@ const path = require('path');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
-const APP_SHELL = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="行情日报 Windows 桌面版：实时行情、盘面异动和收盘复盘。"><title>行情日报 Desktop</title><link rel="stylesheet" href="/assets/app.css"></head><body><div id="app"></div><script type="module" src="/assets/app.mjs"></script></body></html>';
+const APP_SHELL = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="股市脉搏 Windows 桌面版：A股实时行情、盘面异动与每日复盘。"><title>股市脉搏 · A股行情与复盘</title><link rel="stylesheet" href="/assets/app.css"></head><body><div id="app"></div><script type="module" src="/assets/app.mjs"></script></body></html>';
 const MIME_TYPES = {
   '.css': 'text/css',
   '.js': 'text/javascript',
@@ -57,4 +57,4 @@ const server = http.createServer((req, res) => {
   return send(res, 404, 'Not Found', 'text/plain');
 });
 
-server.listen(PORT, () => console.log(`行情日报官网运行于 http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`股市脉搏官网运行于 http://localhost:${PORT}`));
