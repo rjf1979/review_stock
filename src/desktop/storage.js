@@ -3,8 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const DEFAULT_SETTINGS = { theme: 'light', refreshSec: 3, notify: false };
+const DEFAULT_SETTINGS = { theme: 'light', refreshSec: 3, notify: false, monitorEnabled: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60 };
 const WATCHLIST_LIMIT = 9;
+const MONITOR_LIMIT = 5;
 
 function parseValue(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
@@ -115,10 +116,22 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
   function getSettings() {
     const settings = { ...DEFAULT_SETTINGS };
     for (const row of queryAll('SELECT key, value FROM settings')) settings[row.key] = parseValue(row.value, row.value);
+    settings.monitorEnabled = settings.monitorEnabled === true;
+    settings.monitorOnMainClose = settings.monitorOnMainClose === true;
+    settings.monitorWatchlist = normalizeMonitorList(settings.monitorWatchlist);
+    settings.monitorOpacity = normalizeMonitorOpacity(settings.monitorOpacity);
     return settings;
   }
   function setSettings(values) {
-    transaction(() => Object.entries(values || {}).forEach(([key, value]) => setSetting(key, value)));
+    const clean = { ...(values || {}) };
+    if (clean.monitorEnabled !== undefined) clean.monitorEnabled = clean.monitorEnabled === true;
+    if (clean.monitorOnMainClose !== undefined) clean.monitorOnMainClose = clean.monitorOnMainClose === true;
+    if (clean.monitorOpacity !== undefined) clean.monitorOpacity = normalizeMonitorOpacity(clean.monitorOpacity);
+    if (clean.monitorWatchlist !== undefined) {
+      const allowed = new Set(getWatchlist());
+      clean.monitorWatchlist = normalizeMonitorList(clean.monitorWatchlist).filter(code => allowed.has(code));
+    }
+    transaction(() => Object.entries(clean).forEach(([key, value]) => setSetting(key, value)));
   }
   function getWatchlist() { return queryAll('SELECT code FROM watchlist ORDER BY position, code').map(row => row.code).slice(0, WATCHLIST_LIMIT); }
   function replaceWatchlist(codes) {
@@ -126,8 +139,16 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     transaction(() => {
       execute('DELETE FROM watchlist');
       clean.forEach((code, position) => execute('INSERT INTO watchlist(code, position) VALUES ($code, $position)', { $code: code, $position: position }));
+      setSetting('monitorWatchlist', normalizeMonitorList(getSetting('monitorWatchlist')).filter(code => clean.includes(code)));
     });
     return clean;
+  }
+  function normalizeMonitorList(value) {
+    return [...new Set((Array.isArray(value) ? value : []).filter(code => /^\d{6}$/.test(String(code))).map(String))].slice(0, MONITOR_LIMIT);
+  }
+  function normalizeMonitorOpacity(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(100, Math.max(0, number)) : 60;
   }
   function saveSnapshot(payload) {
     execute('INSERT OR REPLACE INTO market_snapshots(id, captured_at, payload) VALUES (1, $capturedAt, $payload)', { $capturedAt: new Date().toISOString(), $payload: JSON.stringify(payload) });

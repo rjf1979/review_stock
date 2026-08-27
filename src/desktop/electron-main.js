@@ -22,6 +22,10 @@ let win;
 let tray;
 let isQuitting = false;
 let notifyEnabled = false;
+let monitorWin;
+let monitorEnabled = false;
+let monitorReady = false;
+let monitorOnMainClose = false;
 let scheduler;
 let savedState = {};
 let storage;
@@ -108,11 +112,15 @@ async function installDownloadedUpdate() {
     cancelLabel: '稍后',
   });
   if (!proceed) return updateState;
-  const child = spawn(downloadedInstaller, ['/S'], { detached: true, stdio: 'ignore', windowsHide: true });
+  const child = spawn(downloadedInstaller, [], { detached: true, stdio: 'ignore', windowsHide: false });
+  await new Promise((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', reject);
+  });
   child.unref();
   publishUpdateState({ status: 'installing' });
   isQuitting = true;
-  setTimeout(() => app.quit(), 300);
+  setTimeout(() => app.quit(), 500);
   return updateState;
 }
 
@@ -129,6 +137,8 @@ function loadState() {
   storage.migrateLegacyFiles();
   savedState = storage.getSettings();
   notifyEnabled = savedState.notify === true;
+  monitorEnabled = false;
+  monitorOnMainClose = savedState.monitorOnMainClose === true;
 }
 
 function saveState(patch) {
@@ -144,6 +154,172 @@ function fitWindowToDisplay() {
   if (!win || win.isDestroyed()) return;
   const display = screen.getDisplayMatching(win.getBounds());
   win.setBounds(display.workArea, false);
+}
+
+const MONITOR_DEFAULT_WIDTH = 300;
+const MONITOR_DEFAULT_HEIGHT = 200;
+function normalizeMonitorOpacity(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(100, Math.max(0, number)) : 60;
+}
+
+function clampMonitorBounds(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const width = Math.round(Math.min(Math.max(Number(raw.width) || MONITOR_DEFAULT_WIDTH, 260), 560));
+  const height = Math.round(Math.min(Math.max(Number(raw.height) || MONITOR_DEFAULT_HEIGHT, 200), 820));
+  const areas = screen.getAllDisplays().map(display => display.workArea);
+  const area = areas.find(work => {
+    const overlapWidth = Math.min(raw.x + width, work.x + work.width) - Math.max(raw.x, work.x);
+    const overlapHeight = Math.min(raw.y + height, work.y + work.height) - Math.max(raw.y, work.y);
+    return overlapWidth >= 48 && overlapHeight >= 48;
+  });
+  if (!area) return null;
+  return {
+    x: Math.round(Math.max(area.x, Math.min(raw.x, area.x + area.width - width))),
+    y: Math.round(Math.max(area.y, Math.min(raw.y, area.y + area.height - height))),
+    width,
+    height,
+  };
+}
+
+function resolveMonitorBounds() {
+  const restored = clampMonitorBounds(savedState.monitorBounds);
+  if (restored) return restored;
+  const primary = screen.getPrimaryDisplay().workArea;
+  return {
+    x: primary.x + primary.width - MONITOR_DEFAULT_WIDTH - 28,
+    y: primary.y + 28,
+    width: MONITOR_DEFAULT_WIDTH,
+    height: MONITOR_DEFAULT_HEIGHT,
+  };
+}
+
+let monitorBoundsTimer;
+function scheduleMonitorBoundsSave() {
+  clearTimeout(monitorBoundsTimer);
+  monitorBoundsTimer = setTimeout(() => {
+    if (!monitorWin || monitorWin.isDestroyed()) return;
+    saveState({ monitorBounds: monitorWin.getBounds() });
+  }, 400);
+}
+
+function createMonitorWindow() {
+  if (monitorWin && !monitorWin.isDestroyed()) return monitorWin;
+  monitorReady = false;
+  monitorWin = new BrowserWindow({
+    ...resolveMonitorBounds(),
+    minWidth: 260,
+    minHeight: 200,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    focusable: true,
+    show: false,
+    title: '行情监控浮窗',
+    icon: APP_ICON,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  monitorWin.setAlwaysOnTop(true, 'screen-saver');
+  monitorWin.on('move', scheduleMonitorBoundsSave);
+  monitorWin.on('resize', scheduleMonitorBoundsSave);
+  monitorWin.on('close', event => {
+    if (!isQuitting) {
+      event.preventDefault();
+      setMonitorEnabled(false);
+    }
+  });
+  monitorWin.loadURL(`http://localhost:${PORT}/?mode=monitor`);
+  return monitorWin;
+}
+
+function isMonitorVisibleOnScreen(bounds) {
+  const areas = screen.getAllDisplays().map(display => display.workArea);
+  return areas.some(work => {
+    const overlapWidth = Math.min(bounds.x + bounds.width, work.x + work.width) - Math.max(bounds.x, work.x);
+    const overlapHeight = Math.min(bounds.y + bounds.height, work.y + work.height) - Math.max(bounds.y, work.y);
+    return overlapWidth >= 48 && overlapHeight >= 48;
+  });
+}
+
+function showMonitorWindow() {
+  const target = createMonitorWindow();
+  const current = target.getBounds();
+  if (!isMonitorVisibleOnScreen(current)) {
+    target.setBounds(resolveMonitorBounds());
+  }
+  if (monitorReady) target.showInactive();
+  publishMonitorState();
+}
+
+function hideMonitorWindow() {
+  if (!monitorWin || monitorWin.isDestroyed()) return;
+  monitorWin.hide();
+  publishMonitorState();
+}
+
+function refitMonitorWindow() {
+  if (!monitorWin || monitorWin.isDestroyed() || !monitorWin.isVisible()) return;
+  monitorWin.setBounds(resolveMonitorBounds());
+}
+
+function monitorState() {
+  return {
+    enabled: monitorEnabled,
+    visible: Boolean(monitorWin && !monitorWin.isDestroyed() && monitorWin.isVisible()),
+    watchlist: Array.isArray(savedState.monitorWatchlist) ? savedState.monitorWatchlist : [],
+    opacity: normalizeMonitorOpacity(savedState.monitorOpacity),
+    onMainClose: monitorOnMainClose,
+  };
+}
+
+function publishMonitorState() {
+  const state = monitorState();
+  [win, monitorWin].forEach(target => {
+    if (target && !target.isDestroyed()) target.webContents.send('desktop:monitor-state-changed', state);
+  });
+  return state;
+}
+
+function setMonitorEnabled(value) {
+  const next = Boolean(value);
+  monitorEnabled = next;
+  saveState({ monitorEnabled: next });
+  if (next) showMonitorWindow(); else hideMonitorWindow();
+  updateTrayMenu();
+  return publishMonitorState();
+}
+
+function setMonitorWatchlist(codes) {
+  const allowed = new Set(storage ? storage.getWatchlist() : []);
+  const clean = (Array.isArray(codes) ? codes : [])
+    .map(code => String(code))
+    .filter((code, index, all) => /^\d{6}$/.test(code) && allowed.has(code) && all.indexOf(code) === index)
+    .slice(0, 5);
+  savedState = { ...savedState, monitorWatchlist: clean };
+  if (storage) storage.setSettings({ monitorWatchlist: clean });
+  return publishMonitorState();
+}
+
+function setMonitorOpacity(value) {
+  const opacity = normalizeMonitorOpacity(value);
+  saveState({ monitorOpacity: opacity });
+  return publishMonitorState();
+}
+
+function setMonitorOnMainClose(value) {
+  monitorOnMainClose = value === true;
+  saveState({ monitorOnMainClose });
+  return publishMonitorState();
 }
 
 function createWindow() {
@@ -171,6 +347,7 @@ function createWindow() {
     if (isQuitting) return;
     event.preventDefault();
     win.hide();
+    if (monitorOnMainClose) setMonitorEnabled(true);
   });
   win.setResizable(false);
   win.setMaximizable(false);
@@ -199,6 +376,12 @@ function updateTrayMenu() {
         notifyEnabled = item.checked;
         saveState({ notify: notifyEnabled });
       },
+    },
+    {
+      label: '透明浮窗监控',
+      type: 'checkbox',
+      checked: monitorEnabled,
+      click: item => { setMonitorEnabled(item.checked); },
     },
     { label: '复盘时间：交易日 ' + REVIEW_TIMES, enabled: false },
     { type: 'separator' },
@@ -258,6 +441,43 @@ ipcMain.handle('desktop:check-update', () => checkForUpdates());
 ipcMain.handle('desktop:download-update', () => downloadAvailableUpdate());
 ipcMain.handle('desktop:install-update', () => installDownloadedUpdate());
 
+ipcMain.handle('desktop:monitor-state', () => monitorState());
+ipcMain.handle('desktop:monitor-set-enabled', (_event, enabled) => setMonitorEnabled(Boolean(enabled)));
+ipcMain.handle('desktop:monitor-show', () => setMonitorEnabled(true));
+ipcMain.handle('desktop:monitor-hide', () => setMonitorEnabled(false));
+ipcMain.handle('desktop:monitor-toggle', () => {
+  if (monitorWin && !monitorWin.isDestroyed() && monitorWin.isVisible()) {
+    return setMonitorEnabled(false);
+  }
+  return setMonitorEnabled(true);
+});
+ipcMain.handle('desktop:monitor-set-watchlist', (_event, codes) => setMonitorWatchlist(codes));
+ipcMain.handle('desktop:monitor-set-opacity', (_event, opacity) => setMonitorOpacity(opacity));
+ipcMain.handle('desktop:monitor-set-on-main-close', (_event, enabled) => setMonitorOnMainClose(Boolean(enabled)));
+ipcMain.on('desktop:monitor-open-main', showWindow);
+ipcMain.on('desktop:monitor-close-window', event => {
+  if (!monitorWin || monitorWin.isDestroyed()) return;
+  if (event.sender !== monitorWin.webContents) return;
+  setMonitorEnabled(false);
+});
+ipcMain.on('desktop:monitor-ready', event => {
+  if (!monitorWin || monitorWin.isDestroyed() || event.sender !== monitorWin.webContents) return;
+  monitorReady = true;
+  if (monitorEnabled) monitorWin.showInactive();
+  publishMonitorState();
+});
+ipcMain.on('desktop:monitor-resize', (event, width, height) => {
+  if (!monitorWin || monitorWin.isDestroyed()) return;
+  if (event.sender !== monitorWin.webContents) return;
+  const current = monitorWin.getBounds();
+  const parsedWidth = Number(width);
+  const parsedHeight = Number(height);
+  const nextWidth = width != null && Number.isFinite(parsedWidth) ? Math.min(560, Math.max(260, Math.round(parsedWidth))) : current.width;
+  const nextHeight = height != null && Number.isFinite(parsedHeight) ? Math.min(820, Math.max(200, Math.round(parsedHeight))) : current.height;
+  const nextBounds = clampMonitorBounds({ ...current, width: nextWidth, height: nextHeight });
+  if (nextBounds) monitorWin.setBounds(nextBounds);
+});
+
 app.whenReady().then(async () => {
   const userData = app.getPath('userData');
   storage = await createStorage({
@@ -268,8 +488,8 @@ app.whenReady().then(async () => {
   loadState();
   localServer = await startServer({ storage, port: PORT });
   createWindow();
-  screen.on('display-metrics-changed', fitWindowToDisplay);
-  screen.on('display-removed', fitWindowToDisplay);
+  screen.on('display-metrics-changed', () => { fitWindowToDisplay(); refitMonitorWindow(); });
+  screen.on('display-removed', () => { fitWindowToDisplay(); refitMonitorWindow(); });
   createTray();
   startReviewScheduler();
   startUpdateChecks();
@@ -284,6 +504,8 @@ app.on('before-quit', () => {
   if (scheduler) scheduler.stop();
   if (updateTimer) clearInterval(updateTimer);
   if (localServer) localServer.close();
+  clearTimeout(monitorBoundsTimer);
+  if (monitorWin && !monitorWin.isDestroyed()) monitorWin.destroy();
   if (storage) storage.close();
 });
 

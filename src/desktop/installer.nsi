@@ -5,7 +5,7 @@ SetCompressor /SOLID lzma
 !insertmacro VersionCompare
 
 !define PRODUCT_NAME "Hangqing Desktop"
-!define PRODUCT_VERSION "0.2.3"
+!define PRODUCT_VERSION "0.2.4"
 !define PRODUCT_EXE "HangqingDesktop.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hangqing Desktop"
 !ifndef BUILD_ARCH
@@ -85,6 +85,8 @@ Section "Install"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" '"$INSTDIR\app-icon.ico",0'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+
+  Exec '"$INSTDIR\${PRODUCT_EXE}"'
 SectionEnd
 
 Section "Uninstall"

@@ -22,6 +22,42 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   installUpdate() {
     return ipcRenderer.invoke('desktop:install-update');
   },
+  getMonitorState() {
+    return ipcRenderer.invoke('desktop:monitor-state');
+  },
+  setMonitorEnabled(enabled) {
+    return ipcRenderer.invoke('desktop:monitor-set-enabled', Boolean(enabled));
+  },
+  showMonitor() {
+    return ipcRenderer.invoke('desktop:monitor-show');
+  },
+  hideMonitor() {
+    return ipcRenderer.invoke('desktop:monitor-hide');
+  },
+  toggleMonitor() {
+    return ipcRenderer.invoke('desktop:monitor-toggle');
+  },
+  setMonitorWatchlist(codes) {
+    return ipcRenderer.invoke('desktop:monitor-set-watchlist', Array.isArray(codes) ? codes : []);
+  },
+  setMonitorOpacity(opacity) {
+    return ipcRenderer.invoke('desktop:monitor-set-opacity', opacity);
+  },
+  setMonitorOnMainClose(enabled) {
+    return ipcRenderer.invoke('desktop:monitor-set-on-main-close', Boolean(enabled));
+  },
+  openMainWindow() {
+    ipcRenderer.send('desktop:monitor-open-main');
+  },
+  closeMonitorWindow() {
+    ipcRenderer.send('desktop:monitor-close-window');
+  },
+  monitorReady() {
+    ipcRenderer.send('desktop:monitor-ready');
+  },
+  resizeMonitorWindow(width, height) {
+    ipcRenderer.send('desktop:monitor-resize', width, height);
+  },
   onConfirm(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('desktop:show-confirm', listener);
@@ -34,5 +70,10 @@ contextBridge.exposeInMainWorld('desktopBridge', {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop:update-state-changed', listener);
     return () => ipcRenderer.removeListener('desktop:update-state-changed', listener);
+  },
+  onMonitorStateChanged(callback) {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('desktop:monitor-state-changed', listener);
+    return () => ipcRenderer.removeListener('desktop:monitor-state-changed', listener);
   },
 });

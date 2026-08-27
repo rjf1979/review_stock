@@ -7,26 +7,57 @@
   <script src="/vendor/vue.global.prod.js"></script>
   <script src="/vendor/klinecharts.min.js"></script>
   <style>
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;transition:background .2s}
-    header{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 0 0 18px;background:#17212b;color:#fff;flex:0 0 52px;-webkit-app-region:drag;user-select:none}
+    *{box-sizing:border-box}:root{--monitor-opacity:60}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;transition:background .2s}
+    #app{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
+    header{position:relative;z-index:40;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 0 0 18px;background:#17212b;color:#fff;flex:0 0 52px;-webkit-app-region:drag;user-select:none}
     header .logo{font-weight:900;letter-spacing:-.02em}
     header .logo span{color:#a9b8c0;font-size:.6rem;margin-left:8px}
-    nav{display:flex;gap:2px;align-items:center;margin-left:auto;overflow-x:auto;-webkit-app-region:no-drag}
+    nav{display:flex;gap:2px;align-items:center;margin-left:auto;overflow-x:auto;scrollbar-width:none;-webkit-app-region:no-drag}nav::-webkit-scrollbar{display:none}
     nav button{border:0;background:transparent;color:#c4d0d5;padding:8px 12px;border-radius:6px;font-weight:800;font-size:.83rem;cursor:pointer;white-space:nowrap;min-height:36px}
     .update-nav-label{margin-left:5px;padding:2px 5px;border-radius:4px;background:var(--red);color:#fff;font-size:.58rem;vertical-align:1px}
     nav button.active{background:#273742;color:#fff}
     nav .refresh{background:#e34845;color:#fff;min-width:72px}
-    .header-actions{display:flex;align-items:center;gap:7px;margin-left:9px;-webkit-app-region:no-drag}
-    .sponsor-button{display:inline-flex;min-height:40px;align-items:center;gap:6px;padding:7px 11px;border:1px solid color-mix(in srgb,var(--red) 36%,var(--line));border-radius:6px;background:color-mix(in srgb,var(--red) 8%,var(--header-bg));color:var(--red);font:inherit;font-size:.78rem;font-weight:900;cursor:pointer}.sponsor-button:hover,.sponsor-button:focus-visible{background:var(--red);color:#fff}.sponsor-heart{font-size:.9rem;line-height:1}
-    .theme-toggle{position:relative;width:64px;height:34px;padding:3px;border:1px solid var(--line);border-radius:17px;background:var(--paper);cursor:pointer}.theme-toggle-track{position:relative;display:flex;height:26px;align-items:center;justify-content:space-around;color:var(--muted);font-size:14px}.theme-toggle-track::after{position:absolute;top:0;left:0;width:26px;height:26px;border-radius:50%;background:var(--card-bg);box-shadow:0 2px 7px rgba(23,33,43,.22);content:"";transition:transform .18s ease}.theme-toggle.is-dark .theme-toggle-track::after{transform:translateX(30px)}.theme-toggle-icon{position:relative;z-index:1;width:24px;text-align:center;line-height:26px}.theme-toggle:not(.is-dark) .theme-toggle-icon:first-child,.theme-toggle.is-dark .theme-toggle-icon:last-child{color:var(--red)}
-    .window-controls{display:flex;align-self:stretch;margin-left:8px;-webkit-app-region:no-drag}
+    nav .refresh.refresh-icon{width:34px;min-width:34px;height:34px;min-height:34px;padding:0;border-radius:6px}nav .refresh.refresh-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.refresh-icon.busy svg{animation:spin .9s linear infinite}
+    .header-actions{display:flex;align-items:center;gap:6px;margin-left:9px;padding-left:9px;border-left:1px solid color-mix(in srgb,var(--header-ink) 18%,transparent);-webkit-app-region:no-drag}
+    .header-icon-button{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--muted);cursor:pointer}.header-icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.header-icon-button:hover,.header-icon-button:focus-visible{border-color:var(--red);background:var(--header-active);color:var(--red)}.header-icon-button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.header-icon-button.active{border-color:color-mix(in srgb,var(--red) 45%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--paper));color:var(--red)}
+    nav .settings-button{min-width:34px;min-height:34px;padding:0}
+    .settings-button .update-nav-label{position:absolute;top:-5px;right:-5px;width:14px;height:14px;margin:0;padding:0;border:2px solid var(--header-bg);border-radius:50%;font-size:0;line-height:10px}.settings-button .update-nav-label::after{content:"!";font-size:9px;font-weight:900}
+    .settings-button{position:relative}.sponsor-button{color:var(--red);border-color:color-mix(in srgb,var(--red) 36%,var(--line));background:color-mix(in srgb,var(--red) 8%,var(--header-bg))}.sponsor-button:hover,.sponsor-button:focus-visible{background:var(--red);color:#fff}.sponsor-heart{display:block;line-height:1}
+    .theme-toggle{position:relative;width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--paper);cursor:pointer}.theme-toggle-track{position:relative;display:flex;width:32px;height:32px;align-items:center;justify-content:center;color:var(--muted);font-size:15px}.theme-toggle-track::after{display:none}.theme-toggle-icon{display:none;position:relative;z-index:1;width:auto;text-align:center;line-height:1}.theme-toggle:not(.is-dark) .theme-toggle-icon:first-child,.theme-toggle.is-dark .theme-toggle-icon:last-child{display:block;color:var(--red)}
+    .window-controls{display:flex;align-self:stretch;margin-left:8px;padding-left:8px;border-left:1px solid color-mix(in srgb,var(--header-ink) 18%,transparent);-webkit-app-region:no-drag}
     .window-control{width:46px;height:52px;border:0;border-radius:0;background:transparent;color:var(--header-muted);font:600 20px/1 system-ui,sans-serif;cursor:pointer}
+    .monitor-button{width:34px;height:34px}
+    .watch-monitor-btn{min-height:44px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:.68rem;font-weight:800;cursor:pointer;white-space:nowrap}.watch-monitor-btn.active{background:color-mix(in srgb,var(--red) 12%,transparent);border-color:color-mix(in srgb,var(--red) 42%,var(--line));color:var(--red)}.watch-monitor-btn:disabled{opacity:.45;cursor:not-allowed}.watch-monitor-btn:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+    .monitor-root{-webkit-app-region:no-drag;width:100%;height:100vh;overflow:auto;padding:10px;color:var(--ink);overscroll-behavior:contain;scrollbar-gutter:stable}
+    .monitor-card{-webkit-app-region:drag;display:flex;min-width:280px;flex-direction:column;gap:7px;height:100%;padding:12px;border:1px solid color-mix(in srgb,var(--ink) calc((100 - var(--monitor-opacity)) * .12%),var(--line));border-radius:10px;background:color-mix(in srgb,var(--paper) calc(var(--monitor-opacity) * 1%),transparent);box-shadow:none}
+    body.monitor-mode{height:100vh;min-height:0;overflow:hidden;background:transparent!important;color:var(--ink);--monitor-opacity:60}
+    body.monitor-mode .monitor-root{height:100vh;min-height:0;padding:10px}
+    body.monitor-mode .monitor-card{height:auto}
+    .monitor-head{display:flex;align-items:center;gap:8px;font-size:.78rem}.monitor-head b{letter-spacing:.04em}
+    .monitor-session{min-width:0;flex:1;overflow:hidden;padding:2px 6px;border-radius:999px;background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--muted);font-size:.62rem;text-overflow:ellipsis;white-space:nowrap}
+    .monitor-actions{-webkit-app-region:no-drag;margin-left:auto;display:flex;gap:4px}
+    .monitor-action{-webkit-app-region:no-drag;width:34px;height:34px;border:1px solid color-mix(in srgb,var(--ink) calc((100 - var(--monitor-opacity)) * .2%),var(--line));border-radius:6px;background:color-mix(in srgb,var(--paper) calc(var(--monitor-opacity) * 1%),transparent);color:var(--ink);font-size:.86rem;line-height:1;cursor:pointer}.monitor-action:hover,.monitor-action:focus-visible{color:var(--red);border-color:var(--red)}.monitor-action:focus-visible{outline:2px solid var(--red);outline-offset:1px}.monitor-action:disabled{cursor:wait;opacity:.62}.monitor-action.busy .monitor-action-icon{display:inline-block;animation:spin .9s linear infinite}
+    .monitor-updated{margin:0;color:var(--muted);font-size:.64rem}
+    .monitor-alert{margin:0;padding:6px 8px;border-radius:7px;background:color-mix(in srgb,#c0392b 14%,transparent);color:#8d2418;font-size:.64rem}body.dark .monitor-alert{color:#ffb3a7}
+    .monitor-group-title{display:flex;justify-content:space-between;margin:3px 0 0;color:var(--muted);font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .monitor-list{display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none}
+    .monitor-row{display:grid;grid-template-columns:minmax(58px,1fr) auto 46px;gap:6px;align-items:center;padding:6px 8px;border:1px solid color-mix(in srgb,var(--ink) calc((100 - var(--monitor-opacity)) * .08%),var(--line));border-radius:7px;background:color-mix(in srgb,var(--paper) calc(var(--monitor-opacity) * .6 * 1%),transparent)}
+    .monitor-row.monitor-stock-row{grid-template-columns:minmax(58px,1fr) 48px auto 46px}.monitor-row .name{overflow:hidden;color:var(--ink);text-overflow:ellipsis;white-space:nowrap}.monitor-code{overflow:hidden;color:var(--muted);font-size:.56rem;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+    .monitor-price{font-weight:900;font-size:.78rem;text-align:right}.monitor-pct{font-weight:800;font-size:.68rem;text-align:right}
+    .monitor-empty{padding:8px;border-radius:7px;border:1px dashed color-mix(in srgb,var(--ink) calc((100 - var(--monitor-opacity)) * .1%),var(--line));color:var(--muted);font-size:.64rem;text-align:center;background:color-mix(in srgb,var(--paper) calc(var(--monitor-opacity) * .5 * 1%),transparent)}
+    .monitor-note{margin:auto 0 0;color:var(--muted);font-size:.62rem;text-align:center}
     .window-control:hover,.window-control:focus-visible{background:var(--header-active);color:var(--header-ink)}
     .window-control.close:hover,.window-control.close:focus-visible{background:#c42b1c;color:#fff}
     .sponsor-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(8,15,20,.56);-webkit-app-region:no-drag}.sponsor-dialog{position:relative;width:min(380px,100%);max-height:calc(100vh - 28px);overflow:auto;padding:20px 24px;background:var(--card-bg);border:1px solid var(--line);border-top:4px solid var(--red);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.3);text-align:center}.sponsor-close{position:absolute;top:10px;right:10px;width:36px;height:36px;border:0;border-radius:6px;background:var(--card-bg);color:var(--muted);font:500 24px/1 system-ui;cursor:pointer}.sponsor-close:hover,.sponsor-close:focus-visible{background:var(--header-active);color:var(--red)}.sponsor-dialog h2{margin:2px 36px 4px;font-size:1.12rem}.sponsor-dialog>p{margin:0 0 12px;color:var(--muted);font-size:.78rem}.sponsor-qr-frame{display:grid;width:min(270px,100%);aspect-ratio:9/16;margin:0 auto;overflow:hidden;place-items:center;border:1px solid var(--line);border-radius:7px;background:#fff}.sponsor-qr-frame img{display:block;width:100%;height:100%;object-fit:contain}.sponsor-qr-empty{display:grid;height:100%;place-items:center;padding:20px;color:#697582;border:1px dashed #c9d1d5;font-size:.78rem}.sponsor-note{display:block;margin-top:10px;color:var(--muted);font-size:.7rem}
     .confirm-actions{display:flex;justify-content:center;gap:10px;margin-top:10px}.confirm-actions button{min-width:88px;padding:8px 14px;border-radius:6px;font:500 .88rem system-ui;cursor:pointer}.confirm-actions .confirm-cancel{border:1px solid var(--line);background:var(--card-bg);color:var(--ink)}.confirm-actions .confirm-cancel:hover,.confirm-actions .confirm-cancel:focus-visible{border-color:var(--muted);color:var(--red)}.confirm-actions .confirm-ok{border:1px solid var(--red);background:var(--red);color:#fff}.confirm-actions .confirm-ok:hover,.confirm-actions .confirm-ok:focus-visible{opacity:.88}.confirm-detail{margin:6px 0 0;padding:8px 10px;background:var(--header-active);border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:.74rem;line-height:1.5;text-align:left}
-    main{flex:1;overflow:auto;padding:16px 20px}
+    main{min-width:0;min-height:0;flex:1;overflow:auto;padding:16px 20px;overscroll-behavior:contain;scrollbar-gutter:stable}
+    main,.monitor-root{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 72%,transparent) color-mix(in srgb,var(--paper) 88%,var(--line))}
+    main::-webkit-scrollbar,.monitor-root::-webkit-scrollbar{width:10px;height:10px}
+    main::-webkit-scrollbar-track,.monitor-root::-webkit-scrollbar-track{background:color-mix(in srgb,var(--paper) 88%,var(--line))}
+    main::-webkit-scrollbar-thumb,.monitor-root::-webkit-scrollbar-thumb{min-width:32px;min-height:32px;border:2px solid color-mix(in srgb,var(--paper) 88%,var(--line));border-radius:5px;background:color-mix(in srgb,var(--muted) 72%,transparent)}
+    main::-webkit-scrollbar-thumb:hover,.monitor-root::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+    main::-webkit-scrollbar-corner,.monitor-root::-webkit-scrollbar-corner{background:var(--paper)}
     button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
     .indices{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
     .index-card{min-width:0;background:var(--card-bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -123,7 +154,6 @@
     .addbar button{padding:8px 16px;border:0;border-radius:7px;background:var(--red);color:#fff;font-weight:800;cursor:pointer;min-height:38px}
     .row-btn{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card-bg);cursor:pointer;font-size:.76rem;font-weight:700;min-height:32px;color:var(--ink)}
     .row-btn.danger{color:var(--red)}
-    svg{display:block;width:100%;height:220px;background:var(--card-bg)}
     .kline-wrap{display:none;margin-top:10px}
     .kline-wrap.show{display:block}
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
@@ -215,7 +245,7 @@
       .watch-chart-block{padding-top:5px}.watch-chart-title{margin-bottom:3px}.watch-chart-title strong{font-size:.7rem}.watch-chart-title span{font-size:.56rem}
       .watch-chart-frame{height:clamp(170px,calc((100vh - 400px)/2),240px)}
     }
-    @media (max-width:1080px){.sponsor-button{width:40px;justify-content:center;padding:0}.sponsor-button span:last-child{display:none}.header-actions{margin-left:5px}.window-controls{margin-left:4px}}
+    @media (max-width:1080px){.sponsor-button{width:34px;justify-content:center;padding:0}.sponsor-button span:last-child{display:none}.header-actions{margin-left:5px;padding-left:6px}.window-controls{margin-left:4px;padding-left:5px}}
     @media (max-width:600px){.release-item{grid-template-columns:1fr;gap:7px}.release-version{display:flex;align-items:baseline;gap:8px}.update-row{grid-template-columns:1fr}.update-actions{justify-content:flex-start}}
     @media (prefers-reduced-motion:reduce){.update-progress span{transition:none}}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
@@ -235,7 +265,7 @@
     .index-card,.b-card,.panel{background:var(--card-bg)}
     th{background:var(--table-head)}
     .ring{background:conic-gradient(var(--red) 0 var(--p,0%),var(--ring-track) var(--p,0%) 100%)}
-    .ring div,svg{background:var(--card-bg)}
+    .ring div{background:var(--card-bg)}
     .addbar input,.set-item select{color:var(--ink)}
     .set-item{background:var(--paper)}
     footer{background:var(--paper);border-color:var(--line)}
@@ -313,6 +343,7 @@
     @media (max-width:1050px){.review-temperature-band{grid-template-columns:145px minmax(0,1fr)}.review-hero-stats{grid-column:1/-1;padding:12px 0 0;border-top:1px solid var(--line)}.review-anchor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media (max-width:850px){.review-title-row{align-items:flex-start;display:block}.review-source{justify-items:start;margin-top:11px;text-align:left}.review-breadth-surface,.review-three-pane{grid-template-columns:1fr}.review-index-pane,.review-pane+.review-pane,.review-conclusion{border-top:1px solid var(--line);border-left:0}.review-ladder{grid-template-columns:repeat(2,minmax(0,1fr))}.review-height-group{border-bottom:1px solid var(--line)}.review-height-group:nth-child(2n){border-right:0}.review-detail-grid{grid-template-columns:1fr}.review-data-block,.review-data-wide{grid-column:auto}.review-news-list{grid-template-columns:1fr}.review-news-list li,.review-news-list li:nth-child(2n){padding:9px 0;border-left:0;border-bottom:1px solid var(--line)}.review-news-list li:nth-last-child(2){border-bottom:1px solid var(--line)}.review-news-list li:last-child{border-bottom:0}}
     @media (max-width:600px){.review-view{padding:0 0 18px}.review-hero{padding:18px 15px;margin-bottom:20px;border-radius:11px}.review-title-row h1{font-size:1.55rem}.review-title-row p{font-size:.74rem;line-height:1.55}.review-temperature-band{grid-template-columns:1fr;gap:14px;margin-top:15px;padding:15px}.review-score{display:flex;align-items:baseline;justify-content:space-between;padding:0 0 13px;border-right:0;border-bottom:1px solid var(--line)}.review-score strong{font-size:3.55rem}.review-score span{margin:0}.review-temperature-copy>strong{width:100%;font-size:.84rem}.review-temperature-copy p{font-size:.73rem}.review-hero-stats{gap:7px;padding-top:12px}.review-hero-stats b{font-size:1.15rem}.review-section{margin-bottom:19px}.review-section-heading{gap:7px;margin-bottom:9px}.review-section-number{font-size:1.15rem}.review-section-heading h2{font-size:1rem}.review-section-kicker{font-size:.58rem}.review-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.review-metric-card{min-height:92px;padding:11px 7px}.review-metric-card strong{font-size:1.65rem}.review-metric-card span{font-size:.76rem}.review-breadth-pane,.review-index-pane,.review-pane,.review-data-block{padding:14px 13px}.review-breadth-values{gap:8px}.review-breadth-values strong{font-size:1.3rem}.review-index-row{grid-template-columns:minmax(80px,1fr) 68px minmax(78px,1fr);gap:7px;font-size:.72rem}.review-bar-row{grid-template-columns:minmax(66px,.82fr) 72px minmax(60px,1fr);gap:7px;font-size:.72rem}.review-ladder{grid-template-columns:1fr}.review-height-group,.review-height-group:nth-child(2n){padding:12px 14px;border-right:0;border-bottom:1px solid var(--line)}.review-height-group:last-child{border-bottom:0}.review-anchor-grid{grid-template-columns:1fr;gap:8px}.review-anchor-card{min-height:0;padding:13px}.review-data-block table{font-size:.72rem}.review-data-block th,.review-data-block td{padding:7px}.review-conclusion-bar{align-items:flex-start;gap:8px;padding:12px;font-size:.75rem;line-height:1.5}.review-conclusion-bar b{white-space:normal}.review-disclaimer{font-size:.66rem;line-height:1.5}}
+    @media (max-width:600px){main{overflow:auto}}
     @media print{body{height:auto;background:#fff!important;color:#111!important}header,footer,.loading-overlay{display:none!important}main{overflow:visible;padding:0;background:#fff!important}.content-stage{min-height:0}.review-view{max-width:none;padding:0;color:#111}.review-hero,.review-metric-card,.review-surface,.review-anchor-card,.review-data-block{box-shadow:none;background:#fff;border-color:#cfd5d8}.review-hero{padding:18px;margin-bottom:17px}.review-temperature-band{background:#fff;border-color:#e1c5c4}.review-section{break-inside:avoid;page-break-inside:avoid;margin-bottom:17px}.review-detail-grid{gap:10px}.review-conclusion-bar{background:#17212b!important;color:#fff!important}.review-disclaimer{color:#555}.review-data-block table{font-size:9pt}.review-ladder{grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible}.err{display:none}}
   </style>
 </head>
@@ -328,6 +359,43 @@
     </div>
   </div>
   <div id="app">
+    <template v-if="isMonitorMode">
+      <section class="monitor-root" role="region" aria-label="透明浮窗监控">
+        <div class="monitor-card">
+          <header class="monitor-head">
+            <b>行情监控</b>
+            <span class="monitor-session" role="status" aria-live="polite">{{ monitorSessionLabel }}</span>
+            <div class="monitor-actions">
+              <button type="button" class="monitor-action" :class="{busy:monitorLoading}" :disabled="monitorLoading" title="刷新数据" aria-label="刷新浮窗数据" @click="loadMonitorData(true)"><span class="monitor-action-icon" aria-hidden="true">⟳</span></button>
+              <button type="button" class="monitor-action" title="隐藏浮窗" aria-label="隐藏监控浮窗" @click="hideMonitorWindow">×</button>
+            </div>
+          </header>
+          <p class="monitor-updated" aria-live="polite">更新 {{ monitorUpdatedLabel }}</p>
+          <p v-if="monitorError" class="monitor-alert" role="alert">{{ monitorError }} · 显示最近可用数据</p>
+          <div class="monitor-group-title"><span>主要指数</span></div>
+          <ul v-if="monitorIndices.length" class="monitor-list">
+            <li v-for="ix in monitorIndices" :key="'m-'+ix.name" class="monitor-row">
+              <span class="name">{{ ix.name }}</span>
+              <b class="monitor-price num">{{ ix.close != null ? ix.close.toFixed(2) : '-' }}</b>
+              <strong class="monitor-pct num" :class="ix.changePct == null ? '' : ix.changePct>=0?'up':'down'">{{ formatMonitorPct(ix.changePct) }}</strong>
+            </li>
+          </ul>
+          <div v-else class="monitor-empty">{{ monitorLoading ? '正在获取指数…' : '暂无指数数据' }}</div>
+          <div class="monitor-group-title"><span>自选监控</span><span>{{ monitorWatchlist.length }}/5</span></div>
+          <ul v-if="monitorStocks.length" class="monitor-list">
+            <li v-for="s in monitorStocks" :key="'ms-'+s.code" class="monitor-row monitor-stock-row">
+              <span class="name">{{ s.name }}</span>
+              <span class="monitor-code">{{ s.code }}</span>
+              <b class="monitor-price num">{{ s.latest != null ? s.latest.toFixed(2) : '-' }}</b>
+              <strong class="monitor-pct num" :class="s.changePct == null ? '' : s.changePct>=0?'up':'down'">{{ formatMonitorPct(s.changePct) }}</strong>
+            </li>
+          </ul>
+          <div v-else class="monitor-empty">在自选股卡片中选择要监控的股票（最多 5 只）</div>
+          <p class="monitor-note">数据仅供参考，不构成投资建议</p>
+        </div>
+      </section>
+    </template>
+    <template v-else>
     <header>
       <div class="logo">行情日报<span>DESKTOP</span></div>
       <nav>
@@ -336,11 +404,14 @@
         <button :class="{active:view==='review'}" :aria-current="view==='review'?'page':null" @click="openReview(todayStr());view='review'">每日复盘</button>
         <button :class="{active:view==='dragon'}" :aria-current="view==='dragon'?'page':null" @click="view='dragon';loadDragon()">龙虎榜</button>
         <button :class="{active:view==='history'}" @click="buildHistory();view='history'">历史报告</button>
-        <button :class="{active:view==='settings'}" @click="view='settings'">设置<span v-if="['available','downloaded'].includes(updateState.status)" class="update-nav-label">新版本</span></button>
-        <button v-if="view !== 'settings'" class="refresh" :disabled="busy" @click="refreshAll">{{ busy ? '刷新中…' : '刷新' }}</button>
+        <button class="settings-button header-icon-button" :class="{active:view==='settings'}" title="设置" aria-label="设置" @click="view='settings'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg><span v-if="['available','downloaded'].includes(updateState.status)" class="update-nav-label">新</span></button>
+        <button v-if="view !== 'settings'" class="refresh refresh-icon" :class="{busy}" :disabled="busy" :title="busy ? '刷新中' : '刷新数据'" :aria-label="busy ? '刷新中' : '刷新数据'" @click="refreshAll"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-14.8-4L3 10"/><path d="M3 4v6h6"/><path d="M4 13a8.1 8.1 0 0 0 14.8 4L21 14"/><path d="M21 20v-6h-6"/></svg><span class="sr-only">{{ busy ? '刷新中…' : '刷新' }}</span></button>
       </nav>
       <div class="header-actions" aria-label="外观与赞助">
-        <button type="button" class="sponsor-button" title="赞助支持" @click="openSponsor"><span class="sponsor-heart" aria-hidden="true">♥</span><span>赞助</span></button>
+        <button type="button" class="monitor-button header-icon-button" :class="{active:monitorVisible}" :aria-pressed="monitorVisible?'true':'false'" :title="monitorVisible ? '隐藏透明浮窗' : '显示透明浮窗'" :aria-label="monitorVisible ? '隐藏透明浮窗' : '显示透明浮窗'" @click="toggleMonitorWindow" @contextmenu.prevent="toggleMonitorWindow">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 13l3-3 2.5 2.5L17 9"/></svg>
+        </button>
+        <button type="button" class="sponsor-button header-icon-button" title="赞助支持" aria-label="赞助支持" @click="openSponsor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 8.8c0 5.2-8.8 10.2-8.8 10.2S3.2 14 3.2 8.8A4.5 4.5 0 0 1 12 6.4a4.5 4.5 0 0 1 8.8 2.4Z"/></svg></button>
         <button type="button" class="theme-toggle" :class="{'is-dark':theme==='dark'}" role="switch" :aria-checked="theme==='dark'" :aria-label="theme==='dark' ? '切换到明亮皮肤' : '切换到暗黑皮肤'" :title="theme==='dark' ? '切换到明亮皮肤' : '切换到暗黑皮肤'" @click="toggleTheme"><span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-icon">☀</span><span class="theme-toggle-icon">☾</span></span></button>
       </div>
       <div class="window-controls" aria-label="窗口控制">
@@ -487,7 +558,10 @@
             <article v-for="s in watchQuotes" :key="s.code" class="watch-card" :class="s.change>=0?'is-up':'is-down'">
               <div class="watch-card-head">
                 <div class="watch-identity"><strong>{{ s.name }}</strong><span>{{ s.code }}</span></div>
-                <button type="button" class="watch-remove" @click="requestRemove(s)" :aria-label="'移除' + s.name" :title="'移除' + s.name">×</button>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <button type="button" class="watch-monitor-btn" :class="{active:isMonitorWatched(s.code)}" :disabled="!isMonitorWatched(s.code) && monitorWatchlist.length >= MONITOR_LIMIT" @click="toggleMonitorWatch(s)" :aria-pressed="isMonitorWatched(s.code)?'true':'false'" :title="isMonitorWatched(s.code) ? '移出监控浮窗' : '加入监控浮窗'">{{ isMonitorWatched(s.code) ? '已监控' : '+ 监控' }}</button>
+                  <button type="button" class="watch-remove" @click="requestRemove(s)" :aria-label="'移除' + s.name" :title="'移除' + s.name">×</button>
+                </div>
               </div>
               <div class="watch-quote"><strong>{{ s.latest.toFixed(2) }}</strong><div :class="s.change>=0?'up':'down'"><b>{{ s.change>=0?'+':'' }}{{ s.change.toFixed(2) }}</b><span>{{ s.changePct>=0?'+':'' }}{{ s.changePct.toFixed(2) }}%</span></div></div>
               <div class="watch-meta"><span>{{ s.change>=0 ? '上涨' : '下跌' }} · {{ quoteTimeLabel(s.quoteAt || s.capturedAt) }}</span><span>{{ marketOpen ? '盘中' : '最近交易' }}</span></div>
@@ -610,6 +684,9 @@
           <div class="settings-grid">
             <div class="set-item"><small>实时刷新频率</small><select v-model.number="refreshSec" @change="applyRefresh"><option :value="3">3 秒</option><option :value="5">5 秒</option><option :value="10">10 秒</option><option :value="0">手动</option></select></div>
             <div class="set-item"><small>每日复盘通知</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="notify" @change="applyNotify"> 生成后提醒我</label><div style="color:var(--muted);font-size:.78rem;margin-top:6px">应用保持在托盘运行时，交易日 12:00 和 16:00 各执行一次。</div></div>
+            <div class="set-item"><small>浮窗监控</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="monitorEnabled" @change="applyMonitorEnabled"> 置顶显示指数与自选摘要</label><div style="color:var(--muted);font-size:.78rem;margin-top:6px">应用启动时默认关闭；盘中自动刷新，非交易时段保留最近交易数据。最多监控 5 只自选股。</div></div>
+            <div class="set-item"><small>关闭主窗口</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="monitorOnMainClose" @change="applyMonitorOnMainClose"> 关闭到托盘时显示监控浮窗</label><div style="color:var(--muted);font-size:.78rem;margin-top:6px">关闭主窗口后继续查看行情；退出托盘程序时不会显示。</div></div>
+            <div class="set-item"><small>浮窗透明度</small><div style="display:flex;align-items:center;gap:12px"><input type="range" v-model.number="monitorOpacity" min="0" max="100" step="5" @change="applyMonitorOpacity" style="flex:1"><span style="min-width:42px;text-align:right;font-variant-numeric:tabular-nums">{{ monitorOpacity }}%</span></div><div style="color:var(--muted);font-size:.78rem;margin-top:6px">数值越高背景越实，越低越透明。默认 60%。</div></div>
             <div class="set-item"><small>数据源</small><div style="color:var(--muted);font-size:.8rem">腾讯行情 + 东方财富（本地直连）</div></div>
           </div>
         </div>
@@ -668,6 +745,7 @@
         </div>
       </section>
     </div>
+    </template>
   </div>
 
   <script>
@@ -677,8 +755,10 @@
     const PANKOU_SEEN_LIMIT = 2000;
     const PANKOU_COLUMN_COUNT = 3;
     const PANKOU_ROWS_PER_COLUMN = 3;
-    const PANKOU_INSERT_INTERVAL_MS = 260;
+    const PANKOU_INSERT_INTERVAL_MS = 900;
     const WATCHLIST_LIMIT = 9;
+    const MONITOR_LIMIT = 5;
+    const isMonitorMode = new URLSearchParams(location.search).get('mode') === 'monitor';
     const marketPart = (parts, type) => Number(parts.find(part => part.type === type)?.value || 0);
     const dateKey = date => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
     function getMarketStatus(now = new Date()) {
@@ -704,10 +784,25 @@
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
-        historyDates: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr
+        historyDates: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr,
+        isMonitorMode, monitorEnabled: false, monitorVisible: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60, monitorPayload: null, monitorLoading: false, monitorError: '', MONITOR_LIMIT
       }; },
       computed: {
         marketOpen() { return this.marketStatus.open; },
+        monitorIndices() { return this.monitorPayload?.indices || []; },
+        monitorStocks() {
+          const wanted = new Set(this.monitorWatchlist);
+          return (this.monitorPayload?.stocks || []).filter(stock => wanted.has(String(stock.code)));
+        },
+        monitorSessionLabel() {
+          const session = this.monitorPayload?.session;
+          if (session) {
+            const labels = { morning: '盘中', afternoon: '盘中', lunch: '午休', preopen: '未开市', closed: '闭市', weekend: '休市' };
+            return labels[session.state] || session.label;
+          }
+          return this.marketOpen ? '交易中 · 实时' : this.marketStatus.reason;
+        },
+        monitorUpdatedLabel() { return this.formatDataTime(this.monitorPayload?.updatedAt); },
         busy() { return this.loadingJobs.some(job => job.view === this.view); },
         loadingTip() { const jobs = this.loadingJobs.filter(job => job.view === this.view); const job = jobs[jobs.length - 1]; return job ? job.label : ''; },
         breadthStateLabel() { const state = this.real.breadth?.status; return state === 'ready' ? '全市场样本已校验' : state === 'error' ? '全市场统计暂不可用' : '正在更新全市场样本'; },
@@ -800,8 +895,15 @@
           this.refreshSec = Number(settings.refreshSec ?? this.refreshSec);
           this.theme = settings.theme === 'dark' ? 'dark' : 'light';
           this.notify = settings.notify === true;
-          this.applyTheme(this.theme, false);
-          window.desktopBridge?.setNotifyEnabled(this.notify);
+          this.monitorEnabled = settings.monitorEnabled === true;
+          this.monitorOnMainClose = settings.monitorOnMainClose === true;
+          this.monitorWatchlist = Array.isArray(settings.monitorWatchlist) ? settings.monitorWatchlist.slice(0, MONITOR_LIMIT) : [];
+           this.monitorOpacity = this.normalizeMonitorOpacity(settings.monitorOpacity);
+           this.applyMonitorOpacity(false);
+           this.applyTheme(this.theme, false);
+           const nativeState = await window.desktopBridge?.getMonitorState?.();
+           if (nativeState) this.applyMonitorState(nativeState);
+           window.desktopBridge?.setNotifyEnabled(this.notify);
           this.startAuto();
         },
         beginLoading(label) { const job = { id: `${Date.now()}-${Math.random()}`, label, view: this.view }; this.loadingJobs.push(job); return job; },
@@ -970,7 +1072,15 @@
         requestConfirm(options) { return new Promise(resolve => { this.confirmDialog = { ...options, resolve }; this.$nextTick(() => this.$refs.confirmDialog?.querySelector('.confirm-ok')?.focus()); }); },
         resolveConfirm(ok) { const dialog = this.confirmDialog; if (!dialog) return; this.confirmDialog = null; const confirmed = Boolean(ok); if (dialog.requestId) window.desktopBridge?.confirmResult(dialog.requestId, confirmed); else dialog.resolve?.(confirmed); if (this.view === 'watch') document.getElementById('watch-code')?.focus(); },
         async requestRemove(stock) { const confirmed = await this.requestConfirm({ title: '移出自选股', message: `确定将「${stock.name}」移出自选股？`, okLabel: '移除', cancelLabel: '取消' }); if (!confirmed) return; const c = stock.code; this.watch = this.watch.filter(x => x !== c); this.saveWatch(); this.loadWatch(); document.getElementById('watch-code')?.focus(); },
-        saveWatch() { localStorage.setItem('hq_watch', JSON.stringify(this.watch)); this.api('/api/watchlist', { method: 'POST', body: JSON.stringify({ watchlist: this.watch }) }).catch(error => console.warn('[桌面端] SQLite 自选股保存失败：', error.message)); },
+         saveWatch() {
+           localStorage.setItem('hq_watch', JSON.stringify(this.watch));
+           this.api('/api/watchlist', { method: 'POST', body: JSON.stringify({ watchlist: this.watch }) }).then(() => {
+             this.monitorWatchlist = this.monitorWatchlist.filter(code => this.watch.includes(code));
+             const bridgeSave = window.desktopBridge?.setMonitorWatchlist?.([...this.monitorWatchlist]);
+             if (bridgeSave) bridgeSave.catch(error => console.warn('[桌面端] 监控列表同步失败：', error.message));
+             else this.persistSettings({ monitorWatchlist: [...this.monitorWatchlist] });
+           }).catch(error => console.warn('[桌面端] SQLite 自选股保存失败：', error.message));
+         },
         // 历史
         async buildHistory() { const data = await this.api('/api/reviews'); this.historyDates = (data.reviews || []).map(item => item.date); },
         // 设置
@@ -980,10 +1090,130 @@
         closeSponsor() { this.sponsorOpen = false; },
         applyTheme(theme = this.theme, persist = true) { this.theme = theme === 'dark' ? 'dark' : 'light'; localStorage.setItem('hq_theme', this.theme); localStorage.setItem('hq_dark', this.theme === 'dark' ? '1' : '0'); document.body.classList.toggle('dark', this.theme === 'dark'); if (persist) this.persistSettings({ theme: this.theme }); },
         applyNotify(persist = true) { localStorage.setItem('hq_notify', this.notify ? '1' : '0'); if (persist) this.persistSettings({ notify: this.notify }); window.desktopBridge?.setNotifyEnabled(this.notify); },
+        isMonitorWatched(code) { return this.monitorWatchlist.includes(String(code)); },
+        async toggleMonitorWatch(stock) {
+          const code = String(stock.code);
+          if (this.isMonitorWatched(code)) {
+            this.monitorWatchlist = this.monitorWatchlist.filter(item => item !== code);
+          } else {
+            if (this.monitorWatchlist.length >= MONITOR_LIMIT) { this.formError = `监控浮窗最多 ${MONITOR_LIMIT} 只`; return; }
+            this.formError = '';
+            this.monitorWatchlist = [...this.monitorWatchlist, code];
+          }
+          const bridgeSave = window.desktopBridge?.setMonitorWatchlist?.([...this.monitorWatchlist]);
+          if (!window.desktopBridge) this.persistSettings({ monitorWatchlist: [...this.monitorWatchlist] });
+          await bridgeSave?.catch(error => console.warn('[桌面端] 监控列表保存失败：', error.message));
+        },
+        applyMonitorEnabled() {
+          window.desktopBridge?.setMonitorEnabled(this.monitorEnabled);
+          if (!window.desktopBridge) this.persistSettings({ monitorEnabled: this.monitorEnabled });
+        },
+        applyMonitorOnMainClose() {
+          const bridgeSave = window.desktopBridge?.setMonitorOnMainClose?.(this.monitorOnMainClose);
+          if (!bridgeSave) this.persistSettings({ monitorOnMainClose: this.monitorOnMainClose });
+          else bridgeSave.catch(error => console.warn('[桌面端] 关闭主窗口浮窗设置保存失败：', error.message));
+        },
+         normalizeMonitorOpacity(value) {
+           const number = Number(value);
+           return Number.isFinite(number) ? Math.min(100, Math.max(0, number)) : 60;
+         },
+         applyMonitorOpacity(persist = true) {
+           const value = this.normalizeMonitorOpacity(this.monitorOpacity);
+           this.monitorOpacity = value;
+           document.documentElement.style.setProperty('--monitor-opacity', value);
+           document.body.style.setProperty('--monitor-opacity', value);
+           if (persist) {
+             const bridgeSave = window.desktopBridge?.setMonitorOpacity?.(value);
+             if (bridgeSave) bridgeSave.catch(error => console.warn('[桌面端] 浮窗透明度保存失败：', error.message));
+             else this.persistSettings({ monitorOpacity: value });
+           }
+         },
+         toggleMonitorWindow() { return window.desktopBridge?.toggleMonitor(); },
+        hideMonitorWindow() { window.desktopBridge?.closeMonitorWindow(); },
+        formatMonitorPct(value) { return value == null ? '-' : `${value >= 0 ? '+' : ''}${Number(value).toFixed(2)}%`; },
+        async loadMonitorData(manual = false) {
+          if (this._monitorLoading) { this._monitorRefreshRequested = true; return; }
+          this._monitorLoading = true; this.monitorLoading = true;
+          if (manual) this.monitorError = '';
+          const requestedCodes = this.monitorWatchlist.slice(0, MONITOR_LIMIT).join(',');
+          try {
+            const payload = await this.api('/api/monitor' + (requestedCodes ? `?codes=${encodeURIComponent(requestedCodes)}` : ''));
+            if (requestedCodes === this.monitorWatchlist.slice(0, MONITOR_LIMIT).join(',')) this.applyMonitorPayload(payload);
+          } catch (error) {
+            if (requestedCodes === this.monitorWatchlist.slice(0, MONITOR_LIMIT).join(',')) this.monitorError = error.message || '行情获取失败';
+          } finally {
+            this._monitorLoading = false; this.monitorLoading = false;
+            if (this._monitorRefreshRequested) { this._monitorRefreshRequested = false; this.loadMonitorData(true); }
+          }
+        },
+        applyMonitorPayload(payload) {
+          if (!payload || typeof payload !== 'object') throw new Error('监控数据格式不正确');
+          this.monitorPayload = payload;
+          this.monitorError = '';
+          this.fitMonitorWindow();
+        },
+       fitMonitorWindow() {
+         if (!this.isMonitorMode) return;
+         this.$nextTick(() => {
+           const card = document.querySelector('.monitor-card');
+           if (!card) return;
+            const height = card.offsetHeight + 20;
+            window.desktopBridge?.resizeMonitorWindow?.(null, height);
+         });
+       },
+        applyMonitorState(state, manageTimer = true) {
+          if (!state || typeof state !== 'object') return;
+          const wasVisible = this.monitorVisible;
+          const previousWatchlist = this.monitorWatchlist.join(',');
+          this.monitorEnabled = state.enabled === true;
+          this.monitorVisible = state.visible === true;
+          this.monitorOnMainClose = state.onMainClose === true;
+          this.monitorWatchlist = Array.isArray(state.watchlist) ? state.watchlist.slice(0, MONITOR_LIMIT) : [];
+          if (state.opacity !== undefined) {
+            this.monitorOpacity = this.normalizeMonitorOpacity(state.opacity);
+            this.applyMonitorOpacity(false);
+          }
+          if (manageTimer && this.isMonitorMode && wasVisible !== this.monitorVisible) {
+            if (this.monitorVisible) this.startMonitorTimer();
+            else { clearInterval(this._monitorTimer); this._monitorTimer = null; }
+          }
+          if (manageTimer && this.isMonitorMode && this.monitorVisible && previousWatchlist !== this.monitorWatchlist.join(',')) {
+            this.loadMonitorData(true);
+          }
+        },
+        startMonitorTimer() {
+           clearInterval(this._monitorTimer);
+           this.updateMarketStatus();
+           this.loadMonitorData(true).then(() => this.fitMonitorWindow()).catch(() => {});
+           this._monitorTimer = setInterval(() => { this.updateMarketStatus(); this.loadMonitorData(false); }, 10000);
+         },
+        async initMonitorMode() {
+          try {
+            const data = await this.api('/api/settings');
+            const settings = data.settings || {};
+            this.monitorEnabled = settings.monitorEnabled === true;
+            this.monitorOnMainClose = settings.monitorOnMainClose === true;
+            this.monitorWatchlist = Array.isArray(settings.monitorWatchlist) ? settings.monitorWatchlist.slice(0, MONITOR_LIMIT) : [];
+           this.monitorOpacity = this.normalizeMonitorOpacity(settings.monitorOpacity);
+           this.theme = settings.theme === 'dark' ? 'dark' : 'light';
+           this.applyTheme(this.theme, false);
+           const nativeState = await window.desktopBridge?.getMonitorState?.();
+           if (nativeState) this.applyMonitorState(nativeState, false);
+           else this.applyMonitorOpacity(false);
+          } catch (error) { console.warn('[浮窗] 设置读取失败：', error.message); }
+          document.body.classList.add('monitor-mode');
+          this.startMarketClock();
+           if (!window.desktopBridge || this.monitorVisible) this.startMonitorTimer();
+          document.getElementById('boot-screen')?.classList.add('is-ready');
+          this.fitMonitorWindow();
+          this.$nextTick(() => window.desktopBridge?.monitorReady?.());
+        },
          startMarketClock() { if (this._marketTimer) clearInterval(this._marketTimer); this._marketTimer = setInterval(() => this.updateMarketStatus(), 30000); },
          startAuto() { if (this._timer) clearInterval(this._timer); this._timer = null; if (this.refreshSec > 0) this._timer = setInterval(() => { this.updateMarketStatus(); if (this.marketOpen && this.view === 'realtime') this.loadRealtime({ silent: true }); }, this.refreshSec * 1000); },
-       },
+        },
        mounted() {
+         this._removeMonitorListener=window.desktopBridge?.onMonitorStateChanged?.(state => this.applyMonitorState(state));
+        if (this.isMonitorMode) { this.initMonitorMode(); return; }
         this.applyTheme(this.theme, false);
         this.loadChangelog();
         this.loadUpdateState().catch(error => console.warn('[桌面端] 更新状态读取失败：', error.message));
@@ -994,7 +1224,7 @@
          this.updateMarketStatus(); this.startMarketClock();
          this.loadLocalSettings().catch(error => console.warn('[桌面端] SQLite 设置读取失败：', error.message)).finally(() => { this.updateMarketStatus(); this.loadRealtime({ silent: true, allowClosed: true }); this.startAuto(); });
        },
-       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); this._removeUpdateListener?.(); this._removeConfirmListener?.(); }
+       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); if (this._monitorTimer) clearInterval(this._monitorTimer); this._removeUpdateListener?.(); this._removeConfirmListener?.(); this._removeMonitorListener?.(); }
     }).mount('#app');
   </script>
 </body>

@@ -12,10 +12,10 @@
 
 ## 下载
 
-当前 Windows 版本：`0.2.3`
+当前 Windows 版本：`0.2.4`
 
-- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.3/hangqing-desktop-0.2.3-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
+- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-ia32-setup.exe)：仅用于 32 位 Windows。
 - [查看全部版本与发布说明](https://github.com/rjf1979/review_stock/releases)。
 
 安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从本仓库 Release 页面下载并核对发布页提供的 SHA-256。
@@ -143,7 +143,7 @@ npm start
 
 ## Windows 打包
 
-桌面版当前版本为 `0.2.3`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.2.4`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop
