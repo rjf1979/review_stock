@@ -3658,18 +3658,18 @@ const Yo = { class: "app-shell" }, zo = {
   __name: "App",
   setup(e) {
     const t = {
-      x64: "https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-x64-setup.exe",
-      ia32: "https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-ia32-setup.exe",
-      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.2.4"
+      x64: "https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-x64-setup.exe",
+      ia32: "https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-ia32-setup.exe",
+      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.2.5"
     };
     return (s, n) => (io(), lo("div", Yo, [
-      n[12] || (n[12] = Mt('<header class="nav"><a class="logo" href="#top" aria-label="返回行情日报首页">行情日报<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
+      n[12] || (n[12] = Mt('<header class="nav"><a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
       I("main", null, [
         I("section", zo, [
           I("div", Xo, [
             n[1] || (n[1] = I("p", { class: "kicker" }, "LOCAL MARKET DESK · WINDOWS DESKTOP", -1)),
             n[2] || (n[2] = I("h1", null, [
-              bs("行情日报，"),
+              bs("股市脉搏，"),
               I("br"),
               I("em", null, "一屏看懂。")
             ], -1)),
@@ -3686,13 +3686,13 @@ const Yo = { class: "app-shell" }, zo = {
             ]),
             n[4] || (n[4] = I("p", { class: "fine" }, "Windows 10/11 · 提供 x64 与 x86 安装包 · macOS 暂未提供 · 免费 · 无需账号", -1))
           ]),
-          n[5] || (n[5] = Mt('<div class="hero-console" aria-label="行情日报桌面版功能预览"><div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 行情日报</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div><div class="console-content"><div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div><div class="console-indices"><div class="console-index"><small>实时行情</small><strong>本地更新</strong><span>指数与自选股</span></div><div class="console-index"><small>每日复盘</small><strong>16:00</strong><span>工作日整理</span></div><div class="console-index"><small>系统通知</small><strong>可选</strong><span>托盘运行</span></div></div><div class="console-table"><div><span>数据来源</span><b>腾讯行情 · 东方财富</b></div><div><span>运行方式</span><b>本地直连公开接口</b></div><div><span>数据保存</span><b>当前 Windows 用户本地</b></div></div></div></div>', 1))
+          n[5] || (n[5] = Mt('<div class="hero-console" aria-label="股市脉搏桌面版功能预览"><div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 股市脉搏</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div><div class="console-content"><div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div><div class="console-indices"><div class="console-index"><small>实时行情</small><strong>本地更新</strong><span>指数与自选股</span></div><div class="console-index"><small>每日复盘</small><strong>16:00</strong><span>工作日整理</span></div><div class="console-index"><small>系统通知</small><strong>可选</strong><span>托盘运行</span></div></div><div class="console-table"><div><span>数据来源</span><b>腾讯行情 · 东方财富</b></div><div><span>运行方式</span><b>本地直连公开接口</b></div><div><span>数据保存</span><b>当前 Windows 用户本地</b></div></div></div></div>', 1))
         ]),
         n[10] || (n[10] = Mt('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数与自选股实时报价，刷新频率可调，涨跌语义清晰。</p></article><article><span class="feature-index">02</span><h3>每日复盘</h3><p>市场温度、大盘概览、资金流、海外市场和要闻集中呈现。</p></article><article><span class="feature-index">03</span><h3>板块与龙虎榜</h3><p>领涨板块、涨停连板梯队和龙虎榜净买入，收盘后一次看完。</p></article><article><span class="feature-index">04</span><h3>本地数据</h3><p>公开行情在本机整理，自选股、设置和复盘记录保存在本地。</p></article></div></section><section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 2)),
         I("section", Qo, [
           n[9] || (n[9] = I("div", null, [
-            I("p", { class: "kicker" }, "DESKTOP RELEASE · V0.2.4"),
-            I("h2", null, "把行情日报放在桌面上"),
+            I("p", { class: "kicker" }, "DESKTOP RELEASE · V0.2.5"),
+            I("h2", null, "把股市脉搏放在桌面上"),
             I("p", null, "提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。")
           ], -1)),
           I("div", el, [
@@ -3726,10 +3726,10 @@ const Yo = { class: "app-shell" }, zo = {
             }, "查看 Release 与校验值", 8, nl)
           ])
         ]),
-        n[11] || (n[11] = Mt('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>行情日报使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>行情日报仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
+        n[11] || (n[11] = Mt('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
       ]),
       n[13] || (n[13] = I("footer", null, [
-        I("span", null, "© 2026 行情日报 · Desktop Market Desk"),
+        I("span", null, "© 2026 股市脉搏 · Desktop Market Desk"),
         I("span", null, [
           I("a", { href: "#data" }, "数据来源与免责声明"),
           bs(" · "),

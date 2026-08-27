@@ -221,7 +221,7 @@ function createMonitorWindow() {
     hasShadow: false,
     focusable: true,
     show: false,
-    title: '行情监控浮窗',
+    title: '股市脉搏 v0.2.5 · 行情监控',
     icon: APP_ICON,
     webPreferences: {
       contextIsolation: true,
@@ -331,7 +331,7 @@ function createWindow() {
     height: workArea.height,
     frame: false,
     fullscreenable: false,
-    title: '行情日报 Desktop',
+    title: '股市脉搏 v0.2.5',
     icon: APP_ICON,
     backgroundColor: '#f6f8f7',
     autoHideMenuBar: true,
@@ -358,7 +358,7 @@ function createWindow() {
 function createTray() {
   const icon = nativeImage.createFromPath(APP_ICON).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
-  tray.setToolTip('行情日报 Desktop');
+  tray.setToolTip('股市脉搏 v0.2.5');
   tray.on('double-click', showWindow);
   updateTrayMenu();
 }
@@ -366,7 +366,7 @@ function createTray() {
 function updateTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开行情日报', click: showWindow },
+    { label: '打开股市脉搏', click: showWindow },
     { type: 'separator' },
     {
       label: '每日复盘通知',
@@ -417,7 +417,7 @@ function startReviewScheduler() {
         await response.json();
       }
       saveState({ lastReviewDate: date, lastReviewSlot: `${date}@${slot.id}` });
-      notify('每日复盘已生成', date + ' · ' + slot.label + ' · 市场温度 ' + result.temperature + '°，打开行情日报查看');
+      notify('每日复盘已生成', date + ' · ' + slot.label + ' · 市场温度 ' + result.temperature + '°，打开股市脉搏查看');
       console.log('[桌面端] ' + slot.label + '完成：' + date + '，温度 ' + result.temperature);
     },
     onError: (error, date, slot) => {

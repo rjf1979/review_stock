@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>行情日报 Desktop</title>
+  <title>股市脉搏 v0.2.5</title>
   <script src="/vendor/vue.global.prod.js"></script>
   <script src="/vendor/klinecharts.min.js"></script>
   <style>
@@ -351,7 +351,7 @@
   <script>try{if((localStorage.getItem('hq_theme')|| (localStorage.getItem('hq_dark')==='1'?'dark':'light'))==='dark')document.body.classList.add('dark')}catch{}</script>
   <div id="boot-screen" role="status" aria-live="polite">
     <div class="boot-shell">
-      <p class="boot-kicker">行情日报 · Desktop</p>
+      <p class="boot-kicker">股市脉搏 · v0.2.5</p>
       <h1>正在打开行情工作台</h1>
       <p>首次启动会检查本地行情服务，并从公开行情源获取最新数据。</p>
       <div class="boot-preview" aria-hidden="true"><div><small>实时行情</small><strong>指数与板块</strong></div><div><small>每日复盘</small><strong>收盘自动整理</strong></div><div><small>自选观察</small><strong>本地保存</strong></div></div>
@@ -397,7 +397,7 @@
     </template>
     <template v-else>
     <header>
-      <div class="logo">行情日报<span>DESKTOP</span></div>
+      <div class="logo">股市脉搏<span>DESKTOP · v0.2.5</span></div>
       <nav>
         <button :class="{active:view==='realtime'}" :aria-current="view==='realtime'?'page':null" @click="view='realtime';loadRealtime({silent:true,allowClosed:true})">实时行情</button>
         <button :class="{active:view==='watch'}" :aria-current="view==='watch'?'page':null" @click="view='watch';loadWatch()">自选股</button>
@@ -428,14 +428,14 @@
           <section class="welcome-copy" aria-labelledby="welcome-title">
             <p class="welcome-kicker">首次启动 · 行情工作台</p>
             <h1 id="welcome-title">把今天的市场，<em>先看一眼</em></h1>
-            <p>行情日报把实时指数、强势板块、自选股和收盘复盘放在一个安静的桌面工作台里。数据在本机获取，软件不需要注册账号。</p>
+            <p>股市脉搏把实时指数、强势板块、自选股和收盘复盘放在一个安静的桌面工作台里。数据在本机获取，软件不需要注册账号。</p>
             <div class="welcome-status" role="status" aria-live="polite">
               <strong>{{ status.realtime === 'error' ? '行情服务连接失败' : (marketOpen ? '正在连接公开行情源' : '正在读取最近行情') }}</strong>
               <span>{{ status.realtime === 'error' ? errors.realtime : '首次启动通常需要几秒钟，请保持网络连接。' }}</span>
             </div>
             <div class="welcome-actions"><button type="button" @click="loadRealtime({silent:false,allowClosed:true})">{{ status.realtime === 'error' ? '重新连接' : '立即连接' }}</button></div>
           </section>
-          <section class="welcome-console" aria-label="行情日报功能预览">
+          <section class="welcome-console" aria-label="股市脉搏功能预览">
             <div class="welcome-console-head"><b>MARKET WORKSPACE</b><span>LOCAL DESKTOP</span></div>
             <div class="welcome-console-body">
               <div class="welcome-console-title"><div><small>今日行情</small><strong>市场工作台</strong></div><span>等待数据</span></div>
@@ -715,7 +715,7 @@
           <div v-else class="release-empty" role="status">更新日志暂不可用</div>
         </div>
         <div class="panel"><h2>关于</h2>
-          <p style="color:var(--muted);font-size:.85rem">行情日报 Desktop · v{{ appVersion }}<br>仅提供行情数据的展示与整理，数据来自公开来源，仅供参考，<b>不构成任何投资建议</b>。<br>股市有风险，投资需谨慎。</p>
+          <p style="color:var(--muted);font-size:.85rem">股市脉搏 · v{{ appVersion }}<br>仅提供行情数据的展示与整理，数据来自公开来源，仅供参考，<b>不构成任何投资建议</b>。<br>股市有风险，投资需谨慎。</p>
         </div>
       </div>
         <div v-if="loadingTip" class="loading-overlay" role="status" aria-live="polite"><div class="loading-card"><span class="spinner" aria-hidden="true"></span><span>{{ loadingTip }}</span></div></div>
@@ -725,7 +725,7 @@
     <div v-if="sponsorOpen" class="sponsor-backdrop" role="presentation" @click.self="closeSponsor" @keydown.esc.window="closeSponsor">
       <section ref="sponsorDialog" class="sponsor-dialog" role="dialog" aria-modal="true" aria-labelledby="sponsor-title">
         <button type="button" class="sponsor-close" aria-label="关闭赞助窗口" @click="closeSponsor">×</button>
-        <h2 id="sponsor-title">支持行情日报</h2>
+        <h2 id="sponsor-title">支持股市脉搏</h2>
         <p>感谢支持本地、无广告的行情工具持续维护。</p>
         <div class="sponsor-qr-frame">
           <img v-if="sponsorQrAvailable" src="/assets/sponsor-qr.jpg" alt="支付宝赞助收款码" @error="sponsorQrAvailable=false">

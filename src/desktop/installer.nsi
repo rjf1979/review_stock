@@ -4,10 +4,11 @@ SetCompressor /SOLID lzma
 !include "WordFunc.nsh"
 !insertmacro VersionCompare
 
-!define PRODUCT_NAME "Hangqing Desktop"
-!define PRODUCT_VERSION "0.2.4"
+!define PRODUCT_NAME "股市脉搏"
+!define PRODUCT_VERSION "0.2.5"
 !define PRODUCT_EXE "HangqingDesktop.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hangqing Desktop"
+!define INSTALL_DIR_NAME "Hangqing Desktop"
 !ifndef BUILD_ARCH
   !define BUILD_ARCH "x64"
 !endif
@@ -26,7 +27,7 @@ Name "${PRODUCT_NAME}"
 OutFile "release\hangqing-desktop-${PRODUCT_VERSION}-win-${BUILD_ARCH}-setup.exe"
 Icon "assets\icon.ico"
 UninstallIcon "assets\icon.ico"
-InstallDir "$LOCALAPPDATA\Programs\${PRODUCT_NAME}"
+InstallDir "$LOCALAPPDATA\Programs\${INSTALL_DIR_NAME}"
 RequestExecutionLevel user
 AutoCloseWindow true
 ShowInstDetails show
@@ -80,7 +81,7 @@ Section "Install"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT_NAME} (${BUILD_ARCH})"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "Hangqing"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "股市脉搏"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" '"$INSTDIR\app-icon.ico",0'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1

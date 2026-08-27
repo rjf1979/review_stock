@@ -1,15 +1,15 @@
 <script setup>
 const downloads = {
-  x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-x64-setup.exe',
-  ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.2.4'
+  x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-x64-setup.exe',
+  ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.2.5'
 }
 </script>
 
 <template>
   <div class="app-shell">
     <header class="nav">
-      <a class="logo" href="#top" aria-label="返回行情日报首页">行情日报<span>DESKTOP MARKET DESK</span></a>
+      <a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a>
       <nav aria-label="主导航">
         <a href="#features">功能</a>
         <a href="#how">工作方式</a>
@@ -21,7 +21,7 @@ const downloads = {
       <section id="top" class="site-hero">
         <div class="hero-copy">
           <p class="kicker">LOCAL MARKET DESK · WINDOWS DESKTOP</p>
-          <h1>行情日报，<br><em>一屏看懂。</em></h1>
+          <h1>股市脉搏，<br><em>一屏看懂。</em></h1>
           <p class="lede">实时行情、板块、龙虎榜和收盘复盘。数据在你的电脑本地整理，打开应用就能开始工作。</p>
           <div class="actions">
             <a class="primary" :href="downloads.x64">下载 Windows 64 位版</a>
@@ -30,8 +30,8 @@ const downloads = {
           <p class="fine">Windows 10/11 · 提供 x64 与 x86 安装包 · macOS 暂未提供 · 免费 · 无需账号</p>
         </div>
 
-        <div class="hero-console" aria-label="行情日报桌面版功能预览">
-          <div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 行情日报</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div>
+        <div class="hero-console" aria-label="股市脉搏桌面版功能预览">
+          <div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 股市脉搏</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div>
           <div class="console-content">
             <div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div>
             <div class="console-indices">
@@ -64,7 +64,7 @@ const downloads = {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.2.4</p><h2>把行情日报放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.2.5</p><h2>把股市脉搏放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
         <div class="download-options">
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
@@ -79,10 +79,10 @@ const downloads = {
 
       <section id="data" class="compliance-section section">
         <div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div>
-        <div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>行情日报使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>行情日报仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div>
+        <div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div>
       </section>
     </main>
 
-    <footer><span>© 2026 行情日报 · Desktop Market Desk</span><span><a href="#data">数据来源与免责声明</a> · <a href="#download">下载</a></span></footer>
+    <footer><span>© 2026 股市脉搏 · Desktop Market Desk</span><span><a href="#data">数据来源与免责声明</a> · <a href="#download">下载</a></span></footer>
   </div>
 </template>

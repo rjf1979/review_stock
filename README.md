@@ -1,10 +1,10 @@
-# 行情日报
+# 股市脉搏
 
 <p align="center">
-  <img src="src/desktop/assets/icon.png" width="96" height="96" alt="行情日报 Desktop 图标">
+  <img src="src/desktop/assets/icon.png" width="96" height="96" alt="股市脉搏图标">
 </p>
 
-行情日报是一套面向 A 股盘面观察与收盘整理的本地优先工具。当前主产品是 Windows Electron 桌面版，提供实时行情、市场宽度、概念与资金、盘口异动、自选股、龙虎榜和每日复盘；仓库同时保留一个简单的 Web 官网，用于介绍桌面版和提供安装包下载入口。未来可能增加独立的 App 端。
+股市脉搏是一套面向 A 股盘面观察与收盘整理的本地优先工具。当前主产品是 Windows Electron 桌面版，提供实时行情、市场宽度、概念与资金、盘口异动、自选股、龙虎榜和每日复盘；仓库同时保留一个简单的 Web 官网，用于介绍桌面版和提供安装包下载入口。未来可能增加独立的 App 端。
 
 官网：[https://dailystock.zhicha.io](https://dailystock.zhicha.io)
 
@@ -12,10 +12,10 @@
 
 ## 下载
 
-当前 Windows 版本：`0.2.4`
+当前 Windows 版本：`0.2.5`
 
-- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.4/hangqing-desktop-0.2.4-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
+- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.2.5/hangqing-desktop-0.2.5-win-ia32-setup.exe)：仅用于 32 位 Windows。
 - [查看全部版本与发布说明](https://github.com/rjf1979/review_stock/releases)。
 
 安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从本仓库 Release 页面下载并核对发布页提供的 SHA-256。
@@ -143,7 +143,7 @@ npm start
 
 ## Windows 打包
 
-桌面版当前版本为 `0.2.4`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.2.5`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop

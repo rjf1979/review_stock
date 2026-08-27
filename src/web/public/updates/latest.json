@@ -1,22 +1,21 @@
 {
-  "version": "0.2.4",
-  "publishedAt": "2026-08-27T09:02:09.064Z",
+  "version": "0.2.5",
+  "publishedAt": "2026-08-27T10:54:21.503Z",
   "notes": [
-    "新增可拖动、可滚动的行情监控浮动窗口，默认关闭并支持关闭应用时显示设置。",
-    "优化自选股监控同步、行情字段展示、盘口异动频率和首次打开浮窗稳定性。",
-    "固定主窗口顶部菜单并完善内容滚动、设置图标与桌面操作布局。",
-    "修复在线升级安装器启动与更新完成后自动启动应用的问题。"
+    "应用名称更新为股市脉搏，窗口、托盘、启动页与安装器同步更新。",
+    "应用标题显示当前版本号，便于确认已安装版本。",
+    "保持原有安装目录和更新识别，已安装用户可直接覆盖升级。"
   ],
   "assets": {
     "x64": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.4-win-x64-setup.exe",
-      "size": 84638461,
-      "sha256": "f85047e7475c34d4e8007ce7ac3e3bdb47c9556d630cbc8742bc48f635e13004"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.5-win-x64-setup.exe",
+      "size": 84589677,
+      "sha256": "ed30faba52b75971d44dff300d8cced547cee29793dda9eeb36a512a3d4eb855"
     },
     "ia32": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.4-win-ia32-setup.exe",
-      "size": 79871792,
-      "sha256": "3b2be82fee26c8078899866ebc2e237df2c5d83cd8020a55375ed9fd273a23f1"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.5-win-ia32-setup.exe",
+      "size": 79851463,
+      "sha256": "723be03c8c45bddb045fdb8cf18840e95c0d3a942bbb90b4e27609ca0e53ced2"
     }
   }
 }
