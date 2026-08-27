@@ -1,21 +1,20 @@
 {
-  "version": "0.2.5",
-  "publishedAt": "2026-08-27T10:54:21.503Z",
+  "version": "0.2.6",
+  "publishedAt": "2026-08-27T12:44:07.223Z",
   "notes": [
-    "应用名称更新为股市脉搏，窗口、托盘、启动页与安装器同步更新。",
-    "应用标题显示当前版本号，便于确认已安装版本。",
-    "保持原有安装目录和更新识别，已安装用户可直接覆盖升级。"
+    "设置页新增 QQ 交流群联系卡片，支持扫码加入股市脉搏交流群。",
+    "联系我们与关于信息改为双列展示，并调整到更新日志之前。"
   ],
   "assets": {
     "x64": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.5-win-x64-setup.exe",
-      "size": 84589677,
-      "sha256": "ed30faba52b75971d44dff300d8cced547cee29793dda9eeb36a512a3d4eb855"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.6-win-x64-setup.exe",
+      "size": 85258034,
+      "sha256": "2373d2368fc487b3d4e3e1806c67d3ee72765386f968da97631db3c3b6ad19ea"
     },
     "ia32": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.5-win-ia32-setup.exe",
-      "size": 79851463,
-      "sha256": "723be03c8c45bddb045fdb8cf18840e95c0d3a942bbb90b4e27609ca0e53ced2"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.6-win-ia32-setup.exe",
+      "size": 80511050,
+      "sha256": "b9f7ca984276191b3aaf3fb13b696db6ac2d513ed1afae9e9c6c812b97c80b98"
     }
   }
 }
