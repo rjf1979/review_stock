@@ -27,7 +27,7 @@ const downloads = {
             <a class="primary" :href="downloads.x64">下载 Windows 64 位版</a>
             <a class="text-link" href="#features">查看功能</a>
           </div>
-          <p class="fine">Windows 10/11 · x64 与 32 位 · 免费 · 无需账号</p>
+          <p class="fine">Windows 10/11 · 提供 x64 与 x86 安装包 · macOS 暂未提供 · 免费 · 无需账号</p>
         </div>
 
         <div class="hero-console" aria-label="行情日报桌面版功能预览">
@@ -64,11 +64,11 @@ const downloads = {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.2.4</p><h2>把行情日报放在桌面上</h2><p>当前提供 Windows x64 和 32 位安装包，仅限个人非商业使用。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.2.4</p><h2>把行情日报放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
         <div class="download-options">
-          <a class="download-option" :href="downloads.x64"><span>Windows x64</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
-          <a class="download-option" :href="downloads.ia32"><span>Windows 32 位</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
-          <a class="download-option future" href="#future-app"><span>未来 App 版</span><strong>规划中</strong><small>移动端工程尚未开始</small></a>
+          <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
+          <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
+          <div class="download-option unavailable" role="note"><span>macOS</span><strong>暂未提供</strong><small>当前仅支持 Windows</small></div>
           <a class="release-link" :href="downloads.release">查看 Release 与校验值</a>
         </div>
       </section>

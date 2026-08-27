@@ -10,8 +10,8 @@ function ys(e) {
   for (const s of e.split(",")) t[s] = 1;
   return (s) => s in t;
 }
-const W = {}, Ye = [], xe = () => {
-}, xi = () => !1, Wt = (e) => e.charCodeAt(0) === 111 && e.charCodeAt(1) === 110 && // uppercase letter
+const U = {}, Ye = [], xe = () => {
+}, xi = () => !1, Ut = (e) => e.charCodeAt(0) === 111 && e.charCodeAt(1) === 110 && // uppercase letter
 (e.charCodeAt(2) > 122 || e.charCodeAt(2) < 97), ws = (e) => e.startsWith("onUpdate:"), se = Object.assign, Ss = (e, t) => {
   const s = e.indexOf(t);
   s > -1 && e.splice(s, 1);
@@ -172,7 +172,7 @@ class Hi {
 function ji() {
   return re;
 }
-let U;
+let W;
 const es = /* @__PURE__ */ new WeakSet();
 class Tn {
   constructor(t) {
@@ -194,12 +194,12 @@ class Tn {
     if (!(this.flags & 1))
       return this.fn();
     this.flags |= 2, Ys(this), On(this);
-    const t = U, s = ue;
-    U = this, ue = !0;
+    const t = W, s = ue;
+    W = this, ue = !0;
     try {
       return this.fn();
     } finally {
-      An(this), U = t, ue = s, this.flags &= -3;
+      An(this), W = t, ue = s, this.flags &= -3;
     }
   }
   stop() {
@@ -281,8 +281,8 @@ function Pn(e) {
   if (e.flags & 4 && !(e.flags & 16) || (e.flags &= -17, e.globalVersion === _t) || (e.globalVersion = _t, !e.isSSR && e.flags & 128 && (!e.deps && !e._dirty || !fs(e))))
     return;
   e.flags |= 2;
-  const t = e.dep, s = U, n = ue;
-  U = e, ue = !0;
+  const t = e.dep, s = W, n = ue;
+  W = e, ue = !0;
   try {
     On(e);
     const i = e.fn(e._value);
@@ -290,7 +290,7 @@ function Pn(e) {
   } catch (i) {
     throw t.version++, i;
   } finally {
-    U = s, ue = n, An(e), e.flags &= -3;
+    W = s, ue = n, An(e), e.flags &= -3;
   }
 }
 function Ps(e, t = !1) {
@@ -318,12 +318,12 @@ function Ae() {
 function Ys(e) {
   const { cleanup: t } = e;
   if (e.cleanup = void 0, t) {
-    const s = U;
-    U = void 0;
+    const s = W;
+    W = void 0;
     try {
       t();
     } finally {
-      U = s;
+      W = s;
     }
   }
 }
@@ -339,14 +339,14 @@ class In {
     this.computed = t, this.version = 0, this.activeLink = void 0, this.subs = void 0, this.map = void 0, this.key = void 0, this.sc = 0, this.__v_skip = !0;
   }
   track(t) {
-    if (!U || !ue || U === this.computed)
+    if (!W || !ue || W === this.computed)
       return;
     let s = this.activeLink;
-    if (s === void 0 || s.sub !== U)
-      s = this.activeLink = new Li(U, this), U.deps ? (s.prevDep = U.depsTail, U.depsTail.nextDep = s, U.depsTail = s) : U.deps = U.depsTail = s, Mn(s);
+    if (s === void 0 || s.sub !== W)
+      s = this.activeLink = new Li(W, this), W.deps ? (s.prevDep = W.depsTail, W.depsTail.nextDep = s, W.depsTail = s) : W.deps = W.depsTail = s, Mn(s);
     else if (s.version === -1 && (s.version = this.version, s.nextDep)) {
       const n = s.nextDep;
-      n.prevDep = s.prevDep, s.prevDep && (s.prevDep.nextDep = n), s.prevDep = U.depsTail, s.nextDep = void 0, U.depsTail.nextDep = s, U.depsTail = s, U.deps === s && (U.deps = n);
+      n.prevDep = s.prevDep, s.prevDep && (s.prevDep.nextDep = n), s.prevDep = W.depsTail, s.nextDep = void 0, W.depsTail.nextDep = s, W.depsTail = s, W.deps === s && (W.deps = n);
     }
     return s;
   }
@@ -383,7 +383,7 @@ const us = /* @__PURE__ */ new WeakMap(), Be = Symbol(
   ""
 );
 function X(e, t, s) {
-  if (ue && U) {
+  if (ue && W) {
     let n = us.get(e);
     n || us.set(e, n = /* @__PURE__ */ new Map());
     let i = n.get(s);
@@ -562,10 +562,10 @@ function rt(e, t, s = []) {
   const n = N(e)[t].apply(e, s);
   return As(), Ae(), n;
 }
-const Ui = /* @__PURE__ */ ys("__proto__,__v_isRef,__isVue"), Fn = new Set(
+const Wi = /* @__PURE__ */ ys("__proto__,__v_isRef,__isVue"), Fn = new Set(
   /* @__PURE__ */ Object.getOwnPropertyNames(Symbol).filter((e) => e !== "arguments" && e !== "caller").map((e) => Symbol[e]).filter(et)
 );
-function Wi(e) {
+function Ui(e) {
   et(e) || (e = String(e));
   const t = N(this);
   return X(t, "has", e), t.hasOwnProperty(e);
@@ -593,7 +593,7 @@ class Dn {
       if (o && (u = $i[s]))
         return u;
       if (s === "hasOwnProperty")
-        return Wi;
+        return Ui;
     }
     const c = Reflect.get(
       t,
@@ -603,7 +603,7 @@ class Dn {
       // its class methods
       te(t) ? t : n
     );
-    return (et(s) ? Fn.has(s) : Ui(s)) || (i || X(t, "get", s), r) ? c : te(c) ? o && Ts(s) ? c : c.value : G(c) ? i ? $n(c) : Ms(c) : c;
+    return (et(s) ? Fn.has(s) : Wi(s)) || (i || X(t, "get", s), r) ? c : te(c) ? o && Ts(s) ? c : c.value : G(c) ? i ? $n(c) : Ms(c) : c;
   }
 }
 class Hn extends Dn {
@@ -876,7 +876,7 @@ class rr {
    */
   notify() {
     if (this.flags |= 16, !(this.flags & 8) && // avoid infinite self recursion
-    U !== this)
+    W !== this)
       return Cn(this, !0), !0;
   }
   get value() {
@@ -892,14 +892,14 @@ function or(e, t, s = !1) {
   return R(e) ? n = e : (n = e.get, i = e.set), new rr(n, i, s);
 }
 const It = {}, Nt = /* @__PURE__ */ new WeakMap();
-let We;
-function lr(e, t = !1, s = We) {
+let Ue;
+function lr(e, t = !1, s = Ue) {
   if (s) {
     let n = Nt.get(s);
     n || Nt.set(s, n = []), n.push(e);
   }
 }
-function cr(e, t, s = W) {
+function cr(e, t, s = U) {
   const { immediate: n, deep: i, once: r, scheduler: o, augmentJob: c, call: u } = s, h = (O) => i ? O : ye(O) || i === !1 || i === 0 ? De(O, 1) : De(O);
   let a, p, S, T, D = !1, F = !1;
   if (te(e) ? (p = () => e.value, D = ye(e)) : dt(e) ? (p = () => h(e), D = !0) : P(e) ? (F = !0, D = e.some((O) => dt(O) || ye(O)), p = () => e.map((O) => {
@@ -918,12 +918,12 @@ function cr(e, t, s = W) {
         Ae();
       }
     }
-    const O = We;
-    We = a;
+    const O = Ue;
+    Ue = a;
     try {
       return u ? u(e, 3, [T]) : e(T);
     } finally {
-      We = O;
+      Ue = O;
     }
   } : p = xe, t && i) {
     const O = p, J = i === !0 ? 1 / 0 : i;
@@ -945,8 +945,8 @@ function cr(e, t, s = W) {
         const J = a.run();
         if (i || D || (F ? J.some((Re, ae) => Ve(Re, B[ae])) : Ve(J, B))) {
           S && S();
-          const Re = We;
-          We = a;
+          const Re = Ue;
+          Ue = a;
           try {
             const ae = [
               J,
@@ -959,7 +959,7 @@ function cr(e, t, s = W) {
               t(...ae)
             );
           } finally {
-            We = Re;
+            Ue = Re;
           }
         }
       } else
@@ -1023,7 +1023,7 @@ function we(e, t, s, n) {
   }
 }
 function Gt(e, t, s, n = !0) {
-  const i = t ? t.vnode : null, { errorHandler: r, throwUnhandledErrorInProduction: o } = t && t.appContext.config || W;
+  const i = t ? t.vnode : null, { errorHandler: r, throwUnhandledErrorInProduction: o } = t && t.appContext.config || U;
   if (t) {
     let c = t.parent;
     const u = t.proxy, h = `https://vuejs.org/error-reference/#runtime-${s}`;
@@ -1056,10 +1056,10 @@ const Q = [];
 let _e = -1;
 const ze = [];
 let Me = null, Je = 0;
-const Un = /* @__PURE__ */ Promise.resolve();
+const Wn = /* @__PURE__ */ Promise.resolve();
 let Lt = null;
 function ur(e) {
-  const t = Lt || Un;
+  const t = Lt || Wn;
   return e ? t.then(this ? e.bind(this) : e) : t;
 }
 function ar(e) {
@@ -1074,14 +1074,14 @@ function Hs(e) {
   if (!(e.flags & 1)) {
     const t = vt(e), s = Q[Q.length - 1];
     !s || // fast path when the job id is larger than the tail
-    !(e.flags & 2) && t >= vt(s) ? Q.push(e) : Q.splice(ar(t), 0, e), e.flags |= 1, Wn();
+    !(e.flags & 2) && t >= vt(s) ? Q.push(e) : Q.splice(ar(t), 0, e), e.flags |= 1, Un();
   }
 }
-function Wn() {
-  Lt || (Lt = Un.then(Bn));
+function Un() {
+  Lt || (Lt = Wn.then(Bn));
 }
 function dr(e) {
-  P(e) ? ze.push(...e) : Me && e.id === -1 ? Me.splice(Je + 1, 0, e) : e.flags & 1 || (ze.push(e), e.flags |= 1), Wn();
+  P(e) ? ze.push(...e) : Me && e.id === -1 ? Me.splice(Je + 1, 0, e) : e.flags & 1 || (ze.push(e), e.flags |= 1), Un();
 }
 function Xs(e, t, s = _e + 1) {
   for (; s < Q.length; s++) {
@@ -1187,7 +1187,7 @@ function ht(e, t, s, n, i = !1) {
     n.shapeFlag & 512 && n.type.__asyncResolved && n.component.subTree.component && ht(e, t, s, n.component.subTree);
     return;
   }
-  const r = n.shapeFlag & 4 ? Ks(n.component) : n.el, o = i ? null : r, { i: c, r: u } = e, h = t && t.r, a = c.refs === W ? c.refs = {} : c.refs, p = c.setupState, S = N(p), T = p === W ? () => !1 : (D) => H(S, D);
+  const r = n.shapeFlag & 4 ? Ks(n.component) : n.el, o = i ? null : r, { i: c, r: u } = e, h = t && t.r, a = c.refs === U ? c.refs = {} : c.refs, p = c.setupState, S = N(p), T = p === U ? () => !1 : (D) => H(S, D);
   if (h != null && h !== u && (Y(h) ? (a[h] = null, T(h) && (p[h] = null)) : te(h) && (h.value = null)), R(u))
     wt(u, c, 12, [o, a]);
   else {
@@ -1284,7 +1284,7 @@ const Ar = Symbol.for("v-ndc"), ps = (e) => e ? gi(e) ? Ks(e) : ps(e.parent) : n
     $nextTick: (e) => e.n || (e.n = ur.bind(e.proxy)),
     $watch: (e) => Xr.bind(e)
   })
-), ns = (e, t) => e !== W && !e.__isScriptSetup && H(e, t), Pr = {
+), ns = (e, t) => e !== U && !e.__isScriptSetup && H(e, t), Pr = {
   get({ _: e }, t) {
     if (t === "__v_skip")
       return !0;
@@ -1306,7 +1306,7 @@ const Ar = Symbol.for("v-ndc"), ps = (e) => e ? gi(e) ? Ks(e) : ps(e.parent) : n
       else {
         if (ns(n, t))
           return o[t] = 1, n[t];
-        if (i !== W && H(i, t))
+        if (i !== U && H(i, t))
           return o[t] = 2, i[t];
         if (
           // only cache other properties when instance has declared (thus stable)
@@ -1314,7 +1314,7 @@ const Ar = Symbol.for("v-ndc"), ps = (e) => e ? gi(e) ? Ks(e) : ps(e.parent) : n
           (h = e.propsOptions[0]) && H(h, t)
         )
           return o[t] = 3, r[t];
-        if (s !== W && H(s, t))
+        if (s !== U && H(s, t))
           return o[t] = 4, s[t];
         gs && (o[t] = 0);
       }
@@ -1328,7 +1328,7 @@ const Ar = Symbol.for("v-ndc"), ps = (e) => e ? gi(e) ? Ks(e) : ps(e.parent) : n
       (p = c.__cssModules) && (p = p[t])
     )
       return p;
-    if (s !== W && H(s, t))
+    if (s !== U && H(s, t))
       return o[t] = 4, s[t];
     if (
       // global properties
@@ -1338,13 +1338,13 @@ const Ar = Symbol.for("v-ndc"), ps = (e) => e ? gi(e) ? Ks(e) : ps(e.parent) : n
   },
   set({ _: e }, t, s) {
     const { data: n, setupState: i, ctx: r } = e;
-    return ns(i, t) ? (i[t] = s, !0) : n !== W && H(n, t) ? (n[t] = s, !0) : H(e.props, t) || t[0] === "$" && t.slice(1) in e ? !1 : (r[t] = s, !0);
+    return ns(i, t) ? (i[t] = s, !0) : n !== U && H(n, t) ? (n[t] = s, !0) : H(e.props, t) || t[0] === "$" && t.slice(1) in e ? !1 : (r[t] = s, !0);
   },
   has({
     _: { data: e, setupState: t, accessCache: s, ctx: n, appContext: i, propsOptions: r }
   }, o) {
     let c;
-    return !!s[o] || e !== W && H(e, o) || ns(t, o) || (c = r[0]) && H(c, o) || H(n, o) || H(gt, o) || H(i.config.globalProperties, o);
+    return !!s[o] || e !== U && H(e, o) || ns(t, o) || (c = r[0]) && H(c, o) || H(n, o) || H(gt, o) || H(i.config.globalProperties, o);
   },
   defineProperty(e, t, s) {
     return s.get != null ? e._.accessCache[t] = 0 : H(s, "value") && this.set(e, t, s.value, null), Reflect.defineProperty(e, t, s);
@@ -1758,7 +1758,7 @@ function si(e, t, s, n) {
       i && H(i, a = je(u)) ? !r || !r.includes(a) ? s[a] = h : (c || (c = {}))[a] = h : Yt(e.emitsOptions, u) || (!(u in n) || h !== n[u]) && (n[u] = h, o = !0);
     }
   if (r) {
-    const u = N(s), h = c || W;
+    const u = N(s), h = c || U;
     for (let a = 0; a < r.length; a++) {
       const p = r[a];
       s[p] = _s(
@@ -1824,7 +1824,7 @@ function ni(e, t, s = !1) {
   if (P(r))
     for (let a = 0; a < r.length; a++) {
       const p = je(r[a]);
-      tn(p) && (o[p] = W);
+      tn(p) && (o[p] = U);
     }
   else if (r)
     for (const a in r) {
@@ -1857,7 +1857,7 @@ function ni(e, t, s = !1) {
 function tn(e) {
   return e[0] !== "$" && !ft(e);
 }
-const Ns = (e) => e === "_" || e === "__" || e === "_ctx" || e === "$stable", Ls = (e) => P(e) ? e.map(be) : [be(e)], Ur = (e, t, s) => {
+const Ns = (e) => e === "_" || e === "__" || e === "_ctx" || e === "$stable", Ls = (e) => P(e) ? e.map(be) : [be(e)], Wr = (e, t, s) => {
   if (t._n)
     return t;
   const n = hr((...i) => Ls(t(...i)), s);
@@ -1868,7 +1868,7 @@ const Ns = (e) => e === "_" || e === "__" || e === "_ctx" || e === "$stable", Ls
     if (Ns(i)) continue;
     const r = e[i];
     if (R(r))
-      t[i] = Ur(i, r, n);
+      t[i] = Wr(i, r, n);
     else if (r != null) {
       const o = Ls(r);
       t[i] = () => o;
@@ -1880,7 +1880,7 @@ const Ns = (e) => e === "_" || e === "__" || e === "_ctx" || e === "$stable", Ls
 }, oi = (e, t, s) => {
   for (const n in t)
     (s || !Ns(n)) && (e[n] = t[n]);
-}, Wr = (e, t, s) => {
+}, Ur = (e, t, s) => {
   const n = e.slots = ei();
   if (e.vnode.shapeFlag & 32) {
     const i = t.__;
@@ -1890,7 +1890,7 @@ const Ns = (e) => e === "_" || e === "__" || e === "_ctx" || e === "$stable", Ls
   } else t && ri(e, t);
 }, Vr = (e, t, s) => {
   const { vnode: n, slots: i } = e;
-  let r = !0, o = W;
+  let r = !0, o = U;
   if (n.shapeFlag & 32) {
     const c = t._;
     c ? s && c === 1 ? r = !1 : oi(i, t, s) : (r = !t.$stable, ii(t, i)), o = t;
@@ -2099,9 +2099,9 @@ function qr(e, t) {
     const x = f.el = l.el;
     let { patchFlag: v, dynamicChildren: b, dirs: C } = f;
     v |= l.patchFlag & 16;
-    const w = l.props || W, E = f.props || W;
+    const w = l.props || U, E = f.props || U;
     let A;
-    if (d && Ue(d, !1), (A = E.onVnodeBeforeUpdate) && me(A, d, f, l), C && Ke(f, l, d, "beforeUpdate"), d && Ue(d, !0), (w.innerHTML && E.innerHTML == null || w.textContent && E.textContent == null) && a(x, ""), b ? Ne(
+    if (d && We(d, !1), (A = E.onVnodeBeforeUpdate) && me(A, d, f, l), C && Ke(f, l, d, "beforeUpdate"), d && We(d, !0), (w.innerHTML && E.innerHTML == null || w.textContent && E.textContent == null) && a(x, ""), b ? Ne(
       l.dynamicChildren,
       b,
       x,
@@ -2164,7 +2164,7 @@ function qr(e, t) {
     }
   }, tt = (l, f, d, _, g) => {
     if (f !== d) {
-      if (f !== W)
+      if (f !== U)
         for (const m in f)
           !ft(m) && !(m in d) && r(
             l,
@@ -2242,7 +2242,7 @@ function qr(e, t) {
       m,
       y,
       v
-    ) : Us(l, f, v);
+    ) : Ws(l, f, v);
   }, Xt = (l, f, d, _, g, m, y) => {
     const x = l.component = po(
       l,
@@ -2264,7 +2264,7 @@ function qr(e, t) {
         m,
         y
       );
-  }, Us = (l, f, d) => {
+  }, Ws = (l, f, d) => {
     const _ = f.component = l.component;
     if (to(l, f, d))
       if (_.asyncDep && !_.asyncResolved) {
@@ -2288,7 +2288,7 @@ function qr(e, t) {
           }
         }
         let j = w, ne;
-        Ue(l, !1), w ? (w.el = K.el, V(l, w, y)) : w = K, E && Qt(E), (ne = w.props && w.props.onVnodeBeforeUpdate) && me(ne, M, w, K), Ue(l, !0);
+        We(l, !1), w ? (w.el = K.el, V(l, w, y)) : w = K, E && Qt(E), (ne = w.props && w.props.onVnodeBeforeUpdate) && me(ne, M, w, K), We(l, !0);
         const ie = nn(l), he = l.subTree;
         l.subTree = ie, F(
           he,
@@ -2307,7 +2307,7 @@ function qr(e, t) {
       } else {
         let w;
         const { el: E, props: A } = f, { bm: M, m: K, parent: j, root: ne, type: ie } = l, he = pt(f);
-        Ue(l, !1), M && Qt(M), !he && (w = A && A.onVnodeBeforeMount) && me(w, j, f), Ue(l, !0);
+        We(l, !1), M && Qt(M), !he && (w = A && A.onVnodeBeforeMount) && me(w, j, f), We(l, !0);
         {
           ne.ce && // @ts-expect-error _def is private
           ne.ce._def.shadowRoot !== !1 && ne.ce._injectChildStyle(ie);
@@ -2336,7 +2336,7 @@ function qr(e, t) {
     const v = l.effect = new Tn(x);
     l.scope.off();
     const b = l.update = v.run.bind(v), C = l.job = v.runIfDirty.bind(v);
-    C.i = l, C.id = l.uid, v.scheduler = () => Hs(C), Ue(l, !0), b();
+    C.i = l, C.id = l.uid, v.scheduler = () => Hs(C), We(l, !0), b();
   }, V = (l, f, d) => {
     f.component = l;
     const _ = l.vnode.props;
@@ -2627,12 +2627,12 @@ function qr(e, t) {
         d,
         !1,
         !0
-      ) : (m === Ee && w & 384 || !g && C & 16) && st(v, f, d), _ && Ws(l);
+      ) : (m === Ee && w & 384 || !g && C & 16) && st(v, f, d), _ && Us(l);
     }
     (K && (j = y && y.onVnodeUnmounted) || M) && le(() => {
       j && me(j, f, l), M && Ke(l, null, f, "unmounted");
     }, d);
-  }, Ws = (l) => {
+  }, Us = (l) => {
     const { type: f, el: d, anchor: _, transition: g } = l;
     if (f === Ee) {
       bi(d, _);
@@ -2698,7 +2698,7 @@ function qr(e, t) {
     p: F,
     um: de,
     m: $e,
-    r: Ws,
+    r: Us,
     mt: Xt,
     mc: Ie,
     pc: $,
@@ -2715,7 +2715,7 @@ function qr(e, t) {
 function is({ type: e, props: t }, s) {
   return s === "svg" && e === "foreignObject" || s === "mathml" && e === "annotation-xml" && t && t.encoding && t.encoding.includes("html") ? void 0 : s;
 }
-function Ue({ effect: e, job: t }, s) {
+function We({ effect: e, job: t }, s) {
   s ? (e.flags |= 32, t.flags |= 4) : (e.flags &= -33, t.flags &= -5);
 }
 function Gr(e, t) {
@@ -2764,7 +2764,7 @@ const Yr = Symbol.for("v-scx"), zr = () => Ft(Yr);
 function rs(e, t, s) {
   return fi(e, t, s);
 }
-function fi(e, t, s = W) {
+function fi(e, t, s = U) {
   const { immediate: n, deep: i, flush: r, once: o } = s, c = se({}, s), u = t && n || !t && r !== "post";
   let h;
   if (yt) {
@@ -2809,7 +2809,7 @@ function ui(e, t) {
 const Zr = (e, t) => t === "modelValue" || t === "model-value" ? e.modelModifiers : e[`${t}Modifiers`] || e[`${je(t)}Modifiers`] || e[`${qe(t)}Modifiers`];
 function kr(e, t, ...s) {
   if (e.isUnmounted) return;
-  const n = e.vnode.props || W;
+  const n = e.vnode.props || U;
   let i = s;
   const r = t.startsWith("update:"), o = r && Zr(n, t.slice(7));
   o && (o.trim && (i = s.map((a) => Y(a) ? a.trim() : a)), o.number && (i = s.map(Ai)));
@@ -2851,7 +2851,7 @@ function ai(e, t, s = !1) {
   return !r && !c ? (G(e) && n.set(e, null), null) : (P(r) ? r.forEach((u) => o[u] = null) : se(o, r), G(e) && n.set(e, o), o);
 }
 function Yt(e, t) {
-  return !e || !Wt(t) ? !1 : (t = t.slice(2).replace(/Once$/, ""), H(e, t[0].toLowerCase() + t.slice(1)) || H(e, qe(t)) || H(e, t));
+  return !e || !Ut(t) ? !1 : (t = t.slice(2).replace(/Once$/, ""), H(e, t[0].toLowerCase() + t.slice(1)) || H(e, qe(t)) || H(e, t));
 }
 function nn(e) {
   const {
@@ -2914,7 +2914,7 @@ function nn(e) {
 const Qr = (e) => {
   let t;
   for (const s in e)
-    (s === "class" || s === "style" || Wt(s)) && ((t || (t = {}))[s] = e[s]);
+    (s === "class" || s === "style" || Ut(s)) && ((t || (t = {}))[s] = e[s]);
   return t;
 }, eo = (e, t) => {
   const s = {};
@@ -3174,7 +3174,7 @@ function uo(...e) {
         t.class !== n.class && (t.class = Cs([t.class, n.class]));
       else if (i === "style")
         t.style = Es([t.style, n.style]);
-      else if (Wt(i)) {
+      else if (Ut(i)) {
         const r = t[i], o = n[i];
         o && r !== o && !(P(r) && r.includes(o)) && (t[i] = r ? [].concat(r, o) : o);
       } else i !== "" && (t[i] = n[i]);
@@ -3229,17 +3229,17 @@ function po(e, t, s) {
     // to be set immediately
     emitted: null,
     // props default value
-    propsDefaults: W,
+    propsDefaults: U,
     // inheritAttrs
     inheritAttrs: n.inheritAttrs,
     // state
-    ctx: W,
-    data: W,
-    props: W,
-    attrs: W,
-    slots: W,
-    refs: W,
-    setupState: W,
+    ctx: U,
+    data: U,
+    props: U,
+    attrs: U,
+    slots: U,
+    refs: U,
+    setupState: U,
     setupContext: null,
     // suspense related
     suspense: s,
@@ -3270,7 +3270,7 @@ function po(e, t, s) {
 }
 let ee = null;
 const go = () => ee || ve;
-let Ut, vs;
+let Wt, vs;
 {
   const e = qt(), t = (s, n) => {
     let i;
@@ -3278,7 +3278,7 @@ let Ut, vs;
       i.length > 1 ? i.forEach((o) => o(r)) : i[0](r);
     };
   };
-  Ut = t(
+  Wt = t(
     "__VUE_INSTANCE_SETTERS__",
     (s) => ee = s
   ), vs = t(
@@ -3288,11 +3288,11 @@ let Ut, vs;
 }
 const St = (e) => {
   const t = ee;
-  return Ut(e), e.scope.on(), () => {
-    e.scope.off(), Ut(t);
+  return Wt(e), e.scope.on(), () => {
+    e.scope.off(), Wt(t);
   };
 }, ln = () => {
-  ee && ee.scope.off(), Ut(null);
+  ee && ee.scope.off(), Wt(null);
 };
 function gi(e) {
   return e.vnode.shapeFlag & 4;
@@ -3301,7 +3301,7 @@ let yt = !1;
 function mo(e, t = !1, s = !1) {
   t && vs(t);
   const { props: n, children: i } = e.vnode, r = gi(e);
-  Lr(e, n, r, t), Wr(e, i, s || t);
+  Lr(e, n, r, t), Ur(e, i, s || t);
   const o = r ? _o(e, t) : void 0;
   return t && vs(!1), o;
 }
@@ -3607,11 +3607,11 @@ function Ko(e, t) {
     return t;
 }
 const vn = (e) => e.charCodeAt(0) === 111 && e.charCodeAt(1) === 110 && // lowercase letter
-e.charCodeAt(2) > 96 && e.charCodeAt(2) < 123, Uo = (e, t, s, n, i, r) => {
+e.charCodeAt(2) > 96 && e.charCodeAt(2) < 123, Wo = (e, t, s, n, i, r) => {
   const o = i === "svg";
-  t === "class" ? Oo(e, n, o) : t === "style" ? Io(e, s, n) : Wt(t) ? ws(t) || Ho(e, t, s, n, r) : (t[0] === "." ? (t = t.slice(1), !0) : t[0] === "^" ? (t = t.slice(1), !1) : Wo(e, t, n, o)) ? (mn(e, t, n), !e.tagName.includes("-") && (t === "value" || t === "checked" || t === "selected") && gn(e, t, n, o, r, t !== "value")) : /* #11081 force set props for possible async custom element */ e._isVueCE && (/[A-Z]/.test(t) || !Y(n)) ? mn(e, je(t), n, r, t) : (t === "true-value" ? e._trueValue = n : t === "false-value" && (e._falseValue = n), gn(e, t, n, o));
+  t === "class" ? Oo(e, n, o) : t === "style" ? Io(e, s, n) : Ut(t) ? ws(t) || Ho(e, t, s, n, r) : (t[0] === "." ? (t = t.slice(1), !0) : t[0] === "^" ? (t = t.slice(1), !1) : Uo(e, t, n, o)) ? (mn(e, t, n), !e.tagName.includes("-") && (t === "value" || t === "checked" || t === "selected") && gn(e, t, n, o, r, t !== "value")) : /* #11081 force set props for possible async custom element */ e._isVueCE && (/[A-Z]/.test(t) || !Y(n)) ? mn(e, je(t), n, r, t) : (t === "true-value" ? e._trueValue = n : t === "false-value" && (e._falseValue = n), gn(e, t, n, o));
 };
-function Wo(e, t, s, n) {
+function Uo(e, t, s, n) {
   if (n)
     return !!(t === "innerHTML" || t === "textContent" || t in e && vn(t) && R(s));
   if (t === "spellcheck" || t === "draggable" || t === "translate" || t === "autocorrect" || t === "form" || t === "list" && e.tagName === "INPUT" || t === "type" && e.tagName === "TEXTAREA")
@@ -3623,7 +3623,7 @@ function Wo(e, t, s, n) {
   }
   return vn(t) && Y(s) ? !1 : t in e;
 }
-const Vo = /* @__PURE__ */ se({ patchProp: Uo }, Eo);
+const Vo = /* @__PURE__ */ se({ patchProp: Wo }, Eo);
 let xn;
 function Bo() {
   return xn || (xn = Br(Vo));
@@ -3684,7 +3684,7 @@ const Yo = { class: "app-shell" }, zo = {
                 href: "#features"
               }, "查看功能", -1))
             ]),
-            n[4] || (n[4] = I("p", { class: "fine" }, "Windows 10/11 · x64 与 32 位 · 免费 · 无需账号", -1))
+            n[4] || (n[4] = I("p", { class: "fine" }, "Windows 10/11 · 提供 x64 与 x86 安装包 · macOS 暂未提供 · 免费 · 无需账号", -1))
           ]),
           n[5] || (n[5] = Mt('<div class="hero-console" aria-label="行情日报桌面版功能预览"><div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 行情日报</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div><div class="console-content"><div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div><div class="console-indices"><div class="console-index"><small>实时行情</small><strong>本地更新</strong><span>指数与自选股</span></div><div class="console-index"><small>每日复盘</small><strong>16:00</strong><span>工作日整理</span></div><div class="console-index"><small>系统通知</small><strong>可选</strong><span>托盘运行</span></div></div><div class="console-table"><div><span>数据来源</span><b>腾讯行情 · 东方财富</b></div><div><span>运行方式</span><b>本地直连公开接口</b></div><div><span>数据保存</span><b>当前 Windows 用户本地</b></div></div></div></div>', 1))
         ]),
@@ -3693,14 +3693,14 @@ const Yo = { class: "app-shell" }, zo = {
           n[9] || (n[9] = I("div", null, [
             I("p", { class: "kicker" }, "DESKTOP RELEASE · V0.2.4"),
             I("h2", null, "把行情日报放在桌面上"),
-            I("p", null, "当前提供 Windows x64 和 32 位安装包，仅限个人非商业使用。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。")
+            I("p", null, "提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。")
           ], -1)),
           I("div", el, [
             I("a", {
               class: "download-option",
               href: t.x64
             }, n[6] || (n[6] = [
-              I("span", null, "Windows x64", -1),
+              I("span", null, "Windows 64 位 (x64)", -1),
               I("strong", null, "下载安装包", -1),
               I("small", null, "适用于绝大多数 Windows 10/11 电脑", -1)
             ]), 8, tl),
@@ -3708,17 +3708,17 @@ const Yo = { class: "app-shell" }, zo = {
               class: "download-option",
               href: t.ia32
             }, n[7] || (n[7] = [
-              I("span", null, "Windows 32 位", -1),
+              I("span", null, "Windows 32 位 (x86)", -1),
               I("strong", null, "下载安装包", -1),
               I("small", null, "仅用于 32 位 Windows", -1)
             ]), 8, sl),
-            n[8] || (n[8] = I("a", {
-              class: "download-option future",
-              href: "#future-app"
+            n[8] || (n[8] = I("div", {
+              class: "download-option unavailable",
+              role: "note"
             }, [
-              I("span", null, "未来 App 版"),
-              I("strong", null, "规划中"),
-              I("small", null, "移动端工程尚未开始")
+              I("span", null, "macOS"),
+              I("strong", null, "暂未提供"),
+              I("small", null, "当前仅支持 Windows")
             ], -1)),
             I("a", {
               class: "release-link",
