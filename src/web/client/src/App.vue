@@ -1,14 +1,19 @@
 <script setup>
+import { ref } from 'vue'
 import realtimeImage from './assets/desktop-screens/realtime.png'
 import watchlistImage from './assets/desktop-screens/watchlist.png'
 import dailyReviewImage from './assets/desktop-screens/daily-review.png'
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
-import historyImage from './assets/desktop-screens/history.png'
 
 const downloads = {
   x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.6/hangqing-desktop-0.2.6-win-x64-setup.exe',
   ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.6/hangqing-desktop-0.2.6-win-ia32-setup.exe',
   release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.2.6'
+}
+
+const activeImage = ref(null)
+function openImage(src, alt) {
+  activeImage.value = { src, alt }
 }
 </script>
 
@@ -57,7 +62,7 @@ const downloads = {
           <article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数、市场宽度、涨跌停、行业资金、涨跌榜和盘口异动集中显示，交易时段自动刷新。</p></article>
           <article><span class="feature-index">02</span><h3>自选股工作区</h3><p>保存常看股票，查看最新报价、涨跌幅与日 K 走势，还能把股票即时加入浮动监控。</p></article>
           <article><span class="feature-index">03</span><h3>每日复盘</h3><p>用市场温度、情绪指标、指数结构、主线排序、连板高度和数据质量核对还原收盘状态。</p></article>
-          <article><span class="feature-index">04</span><h3>龙虎榜与历史</h3><p>展开买卖前五席位，查看净买入并加入自选；历史报告按交易日保存，方便回看。</p></article>
+          <article><span class="feature-index">04</span><h3>龙虎榜联动</h3><p>展开买卖前五席位，查看净买入与上榜原因，并将关注股票直接加入自选股。</p></article>
         </div>
       </section>
 
@@ -65,24 +70,20 @@ const downloads = {
         <div class="section-heading"><p class="kicker">INSIDE THE DESK</p><h2>每个页面，解决一个观察问题</h2><p>下面是桌面版的真实界面。数据来自应用实际页面，帮助你在下载安装前了解工作方式。</p></div>
         <div class="page-showcase">
           <article class="page-feature">
-            <figure><img :src="realtimeImage" alt="股市脉搏实时行情页面，展示指数、市场宽度、资金流和涨跌榜" loading="lazy"><figcaption>实时行情 · 盘面总览</figcaption></figure>
+            <figure><button type="button" class="page-shot" aria-label="查看实时行情页面原图" @click="openImage(realtimeImage, '股市脉搏实时行情页面，展示指数、市场宽度、资金流和涨跌榜')"><img :src="realtimeImage" alt="股市脉搏实时行情页面，展示指数、市场宽度、资金流和涨跌榜" loading="lazy"></button><figcaption>实时行情 · 点击查看原图</figcaption></figure>
             <div class="page-copy"><span class="feature-index">01 / REALTIME</span><h3>先判断今天的市场状态</h3><p>打开应用先看到市场雷达：主要指数、全市场涨跌家数、涨停跌停、行业主力资金、涨跌幅榜和盘口异动位于同一工作区。</p><ul><li>交易时段自动刷新，闭市后保留最近有效数据</li><li>盘面异常与数据日期清晰标注</li><li>顶部菜单固定，内容区域独立滚动</li></ul></div>
           </article>
           <article class="page-feature reverse">
-            <figure><img :src="watchlistImage" alt="股市脉搏自选股页面，展示自选股票报价和日 K 走势" loading="lazy"><figcaption>自选股 · 持续观察</figcaption></figure>
+            <figure><button type="button" class="page-shot" aria-label="查看自选股页面原图" @click="openImage(watchlistImage, '股市脉搏自选股页面，展示自选股票报价和日 K 走势')"><img :src="watchlistImage" alt="股市脉搏自选股页面，展示自选股票报价和日 K 走势" loading="lazy"></button><figcaption>自选股 · 点击查看原图</figcaption></figure>
             <div class="page-copy"><span class="feature-index">02 / WATCHLIST</span><h3>把关注的股票放在一起</h3><p>自选股页面把常看标的整理成可扫描的行情卡，报价、涨跌幅、数据时间和日 K 图一屏可见。</p><ul><li>支持添加、删除和从龙虎榜直接加入</li><li>自选股卡片可直接开启浮窗监控</li><li>本地保存，不需要注册账号</li></ul></div>
           </article>
           <article class="page-feature">
-            <figure><img :src="dailyReviewImage" alt="股市脉搏每日复盘页面，展示市场温度、情绪指标和行业资金" loading="lazy"><figcaption>每日复盘 · 收盘整理</figcaption></figure>
+            <figure><button type="button" class="page-shot" aria-label="查看每日复盘页面原图" @click="openImage(dailyReviewImage, '股市脉搏每日复盘页面，展示市场温度、情绪指标和行业资金')"><img :src="dailyReviewImage" alt="股市脉搏每日复盘页面，展示市场温度、情绪指标和行业资金" loading="lazy"></button><figcaption>每日复盘 · 点击查看原图</figcaption></figure>
             <div class="page-copy"><span class="feature-index">03 / DAILY REVIEW</span><h3>把收盘后的信息整理成结论</h3><p>每日复盘将分散的收盘数据放在固定结构中，先看温度与情绪，再看指数、行业资金、连板梯队和详细数据。</p><ul><li>市场温度与红盘率快速判断情绪</li><li>行业涨幅和主力净流入分栏呈现</li><li>数据质量核对，明确样本与统计口径</li></ul></div>
           </article>
           <article class="page-feature reverse">
-            <figure><img :src="dragonTigerImage" alt="股市脉搏龙虎榜页面，展示买卖席位和净额" loading="lazy"><figcaption>龙虎榜 · 席位明细</figcaption></figure>
+            <figure><button type="button" class="page-shot" aria-label="查看龙虎榜页面原图" @click="openImage(dragonTigerImage, '股市脉搏龙虎榜页面，展示买卖席位和净额')"><img :src="dragonTigerImage" alt="股市脉搏龙虎榜页面，展示买卖席位和净额" loading="lazy"></button><figcaption>龙虎榜 · 点击查看原图</figcaption></figure>
             <div class="page-copy"><span class="feature-index">04 / DRAGON TIGER</span><h3>从上榜股票看到资金席位</h3><p>龙虎榜按股票展开买入、卖出和净额，进一步查看买卖前五席位；符合条件的股票可直接放入自选股。</p><ul><li>公开席位名称按机构或营业部展示</li><li>买卖金额与净额使用统一单位</li><li>支持展开与收起，减少页面干扰</li></ul></div>
-          </article>
-          <article class="page-feature">
-            <figure><img :src="historyImage" alt="股市脉搏历史报告页面，展示按交易日保存的复盘记录" loading="lazy"><figcaption>历史报告 · 回看记录</figcaption></figure>
-            <div class="page-copy"><span class="feature-index">05 / HISTORY</span><h3>回到任何一个交易日</h3><p>历史报告按日期保存已经生成的复盘快照，打开时读取对应记录，不用当前行情冒充过去。</p><ul><li>按交易日快速检索已保存报告</li><li>复盘结果落在本地数据库</li><li>设置、自选股和历史数据跟随本机账户</li></ul></div>
           </article>
         </div>
       </section>
@@ -115,6 +116,13 @@ const downloads = {
         <div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div>
       </section>
     </main>
+
+    <div v-if="activeImage" class="image-lightbox" role="dialog" aria-modal="true" :aria-label="activeImage.alt" @click.self="activeImage = null" @keydown.esc.window="activeImage = null">
+      <div class="image-lightbox-content">
+        <button type="button" class="image-lightbox-close" aria-label="关闭原图" @click="activeImage = null">×</button>
+        <img :src="activeImage.src" :alt="activeImage.alt">
+      </div>
+    </div>
 
     <footer><span>© 2026 股市脉搏 · Desktop Market Desk</span><span><a href="#data">数据来源与免责声明</a> · <a href="#download">下载</a></span></footer>
   </div>
