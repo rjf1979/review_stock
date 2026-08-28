@@ -1,6 +1,6 @@
 {
   "version": "0.3.0",
-  "publishedAt": "2026-08-28T13:22:40.260Z",
+  "publishedAt": "2026-08-28T15:29:47.907Z",
   "notes": [
     "新增匿名安装与运行错误统计，用于统计安装用户数量和排查故障。",
     "仅提交匿名安装编号、系统版本、架构、公网 IP 和运行错误，不包含账号、自选股或行情内容。",
@@ -8,12 +8,12 @@
   ],
   "assets": {
     "x64": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
       "size": 83381643,
       "sha256": "03dfe7392ddeb7e19256f8f9555de34c04fb78638e6c76d98e8cec26b525681c"
     },
     "ia32": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
       "size": 77746042,
       "sha256": "b03a60593e55c74ab33fed46f470139e70d794bf3ecfb7c84251ad2586437489"
     }

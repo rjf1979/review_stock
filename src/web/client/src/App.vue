@@ -8,10 +8,10 @@ import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
 const downloads = {
   x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
   ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
-  x64Backup: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
-  ia32Backup: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
-  x64Backup2: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
-  ia32Backup2: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
   release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.0'
 }
 
@@ -107,7 +107,7 @@ function openImage(src, alt) {
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
           <div class="download-option unavailable" role="note"><span>macOS</span><strong>暂未提供</strong><small>当前仅支持 Windows</small></div>
-          <p class="download-note">主下载经阿里云 OSS 加速；若失效，可换用 <a :href="downloads.x64Backup">x64 备用镜像</a>、<a :href="downloads.ia32Backup">x86 备用镜像</a>，或 <a :href="downloads.x64Backup2">x64 镜像二</a>、<a :href="downloads.ia32Backup2">x86 镜像二</a>。</p>
+          <p class="download-note">境内主下载经阿里云 OSS + CDN 加速；海外用户可直接走 <a :href="downloads.x64Backup">GitHub x64</a>、<a :href="downloads.ia32Backup">GitHub x86</a>，或使用 <a :href="downloads.x64Backup2">OSS 镜像二</a>、<a :href="downloads.ia32Backup2">OSS 镜像二（x86）</a>。</p>
           <a class="release-link" :href="downloads.release">查看 GitHub Release 与 SHA-256</a>
         </div>
       </section>

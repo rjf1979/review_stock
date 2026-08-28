@@ -3736,10 +3736,10 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
     const i = {
       x64: "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
       ia32: "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      x64Backup: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32Backup: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      x64Backup2: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32Backup2: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      x64Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      ia32Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      x64Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      ia32Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
       release: "https://github.com/rjf1979/review_stock/releases/tag/v0.3.0"
     }, e = ln(null);
     function t(s, n) {
@@ -3922,22 +3922,22 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
               d("small", null, "当前仅支持 Windows")
             ], -1)),
             d("p", Qf, [
-              n[24] || (n[24] = wA("主下载经阿里云 OSS 加速；若失效，可换用 ", -1)),
+              n[24] || (n[24] = wA("境内主下载经阿里云 OSS + CDN 加速；海外用户可直接走 ", -1)),
               d("a", {
                 href: i.x64Backup
-              }, "x64 备用镜像", 8, Xf),
+              }, "GitHub x64", 8, Xf),
               n[25] || (n[25] = wA("、", -1)),
               d("a", {
                 href: i.ia32Backup
-              }, "x86 备用镜像", 8, mf),
-              n[26] || (n[26] = wA("，或 ", -1)),
+              }, "GitHub x86", 8, mf),
+              n[26] || (n[26] = wA("，或使用 ", -1)),
               d("a", {
                 href: i.x64Backup2
-              }, "x64 镜像二", 8, Vf),
+              }, "OSS 镜像二", 8, Vf),
               n[27] || (n[27] = wA("、", -1)),
               d("a", {
                 href: i.ia32Backup2
-              }, "x86 镜像二", 8, xf),
+              }, "OSS 镜像二（x86）", 8, xf),
               n[28] || (n[28] = wA("。", -1))
             ]),
             d("a", {

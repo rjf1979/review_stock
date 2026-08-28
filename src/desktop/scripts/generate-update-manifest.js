@@ -15,7 +15,7 @@ function asset(arch) {
   const file = path.join(desktopRoot, 'release', filename);
   if (!fs.existsSync(file)) throw new Error(`缺少安装包：${file}`);
   const content = fs.readFileSync(file);
-  return { url: `https://dailystock.zhicha.io/updates/files/${filename}`, size: content.length, sha256: createHash('sha256').update(content).digest('hex') };
+  return { url: `https://oss.askcode.cn/files/${filename}`, size: content.length, sha256: createHash('sha256').update(content).digest('hex') };
 }
 
 const manifest = {
