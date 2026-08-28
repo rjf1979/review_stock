@@ -1,6 +1,6 @@
 {
-  "name": "hangqing-desktop",
-  "version": "0.3.0",
+  "name": "stockpulse-desktop",
+  "version": "0.3.2",
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "description": "股市脉搏 - A股实时行情与每日复盘桌面工具（本地取数）",
@@ -8,11 +8,11 @@
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "check": "node --check storage.js && node --check storage.test.js && node --check review-core.js && node --check review-scheduler.js && node --check updater.js && node --check telemetry.js && node --check telemetry.test.js && node --check preload.js && node --check server.js && node --check server.test.js && node --check updater.test.js && node --check electron-main.js && node --check scripts/generate-update-manifest.js && node scripts/check-changelog.js",
+    "check": "node --check storage.js && node --check storage.test.js && node --check review-core.js && node --check review-scheduler.js && node --check updater.js && node --check telemetry.js && node --check telemetry.test.js && node --check preload.js && node --check server.js && node --check server.test.js && node --check updater.test.js && node --check electron-main.js && node --check scripts/generate-update-manifest.js && node --check scripts/verify-package-contents.js && node scripts/check-changelog.js",
     "test": "node server.test.js && node storage.test.js && node updater.test.js && node telemetry.test.js",
     "updates:manifest": "node scripts/generate-update-manifest.js",
-    "pack": "electron-builder --dir",
-    "dist": "set \"ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/\" && set \"ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/\" && electron-builder"
+    "pack": "electron-builder --dir && node scripts/verify-package-contents.js",
+    "dist": "set \"ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/\" && set \"ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/\" && electron-builder && node scripts/verify-package-contents.js"
   },
   "devDependencies": {
     "electron": "^33.4.11",
@@ -22,8 +22,9 @@
     "sql.js": "^1.14.2"
   },
   "build": {
-    "appId": "io.zhicha.dailystock",
+    "appId": "io.zhicha.stockpulse",
     "productName": "股市脉搏",
+    "executableName": "StockPulse",
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
@@ -40,6 +41,7 @@
       "review-core.js",
       "review-scheduler.js",
       "updater.js",
+      "telemetry.js",
       "assets/icon.png",
       "frontend/**/*",
       "!node_modules/sql.js/**",

@@ -3734,13 +3734,13 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
   __name: "App",
   setup(A) {
     const i = {
-      x64: "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32: "https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      x64Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      x64Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.3.0"
+      x64: "https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-x64-setup.exe",
+      ia32: "https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-ia32-setup.exe",
+      x64Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.2/hangqing-desktop-0.3.2-win-x64-setup.exe",
+      ia32Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.2/hangqing-desktop-0.3.2-win-ia32-setup.exe",
+      x64Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.2-win-x64-setup.exe",
+      ia32Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.2-win-ia32-setup.exe",
+      release: "https://github.com/rjf1979/review_stock/releases/tag/v0.3.2"
     }, e = ln(null);
     function t(s, n) {
       e.value = { src: s, alt: n };
@@ -3892,7 +3892,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
         n[32] || (n[32] = Ei('<section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 1)),
         d("section", Wf, [
           n[30] || (n[30] = d("div", null, [
-            d("p", { class: "kicker" }, "DESKTOP RELEASE · V0.3.0"),
+            d("p", { class: "kicker" }, "DESKTOP RELEASE · V0.3.2"),
             d("h2", null, "把股市脉搏放在桌面上"),
             d("p", null, "提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到备用镜像。")
           ], -1)),
