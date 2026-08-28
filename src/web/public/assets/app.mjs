@@ -21,13 +21,13 @@ const Z = {}, _A = [], CA = () => {
 ), ji = (A) => {
   const i = /* @__PURE__ */ Object.create(null);
   return (e) => i[e] || (i[e] = A(e));
-}, Hs = /-(\w)/g, NA = ji(
+}, Hs = /-(\w)/g, yA = ji(
   (A) => A.replace(Hs, (i, e) => e ? e.toUpperCase() : "")
-), ws = /\B([A-Z])/g, DA = ji(
+), ws = /\B([A-Z])/g, TA = ji(
   (A) => A.replace(ws, "-$1").toLowerCase()
 ), mt = ji((A) => A.charAt(0).toUpperCase() + A.slice(1)), Ae = ji(
   (A) => A ? `on${mt(A)}` : ""
-), OA = (A, i) => !Object.is(A, i), ie = (A, ...i) => {
+), NA = (A, i) => !Object.is(A, i), ie = (A, ...i) => {
   for (let e = 0; e < A.length; e++)
     A[e](...i);
 }, ue = (A, i, e, t = !1) => {
@@ -286,7 +286,7 @@ function Bt(A) {
   try {
     wt(A);
     const s = A.fn(A._value);
-    (i.version === 0 || OA(s, A._value)) && (A.flags |= 128, A._value = s, i.version++);
+    (i.version === 0 || NA(s, A._value)) && (A.flags |= 128, A._value = s, i.version++);
   } catch (s) {
     throw i.version++, s;
   } finally {
@@ -375,7 +375,7 @@ function Nt(A) {
     e !== A && (A.prevSub = e, e && (e.nextSub = A)), A.dep.subs = A;
   }
 }
-const Re = /* @__PURE__ */ new WeakMap(), GA = Symbol(
+const Re = /* @__PURE__ */ new WeakMap(), KA = Symbol(
   ""
 ), oe = Symbol(
   ""
@@ -411,19 +411,19 @@ function XA(A, i, e, t, s, n) {
     } else
       switch ((e !== void 0 || r.has(void 0)) && I(r.get(e)), o && I(r.get(Ci)), i) {
         case "add":
-          u ? o && I(r.get("length")) : (I(r.get(GA)), li(A) && I(r.get(oe)));
+          u ? o && I(r.get("length")) : (I(r.get(KA)), li(A) && I(r.get(oe)));
           break;
         case "delete":
-          u || (I(r.get(GA)), li(A) && I(r.get(oe)));
+          u || (I(r.get(KA)), li(A) && I(r.get(oe)));
           break;
         case "set":
-          li(A) && I(r.get(GA));
+          li(A) && I(r.get(KA));
           break;
       }
   }
   Ve();
 }
-function MA(A) {
+function kA(A) {
   const i = F(A);
   return i === A ? i : (k(i, "iterate", Ci), lA(A) ? i : i.map(AA));
 }
@@ -436,8 +436,8 @@ const js = {
     return te(this, Symbol.iterator, AA);
   },
   concat(...A) {
-    return MA(this).concat(
-      ...A.map((i) => V(i) ? MA(i) : i)
+    return kA(this).concat(
+      ...A.map((i) => V(i) ? kA(i) : i)
     );
   },
   entries() {
@@ -472,7 +472,7 @@ const js = {
     return se(this, "indexOf", A);
   },
   join(A) {
-    return MA(this).join(A);
+    return kA(this).join(A);
   },
   // keys() iterator only reads `length`, no optimisation required
   lastIndexOf(...A) {
@@ -504,13 +504,13 @@ const js = {
     return fi(this, "splice", A);
   },
   toReversed() {
-    return MA(this).toReversed();
+    return kA(this).toReversed();
   },
   toSorted(A) {
-    return MA(this).toSorted(A);
+    return kA(this).toSorted(A);
   },
   toSpliced(...A) {
-    return MA(this).toSpliced(...A);
+    return kA(this).toSpliced(...A);
   },
   unshift(...A) {
     return fi(this, "unshift", A);
@@ -613,8 +613,8 @@ class Tt extends Dt {
   set(i, e, t, s) {
     let n = i[e];
     if (!this._isShallow) {
-      const u = KA(n);
-      if (!lA(t) && !KA(t) && (n = F(n), t = F(t)), !V(i) && J(n) && !J(t))
+      const u = MA(n);
+      if (!lA(t) && !MA(t) && (n = F(n), t = F(t)), !V(i) && J(n) && !J(t))
         return u ? !1 : (n.value = t, !0);
     }
     const r = V(i) && Pe(e) ? Number(e) < i.length : B(i, e), I = Reflect.set(
@@ -623,7 +623,7 @@ class Tt extends Dt {
       t,
       J(i) ? i : s
     );
-    return i === F(s) && (r ? OA(t, n) && XA(i, "set", e, t) : XA(i, "add", e, t)), I;
+    return i === F(s) && (r ? NA(t, n) && XA(i, "set", e, t) : XA(i, "add", e, t)), I;
   }
   deleteProperty(i, e) {
     const t = B(i, e);
@@ -639,7 +639,7 @@ class Tt extends Dt {
     return k(
       i,
       "iterate",
-      V(i) ? "length" : GA
+      V(i) ? "length" : KA
     ), Reflect.ownKeys(i);
   }
 }
@@ -662,7 +662,7 @@ function An(A, i, e) {
     return !i && k(
       n,
       "iterate",
-      u ? oe : GA
+      u ? oe : KA
     ), {
       // iterator protocol
       next() {
@@ -688,7 +688,7 @@ function en(A, i) {
   const e = {
     get(s) {
       const n = this.__v_raw, r = F(n), I = F(s);
-      A || (OA(s, I) && k(r, "get", s), k(r, "get", I));
+      A || (NA(s, I) && k(r, "get", s), k(r, "get", I));
       const { has: u } = qi(r), o = i ? de : A ? ce : AA;
       if (u.call(r, s))
         return o(n.get(s));
@@ -698,15 +698,15 @@ function en(A, i) {
     },
     get size() {
       const s = this.__v_raw;
-      return !A && k(F(s), "iterate", GA), Reflect.get(s, "size", s);
+      return !A && k(F(s), "iterate", KA), Reflect.get(s, "size", s);
     },
     has(s) {
       const n = this.__v_raw, r = F(n), I = F(s);
-      return A || (OA(s, I) && k(r, "has", s), k(r, "has", I)), s === I ? n.has(s) : n.has(s) || n.has(I);
+      return A || (NA(s, I) && k(r, "has", s), k(r, "has", I)), s === I ? n.has(s) : n.has(s) || n.has(I);
     },
     forEach(s, n) {
       const r = this, I = r.__v_raw, u = F(I), o = i ? de : A ? ce : AA;
-      return !A && k(u, "iterate", GA), I.forEach((l, c) => s.call(n, o(l), o(c), r));
+      return !A && k(u, "iterate", KA), I.forEach((l, c) => s.call(n, o(l), o(c), r));
     }
   };
   return tA(
@@ -718,17 +718,17 @@ function en(A, i) {
       clear: Hi("clear")
     } : {
       add(s) {
-        !i && !lA(s) && !KA(s) && (s = F(s));
+        !i && !lA(s) && !MA(s) && (s = F(s));
         const n = F(this);
         return qi(n).has.call(n, s) || (n.add(s), XA(n, "add", s, s)), this;
       },
       set(s, n) {
-        !i && !lA(n) && !KA(n) && (n = F(n));
+        !i && !lA(n) && !MA(n) && (n = F(n));
         const r = F(this), { has: I, get: u } = qi(r);
         let o = I.call(r, s);
         o || (s = F(s), o = I.call(r, s));
         const l = u.call(r, s);
-        return r.set(s, n), o ? OA(n, l) && XA(r, "set", s, n) : XA(r, "add", s, n), this;
+        return r.set(s, n), o ? NA(n, l) && XA(r, "set", s, n) : XA(r, "add", s, n), this;
       },
       delete(s) {
         const n = F(this), { has: r, get: I } = qi(n);
@@ -790,7 +790,7 @@ function In(A) {
   return A.__v_skip || !Object.isExtensible(A) ? 0 : fn(xs(A));
 }
 function Fe(A) {
-  return KA(A) ? A : Be(
+  return MA(A) ? A : Be(
     A,
     !1,
     Js,
@@ -832,9 +832,9 @@ function Be(A, i, e, t, s) {
   return s.set(A, I), I;
 }
 function ci(A) {
-  return KA(A) ? ci(A.__v_raw) : !!(A && A.__v_isReactive);
+  return MA(A) ? ci(A.__v_raw) : !!(A && A.__v_isReactive);
 }
-function KA(A) {
+function MA(A) {
   return !!(A && A.__v_isReadonly);
 }
 function lA(A) {
@@ -868,8 +868,8 @@ class on {
     return this.dep.track(), this._value;
   }
   set value(i) {
-    const e = this._rawValue, t = this.__v_isShallow || lA(i) || KA(i);
-    i = t ? i : F(i), OA(i, e) && (this._rawValue = i, this._value = t ? i : AA(i), this.dep.trigger());
+    const e = this._rawValue, t = this.__v_isShallow || lA(i) || MA(i);
+    i = t ? i : F(i), NA(i, e) && (this._rawValue = i, this._value = t ? i : AA(i), this.dep.trigger());
   }
 }
 function LA(A) {
@@ -910,15 +910,15 @@ function an(A, i, e = !1) {
   return x(A) ? t = A : (t = A.get, s = A.set), new cn(t, s, e);
 }
 const wi = {}, yi = /* @__PURE__ */ new WeakMap();
-let jA;
-function vn(A, i = !1, e = jA) {
+let GA;
+function vn(A, i = !1, e = GA) {
   if (e) {
     let t = yi.get(e);
     t || yi.set(e, t = []), t.push(A);
   }
 }
 function bn(A, i, e = Z) {
-  const { immediate: t, deep: s, once: n, scheduler: r, augmentJob: I, call: u } = e, o = (X) => s ? X : lA(X) || s === !1 || s === 0 ? BA(X, 1) : BA(X);
+  const { immediate: t, deep: s, once: n, scheduler: r, augmentJob: I, call: u } = e, o = (X) => s ? X : lA(X) || s === !1 || s === 0 ? OA(X, 1) : OA(X);
   let l, c, g, L, w = !1, H = !1;
   if (J(A) ? (c = () => A.value, w = lA(A)) : ci(A) ? (c = () => o(A), w = !0) : V(A) ? (H = !0, w = A.some((X) => ci(X) || lA(X)), c = () => A.map((X) => {
     if (J(X))
@@ -936,16 +936,16 @@ function bn(A, i, e = Z) {
         VA();
       }
     }
-    const X = jA;
-    jA = l;
+    const X = GA;
+    GA = l;
     try {
       return u ? u(A, 3, [L]) : A(L);
     } finally {
-      jA = X;
+      GA = X;
     }
   } : c = CA, i && s) {
     const X = c, G = s === !0 ? 1 / 0 : s;
-    c = () => BA(X(), G);
+    c = () => OA(X(), G);
   }
   const M = Ys(), N = () => {
     l.stop(), M && M.active && Le(M.effects, l);
@@ -961,10 +961,10 @@ function bn(A, i, e = Z) {
     if (!(!(l.flags & 1) || !l.dirty && !X))
       if (i) {
         const G = l.run();
-        if (s || w || (H ? G.some((qA, RA) => OA(qA, U[RA])) : OA(G, U))) {
+        if (s || w || (H ? G.some((qA, RA) => NA(qA, U[RA])) : NA(G, U))) {
           g && g();
-          const qA = jA;
-          jA = l;
+          const qA = GA;
+          GA = l;
           try {
             const RA = [
               G,
@@ -977,7 +977,7 @@ function bn(A, i, e = Z) {
               i(...RA)
             );
           } finally {
-            jA = qA;
+            GA = qA;
           }
         }
       } else
@@ -994,23 +994,23 @@ function bn(A, i, e = Z) {
     }
   }, i ? t ? S(!0) : U = l.run() : r ? r(S.bind(null, !0), !0) : l.run(), N.pause = l.pause.bind(l), N.resume = l.resume.bind(l), N.stop = N, N;
 }
-function BA(A, i = 1 / 0, e) {
+function OA(A, i = 1 / 0, e) {
   if (i <= 0 || !j(A) || A.__v_skip || (e = e || /* @__PURE__ */ new Set(), e.has(A)))
     return A;
   if (e.add(A), i--, J(A))
-    BA(A.value, i, e);
+    OA(A.value, i, e);
   else if (V(A))
     for (let t = 0; t < A.length; t++)
-      BA(A[t], i, e);
+      OA(A[t], i, e);
   else if (ms(A) || li(A))
     A.forEach((t) => {
-      BA(t, i, e);
+      OA(t, i, e);
     });
   else if (qs(A)) {
     for (const t in A)
-      BA(A[t], i, e);
+      OA(A[t], i, e);
     for (const t of Object.getOwnPropertySymbols(A))
-      Object.prototype.propertyIsEnumerable.call(A, t) && BA(A[t], i, e);
+      Object.prototype.propertyIsEnumerable.call(A, t) && OA(A[t], i, e);
   }
   return A;
 }
@@ -1073,7 +1073,7 @@ function hn(A, i, e, t = !0, s = !1) {
 const iA = [];
 let bA = -1;
 const $A = [];
-let wA = null, kA = 0;
+let FA = null, JA = 0;
 const Gt = /* @__PURE__ */ Promise.resolve();
 let Di = null;
 function pn(A) {
@@ -1099,7 +1099,7 @@ function Kt() {
   Di || (Di = Gt.then(kt));
 }
 function zn(A) {
-  V(A) ? $A.push(...A) : wA && A.id === -1 ? wA.splice(kA + 1, 0, A) : A.flags & 1 || ($A.push(A), A.flags |= 1), Kt();
+  V(A) ? $A.push(...A) : FA && A.id === -1 ? FA.splice(JA + 1, 0, A) : A.flags & 1 || ($A.push(A), A.flags |= 1), Kt();
 }
 function $e(A, i, e = bA + 1) {
   for (; e < iA.length; e++) {
@@ -1116,15 +1116,15 @@ function Mt(A) {
     const i = [...new Set($A)].sort(
       (e, t) => zi(e) - zi(t)
     );
-    if ($A.length = 0, wA) {
-      wA.push(...i);
+    if ($A.length = 0, FA) {
+      FA.push(...i);
       return;
     }
-    for (wA = i, kA = 0; kA < wA.length; kA++) {
-      const e = wA[kA];
+    for (FA = i, JA = 0; JA < FA.length; JA++) {
+      const e = FA[JA];
       e.flags & 4 && (e.flags &= -2), e.flags & 8 || e(), e.flags &= -2;
     }
-    wA = null, kA = 0;
+    FA = null, JA = 0;
   }
 }
 const zi = (A) => A.id == null ? A.flags & 2 ? -1 : 1 / 0 : A.id;
@@ -1167,7 +1167,7 @@ function Wn(A, i = pA, e) {
   };
   return t._n = !0, t._c = !0, t._d = !0, t;
 }
-function UA(A, i, e, t) {
+function SA(A, i, e, t) {
   const s = A.dirs, n = i && i.dirs;
   for (let r = 0; r < s.length; r++) {
     const I = s[r];
@@ -1404,7 +1404,7 @@ function Dn(A) {
     errorCaptured: HA,
     serverPrefetch: Qi,
     // public API
-    expose: TA,
+    expose: ZA,
     inheritAttrs: ti,
     // assets
     components: Xi,
@@ -1422,15 +1422,15 @@ function Dn(A) {
   }
   if (ve = !0, n)
     for (const Y in n) {
-      const y = n[Y], ZA = x(y) ? y.bind(e, e) : x(y.get) ? y.get.bind(e, e) : CA, Vi = !x(y) && x(y.set) ? y.set.bind(e) : CA, YA = mr({
-        get: ZA,
+      const y = n[Y], YA = x(y) ? y.bind(e, e) : x(y.get) ? y.get.bind(e, e) : CA, Vi = !x(y) && x(y.set) ? y.set.bind(e) : CA, UA = mr({
+        get: YA,
         set: Vi
       });
       Object.defineProperty(t, Y, {
         enumerable: !0,
         configurable: !0,
-        get: () => YA.value,
-        set: (oA) => YA.value = oA
+        get: () => UA.value,
+        set: (oA) => UA.value = oA
       });
     }
   if (I)
@@ -1444,15 +1444,15 @@ function Dn(A) {
   }
   l && it(l, A, "c");
   function _(Y, y) {
-    V(y) ? y.forEach((ZA) => Y(ZA.bind(e))) : y && Y(y.bind(e));
+    V(y) ? y.forEach((YA) => Y(YA.bind(e))) : y && Y(y.bind(e));
   }
-  if (_(mn, c), _(Vn, g), _(xn, L), _(qn, w), _(Pn, H), _(Qn, M), _(On, HA), _(Bn, qA), _(Fn, RA), _(Hn, U), _(is, X), _(wn, Qi), V(TA))
-    if (TA.length) {
+  if (_(mn, c), _(Vn, g), _(xn, L), _(qn, w), _(Pn, H), _(Qn, M), _(On, HA), _(Bn, qA), _(Fn, RA), _(Hn, U), _(is, X), _(wn, Qi), V(ZA))
+    if (ZA.length) {
       const Y = A.exposed || (A.exposed = {});
-      TA.forEach((y) => {
+      ZA.forEach((y) => {
         Object.defineProperty(Y, y, {
           get: () => e[y],
-          set: (ZA) => e[y] = ZA,
+          set: (YA) => e[y] = YA,
           enumerable: !0
         });
       });
@@ -1727,7 +1727,7 @@ function Mn(A, i, e, t) {
           if (B(n, g))
             L !== n[g] && (n[g] = L, o = !0);
           else {
-            const w = NA(g);
+            const w = yA(g);
             s[w] = he(
               u,
               I,
@@ -1748,7 +1748,7 @@ function Mn(A, i, e, t) {
       (!i || // for camelCase
       !B(i, c) && // it's possible the original props was passed in as kebab-case
       // and converted to camelCase (#955)
-      ((l = DA(c)) === c || !B(i, l))) && (u ? e && // for camelCase
+      ((l = TA(c)) === c || !B(i, l))) && (u ? e && // for camelCase
       (e[c] !== void 0 || // for kebab-case
       e[l] !== void 0) && (s[c] = he(
         u,
@@ -1773,7 +1773,7 @@ function Is(A, i, e, t) {
         continue;
       const o = i[u];
       let l;
-      s && B(s, l = NA(u)) ? !n || !n.includes(l) ? e[l] = o : (I || (I = {}))[l] = o : ki(A.emitsOptions, u) || (!(u in t) || o !== t[u]) && (t[u] = o, r = !0);
+      s && B(s, l = yA(u)) ? !n || !n.includes(l) ? e[l] = o : (I || (I = {}))[l] = o : ki(A.emitsOptions, u) || (!(u in t) || o !== t[u]) && (t[u] = o, r = !0);
     }
   if (n) {
     const u = F(e), o = I || Z;
@@ -1818,7 +1818,7 @@ function he(A, i, e, t, s, n) {
     ] && (n && !I ? t = !1 : r[
       1
       /* shouldCastTrue */
-    ] && (t === "" || t === DA(e)) && (t = !0));
+    ] && (t === "" || t === TA(e)) && (t = !0));
   }
   return t;
 }
@@ -1841,12 +1841,12 @@ function Es(A, i, e = !1) {
     return j(A) && t.set(A, _A), _A;
   if (V(n))
     for (let l = 0; l < n.length; l++) {
-      const c = NA(n[l]);
+      const c = yA(n[l]);
       st(c) && (r[c] = Z);
     }
   else if (n)
     for (const l in n) {
-      const c = NA(l);
+      const c = yA(l);
       if (st(c)) {
         const g = n[l], L = r[c] = V(g) || x(g) ? { type: g } : tA({}, g), w = L.type;
         let H = !1, M = !0;
@@ -1945,7 +1945,7 @@ function ir(A, i) {
       case Ji:
         M(f, E, R, b);
         break;
-      case yA:
+      case DA:
         N(f, E, R, b);
         break;
       case Bi:
@@ -2071,15 +2071,15 @@ function ir(A, i) {
       re(f, v),
       z,
       C
-    ), m && UA(f, null, b, "created"), RA(p, f, f.scopeId, z, b), Q) {
+    ), m && SA(f, null, b, "created"), RA(p, f, f.scopeId, z, b), Q) {
       for (const D in Q)
         D !== "value" && !Ri(D) && n(p, D, null, Q[D], v, b);
       "value" in Q && n(p, "value", null, Q.value, v), (h = Q.onVnodeBeforeMount) && vA(h, b, f);
     }
-    m && UA(f, null, b, "beforeMount");
+    m && SA(f, null, b, "beforeMount");
     const q = er(a, P);
     q && P.beforeEnter(p), t(p, E, R), ((h = Q && Q.onVnodeMounted) || q || m) && IA(() => {
-      h && vA(h, b, f), q && P.enter(p), m && UA(f, null, b, "mounted");
+      h && vA(h, b, f), q && P.enter(p), m && SA(f, null, b, "mounted");
     }, a);
   }, RA = (f, E, R, b, a) => {
     if (R && L(f, R), b)
@@ -2100,7 +2100,7 @@ function ir(A, i) {
     }
   }, HA = (f, E, R, b, a, v, z, C, p = 0) => {
     for (let h = p; h < f.length; h++) {
-      const Q = f[h] = C ? FA(f[h]) : hA(f[h]);
+      const Q = f[h] = C ? BA(f[h]) : hA(f[h]);
       H(
         null,
         Q,
@@ -2119,7 +2119,7 @@ function ir(A, i) {
     p |= f.patchFlag & 16;
     const W = f.props || Z, P = E.props || Z;
     let m;
-    if (R && SA(R, !1), (m = P.onVnodeBeforeUpdate) && vA(m, R, E, f), Q && UA(E, f, R, "beforeUpdate"), R && SA(R, !0), (W.innerHTML && P.innerHTML == null || W.textContent && P.textContent == null) && l(C, ""), h ? TA(
+    if (R && jA(R, !1), (m = P.onVnodeBeforeUpdate) && vA(m, R, E, f), Q && SA(E, f, R, "beforeUpdate"), R && jA(R, !0), (W.innerHTML && P.innerHTML == null || W.textContent && P.textContent == null) && l(C, ""), h ? ZA(
       f.dynamicChildren,
       h,
       C,
@@ -2150,9 +2150,9 @@ function ir(A, i) {
       p & 1 && f.children !== E.children && l(C, E.children);
     } else !z && h == null && ti(C, W, P, R, a);
     ((m = P.onVnodeUpdated) || Q) && IA(() => {
-      m && vA(m, R, E, f), Q && UA(E, f, R, "updated");
+      m && vA(m, R, E, f), Q && SA(E, f, R, "updated");
     }, b);
-  }, TA = (f, E, R, b, a, v, z) => {
+  }, ZA = (f, E, R, b, a, v, z) => {
     for (let C = 0; C < E.length; C++) {
       const p = f[C], h = E[C], Q = (
         // oldVNode may be an errored async setup() component inside Suspense
@@ -2217,7 +2217,7 @@ function ir(A, i) {
       p
     )) : W > 0 && W & 64 && P && // #2715 the previous fragment could've been a BAILed one as a result
     // of renderSlot() with no valid children
-    f.dynamicChildren ? (TA(
+    f.dynamicChildren ? (ZA(
       f.dynamicChildren,
       P,
       R,
@@ -2269,7 +2269,7 @@ function ir(A, i) {
     );
     if ($t(f) && (C.ctx.renderer = ni), gr(C, !1, z), C.asyncDep) {
       if (a && a.registerDep(C, _, z), !f.el) {
-        const p = C.subTree = zA(yA);
+        const p = C.subTree = zA(DA);
         N(null, p, E, R), f.placeholder = p.el;
       }
     } else
@@ -2306,7 +2306,7 @@ function ir(A, i) {
           }
         }
         let O = W, sA;
-        SA(f, !1), W ? (W.el = D.el, Y(f, W, z)) : W = D, P && ie(P), (sA = W.props && W.props.onVnodeBeforeUpdate) && vA(sA, q, W, D), SA(f, !0);
+        jA(f, !1), W ? (W.el = D.el, Y(f, W, z)) : W = D, P && ie(P), (sA = W.props && W.props.onVnodeBeforeUpdate) && vA(sA, q, W, D), jA(f, !0);
         const nA = rt(f), dA = f.subTree;
         f.subTree = nA, H(
           dA,
@@ -2325,7 +2325,7 @@ function ir(A, i) {
       } else {
         let W;
         const { el: P, props: m } = E, { bm: q, m: D, parent: O, root: sA, type: nA } = f, dA = vi(E);
-        SA(f, !1), q && ie(q), !dA && (W = m && m.onVnodeBeforeMount) && vA(W, O, E), SA(f, !0);
+        jA(f, !1), q && ie(q), !dA && (W = m && m.onVnodeBeforeMount) && vA(W, O, E), jA(f, !0);
         {
           sA.ce && // @ts-expect-error _def is private
           sA.ce._def.shadowRoot !== !1 && sA.ce._injectChildStyle(nA);
@@ -2354,7 +2354,7 @@ function ir(A, i) {
     const p = f.effect = new xt(C);
     f.scope.off();
     const h = f.update = p.run.bind(p), Q = f.job = p.runIfDirty.bind(p);
-    Q.i = f, Q.id = f.uid, p.scheduler = () => Ne(Q), SA(f, !0), h();
+    Q.i = f, Q.id = f.uid, p.scheduler = () => Ne(Q), jA(f, !0), h();
   }, Y = (f, E, R) => {
     E.component = f;
     const b = f.vnode.props;
@@ -2376,7 +2376,7 @@ function ir(A, i) {
         );
         return;
       } else if (P & 256) {
-        ZA(
+        YA(
           h,
           W,
           R,
@@ -2410,12 +2410,12 @@ function ir(A, i) {
       C,
       p
     ));
-  }, ZA = (f, E, R, b, a, v, z, C, p) => {
+  }, YA = (f, E, R, b, a, v, z, C, p) => {
     f = f || _A, E = E || _A;
     const h = f.length, Q = E.length, W = Math.min(h, Q);
     let P;
     for (P = 0; P < W; P++) {
-      const m = E[P] = p ? FA(E[P]) : hA(E[P]);
+      const m = E[P] = p ? BA(E[P]) : hA(E[P]);
       H(
         f[P],
         m,
@@ -2451,7 +2451,7 @@ function ir(A, i) {
     const Q = E.length;
     let W = f.length - 1, P = Q - 1;
     for (; h <= W && h <= P; ) {
-      const m = f[h], q = E[h] = p ? FA(E[h]) : hA(E[h]);
+      const m = f[h], q = E[h] = p ? BA(E[h]) : hA(E[h]);
       if (Ii(m, q))
         H(
           m,
@@ -2469,7 +2469,7 @@ function ir(A, i) {
       h++;
     }
     for (; h <= W && h <= P; ) {
-      const m = f[W], q = E[P] = p ? FA(E[P]) : hA(E[P]);
+      const m = f[W], q = E[P] = p ? BA(E[P]) : hA(E[P]);
       if (Ii(m, q))
         H(
           m,
@@ -2492,7 +2492,7 @@ function ir(A, i) {
         for (; h <= P; )
           H(
             null,
-            E[h] = p ? FA(E[h]) : hA(E[h]),
+            E[h] = p ? BA(E[h]) : hA(E[h]),
             R,
             q,
             a,
@@ -2508,7 +2508,7 @@ function ir(A, i) {
     else {
       const m = h, q = h, D = /* @__PURE__ */ new Map();
       for (h = q; h <= P; h++) {
-        const fA = E[h] = p ? FA(E[h]) : hA(E[h]);
+        const fA = E[h] = p ? BA(E[h]) : hA(E[h]);
         fA.key != null && D.set(fA.key, h);
       }
       let O, sA = 0;
@@ -2559,13 +2559,13 @@ function ir(A, i) {
           z,
           C,
           p
-        ) : dA && (O < 0 || h !== Ge[O] ? YA(aA, R, Me, 2) : O--);
+        ) : dA && (O < 0 || h !== Ge[O] ? UA(aA, R, Me, 2) : O--);
       }
     }
-  }, YA = (f, E, R, b, a = null) => {
+  }, UA = (f, E, R, b, a = null) => {
     const { el: v, type: z, transition: C, children: p, shapeFlag: h } = f;
     if (h & 6) {
-      YA(f.component.subTree, E, R, b);
+      UA(f.component.subTree, E, R, b);
       return;
     }
     if (h & 128) {
@@ -2579,7 +2579,7 @@ function ir(A, i) {
     if (z === QA) {
       t(v, E, R);
       for (let W = 0; W < p.length; W++)
-        YA(p[W], E, R, b);
+        UA(p[W], E, R, b);
       t(f.anchor, E, R);
       return;
     }
@@ -2627,7 +2627,7 @@ function ir(A, i) {
         f.suspense.unmount(R, b);
         return;
       }
-      q && UA(f, null, E, "beforeUnmount"), Q & 64 ? f.type.remove(
+      q && SA(f, null, E, "beforeUnmount"), Q & 64 ? f.type.remove(
         f,
         E,
         R,
@@ -2648,7 +2648,7 @@ function ir(A, i) {
       ) : (v === QA && W & 384 || !a && Q & 16) && si(p, E, R), b && Se(f);
     }
     (D && (O = z && z.onVnodeUnmounted) || q) && IA(() => {
-      O && vA(O, E, f), q && UA(f, null, E, "unmounted");
+      O && vA(O, E, f), q && SA(f, null, E, "unmounted");
     }, R);
   }, Se = (f) => {
     const { type: E, el: R, anchor: b, transition: a } = f;
@@ -2715,12 +2715,12 @@ function ir(A, i) {
   }, ni = {
     p: H,
     um: oA,
-    m: YA,
+    m: UA,
     r: Se,
     mt: _i,
     mc: HA,
     pc: y,
-    pbc: TA,
+    pbc: ZA,
     n: xi,
     o: A
   };
@@ -2733,7 +2733,7 @@ function ir(A, i) {
 function re({ type: A, props: i }, e) {
   return e === "svg" && A === "foreignObject" || e === "mathml" && A === "annotation-xml" && i && i.encoding && i.encoding.includes("html") ? void 0 : e;
 }
-function SA({ effect: A, job: i }, e) {
+function jA({ effect: A, job: i }, e) {
   e ? (A.flags |= 32, i.flags |= 4) : (A.flags &= -33, i.flags &= -5);
 }
 function er(A, i) {
@@ -2745,7 +2745,7 @@ function os(A, i, e = !1) {
     for (let n = 0; n < t.length; n++) {
       const r = t[n];
       let I = s[n];
-      I.shapeFlag & 1 && !I.dynamicChildren && ((I.patchFlag <= 0 || I.patchFlag === 32) && (I = s[n] = FA(s[n]), I.el = r.el), !e && I.patchFlag !== -2 && os(r, I)), I.type === Ji && (I.el = r.el), I.type === yA && !I.el && (I.el = r.el);
+      I.shapeFlag & 1 && !I.dynamicChildren && ((I.patchFlag <= 0 || I.patchFlag === 32) && (I = s[n] = BA(s[n]), I.el = r.el), !e && I.patchFlag !== -2 && os(r, I)), I.type === Ji && (I.el = r.el), I.type === DA && !I.el && (I.el = r.el);
     }
 }
 function tr(A) {
@@ -2824,7 +2824,7 @@ function as(A, i) {
     return t;
   };
 }
-const fr = (A, i) => i === "modelValue" || i === "model-value" ? A.modelModifiers : A[`${i}Modifiers`] || A[`${NA(i)}Modifiers`] || A[`${DA(i)}Modifiers`];
+const fr = (A, i) => i === "modelValue" || i === "model-value" ? A.modelModifiers : A[`${i}Modifiers`] || A[`${yA(i)}Modifiers`] || A[`${TA(i)}Modifiers`];
 function Ir(A, i, ...e) {
   if (A.isUnmounted) return;
   const t = A.vnode.props || Z;
@@ -2832,8 +2832,8 @@ function Ir(A, i, ...e) {
   const n = i.startsWith("update:"), r = n && fr(t, i.slice(7));
   r && (r.trim && (s = e.map((l) => K(l) ? l.trim() : l)), r.number && (s = e.map(Fs)));
   let I, u = t[I = Ae(i)] || // also try camelCase event handler (#2249)
-  t[I = Ae(NA(i))];
-  !u && n && (u = t[I = Ae(DA(i))]), u && WA(
+  t[I = Ae(yA(i))];
+  !u && n && (u = t[I = Ae(TA(i))]), u && WA(
     u,
     A,
     6,
@@ -2869,7 +2869,7 @@ function vs(A, i, e = !1) {
   return !n && !I ? (j(A) && t.set(A, null), null) : (V(n) ? n.forEach((u) => r[u] = null) : tA(r, n), j(A) && t.set(A, r), r);
 }
 function ki(A, i) {
-  return !A || !Ui(i) ? !1 : (i = i.slice(2).replace(/Once$/, ""), B(A, i[0].toLowerCase() + i.slice(1)) || B(A, DA(i)) || B(A, i));
+  return !A || !Ui(i) ? !1 : (i = i.slice(2).replace(/Once$/, ""), B(A, i[0].toLowerCase() + i.slice(1)) || B(A, TA(i)) || B(A, i));
 }
 function rt(A) {
   const {
@@ -2917,7 +2917,7 @@ function rt(A) {
       ), U = i.props ? I : Er(I);
     }
   } catch (X) {
-    hi.length = 0, Ki(X, A, 1), N = zA(yA);
+    hi.length = 0, Ki(X, A, 1), N = zA(DA);
   }
   let S = N;
   if (U && H !== !1) {
@@ -2985,7 +2985,7 @@ const bs = (A) => A.__isSuspense;
 function or(A, i) {
   i && i.pendingBranch ? V(A) ? i.effects.push(...A) : i.effects.push(A) : zn(A);
 }
-const QA = Symbol.for("v-fgt"), Ji = Symbol.for("v-txt"), yA = Symbol.for("v-cmt"), Bi = Symbol.for("v-stc"), hi = [];
+const QA = Symbol.for("v-fgt"), Ji = Symbol.for("v-txt"), DA = Symbol.for("v-cmt"), Bi = Symbol.for("v-stc"), hi = [];
 let EA = null;
 function pe(A = !1) {
   hi.push(EA = A ? null : []);
@@ -3078,7 +3078,7 @@ function d(A, i = null, e = null, t = 0, s = null, n = A === QA ? 0 : 1, r = !1,
 }
 const zA = ar;
 function ar(A, i = null, e = null, t = 0, s = null, n = !1) {
-  if ((!A || A === Nn) && (A = yA), ps(A)) {
+  if ((!A || A === Nn) && (A = DA), ps(A)) {
     const I = ii(
       A,
       i,
@@ -3157,7 +3157,7 @@ function ii(A, i, e = !1, t = !1) {
     u.clone(l)
   ), l;
 }
-function JA(A = " ", i = 0) {
+function wA(A = " ", i = 0) {
   return zA(Ji, null, A, i);
 }
 function Ei(A, i) {
@@ -3165,17 +3165,17 @@ function Ei(A, i) {
   return e.staticCount = i, e;
 }
 function br(A = "", i = !1) {
-  return i ? (pe(), cr(yA, null, A)) : zA(yA, null, A);
+  return i ? (pe(), cr(DA, null, A)) : zA(DA, null, A);
 }
 function hA(A) {
-  return A == null || typeof A == "boolean" ? zA(yA) : V(A) ? zA(
+  return A == null || typeof A == "boolean" ? zA(DA) : V(A) ? zA(
     QA,
     null,
     // #3666, avoid reference pollution when reusing vnode
     A.slice()
-  ) : ps(A) ? FA(A) : zA(Ji, null, String(A));
+  ) : ps(A) ? BA(A) : zA(Ji, null, String(A));
 }
-function FA(A) {
+function BA(A) {
   return A.el === null && A.patchFlag !== -1 || A.memo ? A : ii(A);
 }
 function Ze(A, i) {
@@ -3195,7 +3195,7 @@ function Ze(A, i) {
       const s = i._;
       !s && !fs(i) ? i._ctx = pA : s === 3 && pA && (pA.slots._ === 1 ? i._ = 1 : (i._ = 2, A.patchFlag |= 1024));
     }
-  else x(i) ? (i = { default: i, _ctx: pA }, e = 32) : (i = String(i), t & 64 ? (e = 16, i = [JA(i)]) : e = 8);
+  else x(i) ? (i = { default: i, _ctx: pA }, e = 32) : (i = String(i), t & 64 ? (e = 16, i = [wA(i)]) : e = 8);
   A.children = i, A.shapeFlag |= e;
 }
 function hr(...A) {
@@ -3522,7 +3522,7 @@ function Ni(A, i, e) {
   else {
     const t = Dr(A, i);
     ct.test(e) ? A.setProperty(
-      DA(t),
+      TA(t),
       e.replace(ct, ""),
       "important"
     ) : A[t] = e;
@@ -3533,7 +3533,7 @@ function Dr(A, i) {
   const e = Ie[i];
   if (e)
     return e;
-  let t = NA(i);
+  let t = yA(i);
   if (t !== "filter" && t in A)
     return Ie[i] = t;
   t = mt(t);
@@ -3609,7 +3609,7 @@ function Ur(A) {
     for (; t = A.match(Ct); )
       A = A.slice(0, A.length - t[0].length), i[t[0].toLowerCase()] = !0;
   }
-  return [A[2] === ":" ? A.slice(3) : DA(A.slice(2)), i];
+  return [A[2] === ":" ? A.slice(3) : TA(A.slice(2)), i];
 }
 let Ee = 0;
 const Sr = /* @__PURE__ */ Promise.resolve(), jr = () => Ee || (Sr.then(() => Ee = 0), Ee = Date.now());
@@ -3642,7 +3642,7 @@ function Kr(A, i) {
 const zt = (A) => A.charCodeAt(0) === 111 && A.charCodeAt(1) === 110 && // lowercase letter
 A.charCodeAt(2) > 96 && A.charCodeAt(2) < 123, Mr = (A, i, e, t, s, n) => {
   const r = s === "svg";
-  i === "class" ? Fr(A, t, r) : i === "style" ? yr(A, e, t) : Ui(i) ? ge(i) || Yr(A, i, e, t, n) : (i[0] === "." ? (i = i.slice(1), !0) : i[0] === "^" ? (i = i.slice(1), !1) : kr(A, i, t, r)) ? (ht(A, i, t), !A.tagName.includes("-") && (i === "value" || i === "checked" || i === "selected") && bt(A, i, t, r, n, i !== "value")) : /* #11081 force set props for possible async custom element */ A._isVueCE && (/[A-Z]/.test(i) || !K(t)) ? ht(A, NA(i), t, n, i) : (i === "true-value" ? A._trueValue = t : i === "false-value" && (A._falseValue = t), bt(A, i, t, r));
+  i === "class" ? Fr(A, t, r) : i === "style" ? yr(A, e, t) : Ui(i) ? ge(i) || Yr(A, i, e, t, n) : (i[0] === "." ? (i = i.slice(1), !0) : i[0] === "^" ? (i = i.slice(1), !1) : kr(A, i, t, r)) ? (ht(A, i, t), !A.tagName.includes("-") && (i === "value" || i === "checked" || i === "selected") && bt(A, i, t, r, n, i !== "value")) : /* #11081 force set props for possible async custom element */ A._isVueCE && (/[A-Z]/.test(i) || !K(t)) ? ht(A, yA(i), t, n, i) : (i === "true-value" ? A._trueValue = t : i === "false-value" && (A._falseValue = t), bt(A, i, t, r));
 };
 function kr(A, i, e, t) {
   if (t)
@@ -3690,7 +3690,7 @@ const Jr = ["ctrl", "shift", "alt", "meta"], _r = {
   return e[t] || (e[t] = (s) => {
     if (!("key" in s))
       return;
-    const n = DA(s.key);
+    const n = TA(s.key);
     if (i.some(
       (r) => r === n || Af[r] === n
     ))
@@ -3730,27 +3730,29 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
 }, df = { class: "page-showcase" }, cf = { class: "page-feature" }, af = ["src"], vf = { class: "page-feature reverse" }, bf = ["src"], hf = { class: "page-feature" }, pf = ["src"], Cf = { class: "page-feature reverse" }, zf = ["src"], Wf = {
   id: "download",
   class: "download-section"
-}, gf = { class: "download-options" }, Lf = ["href"], Pf = ["href"], Qf = { class: "download-note" }, Xf = ["href"], mf = ["href"], Vf = ["href"], xf = ["aria-label"], qf = { class: "image-lightbox-content" }, Hf = ["src", "alt"], wf = {
+}, gf = { class: "download-options" }, Lf = ["href"], Pf = ["href"], Qf = { class: "download-note" }, Xf = ["href"], mf = ["href"], Vf = ["href"], xf = ["href"], qf = ["href"], Hf = ["aria-label"], wf = { class: "image-lightbox-content" }, Ff = ["src", "alt"], Bf = {
   __name: "App",
   setup(A) {
     const i = {
-      x64: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
-      x64Backup: "https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
-      ia32Backup: "https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      x64: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      ia32: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      x64Backup: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      ia32Backup: "https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      x64Backup2: "https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      ia32Backup2: "https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe",
       release: "https://github.com/rjf1979/review_stock/releases/tag/v0.3.0"
     }, e = ln(null);
     function t(s, n) {
       e.value = { src: s, alt: n };
     }
     return (s, n) => (pe(), Et("div", If, [
-      n[32] || (n[32] = Ei('<header class="nav"><a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#pages">页面</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
+      n[34] || (n[34] = Ei('<header class="nav"><a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#pages">页面</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
       d("main", null, [
         d("section", Ef, [
           d("div", uf, [
             n[8] || (n[8] = d("p", { class: "kicker" }, "LOCAL MARKET DESK · WINDOWS DESKTOP", -1)),
             n[9] || (n[9] = d("h1", null, [
-              JA("股市脉搏，"),
+              wA("股市脉搏，"),
               d("br"),
               d("em", null, "一屏看懂。")
             ], -1)),
@@ -3769,7 +3771,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
           ]),
           n[12] || (n[12] = Ei('<div class="hero-console" aria-label="股市脉搏桌面版功能预览"><div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 股市脉搏</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div><div class="console-content"><div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div><div class="console-indices"><div class="console-index"><small>实时行情</small><strong>本地更新</strong><span>指数与自选股</span></div><div class="console-index"><small>每日复盘</small><strong>16:00</strong><span>工作日整理</span></div><div class="console-index"><small>系统通知</small><strong>可选</strong><span>托盘运行</span></div></div><div class="console-table"><div><span>数据来源</span><b>腾讯行情 · 东方财富</b></div><div><span>运行方式</span><b>本地直连公开接口</b></div><div><span>数据保存</span><b>当前 Windows 用户本地</b></div></div></div></div>', 1))
         ]),
-        n[29] || (n[29] = Ei('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。从盘中观察到收盘复盘，每个页面都围绕一个明确任务展开。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数、市场宽度、涨跌停、行业资金、涨跌榜和盘口异动集中显示，交易时段自动刷新。</p></article><article><span class="feature-index">02</span><h3>自选股工作区</h3><p>保存常看股票，查看最新报价、涨跌幅与日 K 走势，还能把股票即时加入浮动监控。</p></article><article><span class="feature-index">03</span><h3>每日复盘</h3><p>用市场温度、情绪指标、指数结构、主线排序、连板高度和数据质量核对还原收盘状态。</p></article><article><span class="feature-index">04</span><h3>龙虎榜联动</h3><p>展开买卖前五席位，查看净买入与上榜原因，并将关注股票直接加入自选股。</p></article></div></section>', 1)),
+        n[31] || (n[31] = Ei('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。从盘中观察到收盘复盘，每个页面都围绕一个明确任务展开。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数、市场宽度、涨跌停、行业资金、涨跌榜和盘口异动集中显示，交易时段自动刷新。</p></article><article><span class="feature-index">02</span><h3>自选股工作区</h3><p>保存常看股票，查看最新报价、涨跌幅与日 K 走势，还能把股票即时加入浮动监控。</p></article><article><span class="feature-index">03</span><h3>每日复盘</h3><p>用市场温度、情绪指标、指数结构、主线排序、连板高度和数据质量核对还原收盘状态。</p></article><article><span class="feature-index">04</span><h3>龙虎榜联动</h3><p>展开买卖前五席位，查看净买入与上榜原因，并将关注股票直接加入自选股。</p></article></div></section>', 1)),
         d("section", of, [
           n[21] || (n[21] = d("div", { class: "section-heading" }, [
             d("p", { class: "kicker" }, "INSIDE THE DESK"),
@@ -3887,12 +3889,12 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
             ])
           ])
         ]),
-        n[30] || (n[30] = Ei('<section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 1)),
+        n[32] || (n[32] = Ei('<section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 1)),
         d("section", Wf, [
-          n[28] || (n[28] = d("div", null, [
+          n[30] || (n[30] = d("div", null, [
             d("p", { class: "kicker" }, "DESKTOP RELEASE · V0.3.0"),
             d("h2", null, "把股市脉搏放在桌面上"),
-            d("p", null, "提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载经 gh-proxy 公益加速，若失效可切换到备用镜像。")
+            d("p", null, "提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到备用镜像。")
           ], -1)),
           d("div", gf, [
             d("a", {
@@ -3911,7 +3913,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
               d("strong", null, "下载安装包", -1),
               d("small", null, "仅用于 32 位 Windows", -1)
             ]), 8, Pf),
-            n[27] || (n[27] = d("div", {
+            n[29] || (n[29] = d("div", {
               class: "download-option unavailable",
               role: "note"
             }, [
@@ -3920,23 +3922,31 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
               d("small", null, "当前仅支持 Windows")
             ], -1)),
             d("p", Qf, [
-              n[24] || (n[24] = JA("主下载经 gh-proxy 加速；若失效，可换用 ", -1)),
+              n[24] || (n[24] = wA("主下载经阿里云 OSS 加速；若失效，可换用 ", -1)),
               d("a", {
                 href: i.x64Backup
               }, "x64 备用镜像", 8, Xf),
-              n[25] || (n[25] = JA("、", -1)),
+              n[25] || (n[25] = wA("、", -1)),
               d("a", {
                 href: i.ia32Backup
               }, "x86 备用镜像", 8, mf),
-              n[26] || (n[26] = JA("。", -1))
+              n[26] || (n[26] = wA("，或 ", -1)),
+              d("a", {
+                href: i.x64Backup2
+              }, "x64 镜像二", 8, Vf),
+              n[27] || (n[27] = wA("、", -1)),
+              d("a", {
+                href: i.ia32Backup2
+              }, "x86 镜像二", 8, xf),
+              n[28] || (n[28] = wA("。", -1))
             ]),
             d("a", {
               class: "release-link",
               href: i.release
-            }, "查看 GitHub Release 与 SHA-256", 8, Vf)
+            }, "查看 GitHub Release 与 SHA-256", 8, qf)
           ])
         ]),
-        n[31] || (n[31] = Ei('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
+        n[33] || (n[33] = Ei('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
       ]),
       e.value ? (pe(), Et("div", {
         key: 0,
@@ -3947,7 +3957,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
         onClick: n[5] || (n[5] = $r((r) => e.value = null, ["self"])),
         onKeydown: n[6] || (n[6] = ef((r) => e.value = null, ["esc", "window"]))
       }, [
-        d("div", qf, [
+        d("div", wf, [
           d("button", {
             type: "button",
             class: "image-lightbox-close",
@@ -3957,18 +3967,18 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
           d("img", {
             src: e.value.src,
             alt: e.value.alt
-          }, null, 8, Hf)
+          }, null, 8, Ff)
         ])
-      ], 40, xf)) : br("", !0),
-      n[33] || (n[33] = d("footer", null, [
+      ], 40, Hf)) : br("", !0),
+      n[35] || (n[35] = d("footer", null, [
         d("span", null, "© 2026 股市脉搏 · Desktop Market Desk"),
         d("span", null, [
           d("a", { href: "#data" }, "数据来源与免责声明"),
-          JA(" · "),
+          wA(" · "),
           d("a", { href: "#download" }, "下载")
         ])
       ], -1))
     ]));
   }
 };
-nf(wf).mount("#app");
+nf(Bf).mount("#app");
