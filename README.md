@@ -14,11 +14,11 @@
 
 当前 Windows 版本：`0.3.0`
 
-- [Windows 64 位安装包](https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-ia32-setup.exe)：仅用于 32 位 Windows。
-- [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
+- [Windows 64 位安装包](https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑，经 gh-proxy 公益加速。
+- [Windows 32 位安装包](https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [备用镜像（ghfast）](https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe) · [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
 
-安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从官网下载并核对发布页提供的 SHA-256。
+主下载经 gh-proxy 免费加速；该服务由第三方维护，若失效请改用 GitHub Release 原站链接。安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示，请下载后核对发布页提供的 SHA-256。
 
 ## 使用许可
 

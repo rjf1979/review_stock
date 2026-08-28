@@ -6,9 +6,11 @@ import dailyReviewImage from './assets/desktop-screens/daily-review.png'
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
 
 const downloads = {
-  x64: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.6/hangqing-desktop-0.2.6-win-x64-setup.exe',
-  ia32: 'https://github.com/rjf1979/review_stock/releases/download/v0.2.6/hangqing-desktop-0.2.6-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.2.6'
+  x64: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64Backup: 'https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32Backup: 'https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.0'
 }
 
 const activeImage = ref(null)
@@ -98,12 +100,13 @@ function openImage(src, alt) {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.2.6</p><h2>把股市脉搏放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，请从 GitHub Release 页面下载并核对 SHA-256。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.3.0</p><h2>把股市脉搏放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载经 gh-proxy 公益加速，若失效可切换到备用镜像。</p></div>
         <div class="download-options">
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
           <div class="download-option unavailable" role="note"><span>macOS</span><strong>暂未提供</strong><small>当前仅支持 Windows</small></div>
-          <a class="release-link" :href="downloads.release">查看 Release 与校验值</a>
+          <p class="download-note">主下载经 gh-proxy 加速；若失效，可换用 <a :href="downloads.x64Backup">x64 备用镜像</a>、<a :href="downloads.ia32Backup">x86 备用镜像</a>。</p>
+          <a class="release-link" :href="downloads.release">查看 GitHub Release 与 SHA-256</a>
         </div>
       </section>
 
