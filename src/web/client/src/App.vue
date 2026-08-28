@@ -6,12 +6,12 @@ import dailyReviewImage from './assets/desktop-screens/daily-review.png'
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
 
 const downloads = {
-  x64: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
-  ia32: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
-  x64Backup: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
-  ia32Backup: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
-  x64Backup2: 'https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
-  ia32Backup2: 'https://ghfast.top/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64Backup: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32Backup: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.0-win-ia32-setup.exe',
+  x64Backup2: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe',
+  ia32Backup2: 'https://gh-proxy.com/https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe',
   release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.0'
 }
 
