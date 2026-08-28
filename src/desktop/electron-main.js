@@ -11,7 +11,7 @@ const { createStorage } = require('./storage');
 const { DEFAULT_MANIFEST_URL, CHECK_INTERVAL_MS, compareVersions, selectAsset, fetchManifest, downloadUpdate } = require('./updater');
 const { createTelemetry } = require('./telemetry');
 
-if (process.platform === 'win32') app.setAppUserModelId('io.zhicha.stockpulse');
+if (process.platform === 'win32') app.setAppUserModelId('io.zhicha.dailystock');
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {

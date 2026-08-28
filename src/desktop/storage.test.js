@@ -37,6 +37,15 @@ const { createStorage } = require('./storage');
   storage.setSettings({ monitorOpacity: 135 });
   assert.strictEqual(storage.getSettings().monitorOpacity, 100);
 
+  storage.saveReviewSnapshot('2026-08-28', { date: '2026-08-28', meta: { trade_date: '2026-08-28' }, temperature: { score: 52 } });
+  storage.saveDragonSnapshot('2026-08-28', { date: '2026-08-28', list: [{ code: '600519' }] });
+  storage.saveDragonSnapshot('2026-08-27', { date: '2026-08-27', list: [] });
+  assert.deepStrictEqual(storage.getDragonSnapshot('2026-08-28').list, [{ code: '600519' }]);
+  assert.deepStrictEqual(storage.getHistoryEntries().map(item => [item.date, Boolean(item.review), Boolean(item.dragon)]), [
+    ['2026-08-28', true, true],
+    ['2026-08-27', false, true],
+  ]);
+
   storage.close();
   fs.rmSync(dir, { recursive: true, force: true });
   console.log('storage monitor tests passed');

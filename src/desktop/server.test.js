@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes } = require('./server');
+const { expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes, resolveDashboardDate } = require('./server');
 
 function session(date, state) {
   return { date, state, isTrading: false };
@@ -16,6 +16,10 @@ assert.strictEqual(canReuseClosedSnapshot(snapshot('2026-08-26'), session('2026-
 assert.strictEqual(expectedSnapshotDate(session('2026-08-27', 'preopen')), '2026-08-26');
 assert.strictEqual(canReuseClosedSnapshot(snapshot('2026-08-26'), session('2026-08-27', 'preopen')), true);
 assert.strictEqual(expectedSnapshotDate(session('2026-08-29', 'weekend')), '2026-08-28');
+assert.strictEqual(resolveDashboardDate(null, '2026-08-29', '2026-08-28'), '2026-08-28');
+assert.strictEqual(resolveDashboardDate('2026-08-29', '2026-08-29', '2026-08-28'), '2026-08-28');
+assert.strictEqual(resolveDashboardDate('2026-08-28', '2026-08-29', '2026-08-28'), '2026-08-28');
+assert.strictEqual(resolveDashboardDate('2026-08-27', '2026-08-29', '2026-08-28'), '2026-08-27');
 assert.strictEqual(canReuseClosedSnapshot(snapshot('2026-08-28'), session('2026-08-29', 'weekend')), true);
 assert.strictEqual(stockQuoteCacheKey('600519', session('2026-08-26', 'closed')), 'stocks:2026-08-26:600519');
 assert.notStrictEqual(stockQuoteCacheKey('600519', session('2026-08-25', 'closed')), stockQuoteCacheKey('600519', session('2026-08-26', 'closed')));

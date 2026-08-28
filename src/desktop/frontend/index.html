@@ -169,9 +169,10 @@
     .watch-remove{width:32px;height:32px;flex:0 0 32px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:500 22px/1 system-ui,sans-serif;cursor:pointer}.watch-remove:hover,.watch-remove:focus-visible{background:var(--header-active);color:var(--red)}
     .watch-quote{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:12px 0 8px}.watch-quote>strong{font-size:1.75rem;line-height:1;font-variant-numeric:tabular-nums}.watch-quote div{display:flex;align-items:baseline;gap:7px;font-variant-numeric:tabular-nums}.watch-quote div b{font-size:.9rem}.watch-quote div span{font-size:.75rem;font-weight:800}.watch-meta{display:flex;justify-content:space-between;gap:8px;padding-bottom:10px;color:var(--muted);font-size:.64rem;white-space:nowrap}.watch-meta span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
     .watch-chart-block{padding-top:9px;border-top:1px solid var(--line)}.watch-chart-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:.72rem}.watch-chart-title strong{font-size:.78rem}.watch-chart-title span{color:var(--muted);font-size:.62rem}.watch-chart-frame{position:relative;height:260px;overflow:hidden;background:var(--paper);border:1px solid var(--line);border-radius:5px}.watch-chart{width:100%;height:100%}.watch-chart-state{display:grid;place-items:center;height:100%;padding:12px;color:var(--muted);font-size:.7rem;text-align:center}.watch-chart-state.chart-error{color:var(--red)}.watch-empty{display:grid;place-items:center;min-height:220px;padding:28px;background:var(--card-bg);border:1px dashed var(--line);border-radius:var(--radius);color:var(--muted);text-align:center}.watch-empty strong{display:block;margin-bottom:4px;color:var(--ink);font-size:1rem}.watch-empty span{font-size:.78rem}
-    .his-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+    .his-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--line)}
     .his-row:last-child{border-bottom:0}
     .his-row b{font-variant-numeric:tabular-nums}
+    .his-row-date{display:grid;gap:4px}.his-row-date small{color:var(--muted);font-size:.68rem}.his-row-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.history-tag{display:inline-flex;align-items:center;min-height:20px;padding:0 6px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--muted);font-size:.62rem;font-weight:800}
     .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
     .settings-bottom-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.settings-bottom-grid .panel{margin-bottom:14px}
     .set-item{padding:12px;background:var(--paper);border:1px solid var(--line);border-radius:8px}
@@ -404,7 +405,7 @@
       <nav>
         <button :class="{active:view==='realtime'}" :aria-current="view==='realtime'?'page':null" @click="view='realtime';loadRealtime({silent:true,allowClosed:true})">实时行情</button>
         <button :class="{active:view==='watch'}" :aria-current="view==='watch'?'page':null" @click="view='watch';loadWatch()">自选股</button>
-        <button :class="{active:view==='review'}" :aria-current="view==='review'?'page':null" @click="openReview(todayStr());view='review'">每日复盘</button>
+        <button :class="{active:view==='review'}" :aria-current="view==='review'?'page':null" @click="openReview();view='review'">每日复盘</button>
         <button :class="{active:view==='dragon'}" :aria-current="view==='dragon'?'page':null" @click="view='dragon';loadDragon()">龙虎榜</button>
         <button :class="{active:view==='history'}" @click="buildHistory();view='history'">历史报告</button>
         <button class="settings-button header-icon-button" :class="{active:view==='settings'}" title="设置" aria-label="设置" @click="view='settings'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg><span v-if="['available','downloaded'].includes(updateState.status)" class="update-nav-label">新</span></button>
@@ -585,7 +586,7 @@
 
       <!-- 每日复盘 -->
       <div v-else-if="view==='review'" class="review-view">
-        <div v-if="status.review === 'error'" class="err">{{ errors.review }}<button @click="openReview(review.date || todayStr())">重试</button></div>
+        <div v-if="status.review === 'error'" class="err">{{ errors.review }}<button @click="openReview(review.date || null)">重试</button></div>
         <div v-if="status.review === 'loading' && !review.temperature" class="loading">正在获取每日复盘…</div>
         <article v-else-if="review.date && review.quality" class="review-report" aria-labelledby="review-title">
           <section class="review-hero">
@@ -675,9 +676,9 @@
 
       <!-- 历史报告 -->
       <div v-else-if="view==='history'">
-        <div class="panel"><h2>历史复盘报告</h2>
-            <div v-for="d in historyDates" :key="d" class="his-row"><b>{{ d }}</b><button class="row-btn" @click="openReview(d)">查看</button></div>
-          <div v-if="!historyDates.length" class="empty">暂无历史报告</div>
+        <div class="panel"><h2>历史报告</h2>
+            <div v-for="entry in historyEntries" :key="entry.date" class="his-row"><div class="his-row-date"><b>{{ entry.date }}</b><small><span v-if="entry.review" class="history-tag">每日复盘</span> <span v-if="entry.dragon" class="history-tag">龙虎榜</span></small></div><div class="his-row-actions"><button v-if="entry.review" class="row-btn" @click="openReview(entry.date)">查看复盘</button><button v-if="entry.dragon" class="row-btn" @click="loadDragon(entry.date)">查看龙虎榜</button></div></div>
+          <div v-if="!historyEntries.length" class="empty">暂无历史报告</div>
         </div>
       </div>
 
@@ -795,7 +796,7 @@
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
-        historyDates: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr,
+        historyEntries: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr,
         isMonitorMode, monitorEnabled: false, monitorVisible: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60, monitorPayload: null, monitorLoading: false, monitorError: '', MONITOR_LIMIT
       }; },
       computed: {
@@ -998,19 +999,20 @@
           })();
           return this._realtimeLoading;
         },
-        async openReview(date, { force = false } = {}) {
-          const cached = this.reviewCache[date] || (this.review?.date === date && Object.keys(this.review).length > 1 ? this.review : null);
+        async openReview(date = null, { force = false } = {}) {
+          const cached = date ? (this.reviewCache[date] || (this.review?.date === date && Object.keys(this.review).length > 1 ? this.review : null)) : null;
           this.view = 'review'; this.errors.review = '';
           if (cached && !force) { this.review = cached; this.status.review = 'success'; return; }
-          this.status.review = 'loading'; if (!cached) this.review = { date };
+          this.status.review = 'loading'; if (!cached) this.review = date ? { date } : {};
           const job = this.beginLoading(force ? '每日复盘刷新中…' : '每日复盘载入中…');
-          try { const query = '?date=' + encodeURIComponent(date) + (force ? '&refresh=1' : ''); const d = await this.api('/api/review' + query); this.review = d; this.reviewCache[date] = d; this.status.review = 'success'; }
+          try { const params = new URLSearchParams(); if (date) params.set('date', date); if (force) params.set('refresh', '1'); const query = params.size ? '?' + params.toString() : ''; const d = await this.api('/api/review' + query); this.review = d; this.reviewCache[d.date] = d; this.status.review = 'success'; }
           catch (e) { this.status.review = 'error'; this.errors.review = '获取复盘失败：' + e.message; }
           finally { this.endLoading(job); }
         },
-        async loadDragon() {
+        async loadDragon(date = null) {
+          this.view = 'dragon';
           this.status.dragon = 'loading'; this.errors.dragon = ''; const job = this.beginLoading('龙虎榜刷新中…');
-          try { this.dragon = await this.api('/api/dragon'); this.status.dragon = 'success'; }
+          try { this.dragon = await this.api('/api/dragon' + (date ? '?date=' + encodeURIComponent(date) : '')); this.status.dragon = 'success'; }
           catch (e) { this.status.dragon = 'error'; this.errors.dragon = '龙虎榜获取失败：' + e.message; }
           finally { this.endLoading(job); }
         },
@@ -1093,7 +1095,7 @@
            }).catch(error => console.warn('[桌面端] SQLite 自选股保存失败：', error.message));
          },
         // 历史
-        async buildHistory() { const data = await this.api('/api/reviews'); this.historyDates = (data.reviews || []).map(item => item.date); },
+        async buildHistory() { const data = await this.api('/api/reviews'); this.historyEntries = data.entries || []; },
         // 设置
         applyRefresh(persist = true) { localStorage.setItem('hq_refresh', String(this.refreshSec)); if (persist) this.persistSettings({ refreshSec: this.refreshSec }); this.startAuto(); },
         toggleTheme() { this.applyTheme(this.theme === 'dark' ? 'light' : 'dark'); },

@@ -49,6 +49,12 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS dragon_snapshots (
+      date TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS schema_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -197,6 +203,29 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     return queryAll('SELECT date, temperature, report_mode, quality_status, as_of, updated_at FROM reviews WHERE payload IS NOT NULL ORDER BY date DESC')
       .map(row => ({ date: row.date, temperature: row.temperature, reportMode: row.report_mode, qualityStatus: row.quality_status, asOf: row.as_of, updatedAt: row.updated_at }));
   }
+  function saveDragonSnapshot(date, payload) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !payload || typeof payload !== 'object' || !Array.isArray(payload.list)) throw new Error('龙虎榜快照格式不正确');
+    if (payload.date && payload.date !== date) throw new Error(`龙虎榜交易日期不一致：${payload.date} / ${date}`);
+    execute(`INSERT OR REPLACE INTO dragon_snapshots(date, payload, created_at, updated_at)
+      VALUES ($date, $payload, COALESCE((SELECT created_at FROM dragon_snapshots WHERE date = $date), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)`, {
+      $date: date,
+      $payload: JSON.stringify({ ...payload, date }),
+    });
+    persist();
+  }
+  function getDragonSnapshot(date) {
+    const payload = parseValue(queryOne('SELECT payload FROM dragon_snapshots WHERE date = $date', { $date: date })?.payload, null);
+    return payload?.date === date && Array.isArray(payload.list) ? payload : null;
+  }
+  function getHistoryEntries() {
+    const reviews = new Map(getReviewDates().map(item => [item.date, { date: item.date, review: item, dragon: null }]));
+    for (const row of queryAll('SELECT date, updated_at FROM dragon_snapshots ORDER BY date DESC')) {
+      const entry = reviews.get(row.date) || { date: row.date, review: null, dragon: null };
+      entry.dragon = { updatedAt: row.updated_at };
+      reviews.set(row.date, entry);
+    }
+    return [...reviews.values()].sort((left, right) => right.date.localeCompare(left.date));
+  }
 
   function migrateLegacyFiles() {
     if (getMeta('legacy_files_v1')) return false;
@@ -246,6 +275,9 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     saveReviewSnapshot,
     getReviewSnapshot,
     getReviewDates,
+    saveDragonSnapshot,
+    getDragonSnapshot,
+    getHistoryEntries,
     migrateLegacyFiles,
     importLegacyFrontend,
     close() { db.close(); },

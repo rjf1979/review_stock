@@ -19,6 +19,9 @@ function latestTradingISO() {
   if (weekday === 0) date.setUTCDate(date.getUTCDate() - 2);
   return date.toISOString().slice(0, 10);
 }
+function resolveDashboardDate(requestedDate, currentDate = todayISO(), latestDate = latestTradingISO()) {
+  return !requestedDate || requestedDate === currentDate ? latestDate : requestedDate;
+}
 function todayCompact() { return latestTradingISO().replace(/-/g, ''); }
 function shanghaiParts(value = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -403,7 +406,7 @@ function createHttpServer(storage) {
       }));
     }
     if (url.pathname === '/api/review') {
-      const date = url.searchParams.get('date') || todayISO();
+      const date = resolveDashboardDate(url.searchParams.get('date'));
       const force = url.searchParams.get('refresh') === '1';
       if (!validDate(date)) return json(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
       const currentDate = latestTradingISO();
@@ -420,12 +423,14 @@ function createHttpServer(storage) {
       storage.saveReviewSnapshot(date, payload);
       return json(res, 200, { ...payload, persisted: true, persistedAt: new Date().toISOString() });
     }
-    if (url.pathname === '/api/reviews') return json(res, 200, { reviews: storage.getReviewDates() });
+    if (url.pathname === '/api/reviews') return json(res, 200, { entries: storage.getHistoryEntries() });
     if (url.pathname === '/api/dragon') {
-      const date = url.searchParams.get('date') || todayISO();
+      const date = resolveDashboardDate(url.searchParams.get('date'));
       if (!validDate(date)) return json(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
       const ttl = date === latestTradingISO() ? 10 * 60 * 1000 : Number.POSITIVE_INFINITY;
-      return json(res, 200, await cached(`dragon:${date}`, ttl, async () => ({ date, list: await review.fetchDragonTiger(date) })));
+      const payload = await cached(`dragon:${date}`, ttl, async () => ({ date, list: await review.fetchDragonTiger(date) }));
+      storage.saveDragonSnapshot(date, payload);
+      return json(res, 200, payload);
     }
     if (url.pathname === '/api/global') {
       return json(res, 200, { global: await review.fetchGlobalIndices() });
@@ -478,4 +483,4 @@ async function startServer({ storage, port = PORT } = {}) {
 
 if (require.main === module) startServer().catch(error => { console.error('[桌面端] 本地服务启动失败：', error); process.exitCode = 1; });
 
-module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes };
+module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes, resolveDashboardDate };

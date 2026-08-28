@@ -1,6 +1,6 @@
 {
-  "name": "stockpulse-desktop",
-  "version": "0.3.2",
+  "name": "hangqing-desktop",
+  "version": "0.3.4",
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "description": "股市脉搏 - A股实时行情与每日复盘桌面工具（本地取数）",
@@ -22,51 +22,18 @@
     "sql.js": "^1.14.2"
   },
   "build": {
-    "appId": "io.zhicha.stockpulse",
+    "appId": "io.zhicha.dailystock",
     "productName": "股市脉搏",
     "executableName": "StockPulse",
-    "electronDownload": {
-      "mirror": "https://npmmirror.com/mirrors/electron/"
-    },
+    "electronDownload": { "mirror": "https://npmmirror.com/mirrors/electron/" },
     "asar": true,
     "compression": "maximum",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "electron-main.js",
-      "preload.js",
-      "server.js",
-      "storage.js",
-      "review-core.js",
-      "review-scheduler.js",
-      "updater.js",
-      "telemetry.js",
-      "assets/icon.png",
-      "frontend/**/*",
-      "!node_modules/sql.js/**",
-      "node_modules/sql.js/package.json",
-      "node_modules/sql.js/dist/sql-wasm.js",
-      "node_modules/sql.js/dist/sql-wasm.wasm",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../../LICENSE",
-        "to": "LICENSE.txt"
-      }
-    ],
+    "directories": { "output": "release" },
+    "files": ["electron-main.js", "preload.js", "server.js", "storage.js", "review-core.js", "review-scheduler.js", "updater.js", "telemetry.js", "assets/icon.png", "frontend/**/*", "!node_modules/sql.js/**", "node_modules/sql.js/package.json", "node_modules/sql.js/dist/sql-wasm.js", "node_modules/sql.js/dist/sql-wasm.wasm", "package.json"],
+    "extraResources": [{ "from": "../../LICENSE", "to": "LICENSE.txt" }],
     "win": {
       "icon": "assets/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        }
-      ],
+      "target": [{ "target": "nsis", "arch": ["x64", "ia32"] }],
       "artifactName": "hangqing-desktop-${version}-win-${arch}.${ext}"
     },
     "nsis": {
@@ -78,10 +45,6 @@
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico"
     },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    }
+    "mac": { "target": ["dmg"] }
   }
 }
