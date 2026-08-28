@@ -1,19 +1,14 @@
 {
-  "version": "0.3.2",
-  "publishedAt": "2026-08-28T16:01:20.443Z",
+  "version": "0.3.3",
+  "publishedAt": "2026-08-28T17:40:00.000Z",
   "notes": [
-    "英文技术名称统一为 StockPulse，并保持原有本地数据与升级路径兼容。"
+    "恢复既有本地数据目录兼容性，升级后继续显示自选股、每日复盘、龙虎榜和历史报告。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-x64-setup.exe",
-      "size": 85210477,
-      "sha256": "88474a060d8567c4123c043a3c4e4144493b255f81f57db9a772bf98a1ea259a"
-    },
-    "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-ia32-setup.exe",
-      "size": 80483132,
-      "sha256": "65b060ada4c3a97e1ce674556ca0afa8a1b56bb3899c07a82e12617c1abf21a1"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.3-win-x64-setup.exe",
+      "size": 85198206,
+      "sha256": "b06e47804b4b2b1fd3c168889bbe2cd8f4bf7e9d082de2ba6242971a32d57e04"
     }
   }
 }

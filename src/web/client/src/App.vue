@@ -6,11 +6,11 @@ import dailyReviewImage from './assets/desktop-screens/daily-review.png'
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
 
 const downloads = {
-  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-x64-setup.exe',
+  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.3-win-x64-setup.exe',
   ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-ia32-setup.exe',
   x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.2/hangqing-desktop-0.3.2-win-x64-setup.exe',
   ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.2/hangqing-desktop-0.3.2-win-ia32-setup.exe',
-  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.2-win-x64-setup.exe',
+  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.3-win-x64-setup.exe',
   ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.2-win-ia32-setup.exe',
   release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.2'
 }
@@ -102,13 +102,12 @@ function openImage(src, alt) {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.3.2</p><h2>把股市脉搏放在桌面上</h2><p>提供 Windows 64 位与 32 位安装包；macOS 版本暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到备用镜像。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.3.3 (X64)</p><h2>把股市脉搏放在桌面上</h2><p>Windows 64 位修复版现已提供；32 位版本仍为 0.3.2。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到备用镜像。</p></div>
         <div class="download-options">
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
           <div class="download-option unavailable" role="note"><span>macOS</span><strong>暂未提供</strong><small>当前仅支持 Windows</small></div>
-          <p class="download-note">境内主下载经阿里云 OSS + CDN 加速；海外用户可直接走 <a :href="downloads.x64Backup">GitHub x64</a>、<a :href="downloads.ia32Backup">GitHub x86</a>，或使用 <a :href="downloads.x64Backup2">OSS 镜像二</a>、<a :href="downloads.ia32Backup2">OSS 镜像二（x86）</a>。</p>
-          <a class="release-link" :href="downloads.release">查看 GitHub Release 与 SHA-256</a>
+          <p class="download-note">64 位修复版可使用 <a :href="downloads.x64Backup2">OSS 备用镜像</a>；32 位用户可继续使用 <a :href="downloads.ia32Backup">GitHub x86</a> 或 <a :href="downloads.ia32Backup2">OSS 镜像二（x86）</a>。</p>
         </div>
       </section>
 
