@@ -1,20 +1,21 @@
 {
-  "version": "0.2.6",
-  "publishedAt": "2026-08-27T12:44:07.223Z",
+  "version": "0.3.0",
+  "publishedAt": "2026-08-28T13:22:40.260Z",
   "notes": [
-    "设置页新增 QQ 交流群联系卡片，支持扫码加入股市脉搏交流群。",
-    "联系我们与关于信息改为双列展示，并调整到更新日志之前。"
+    "新增匿名安装与运行错误统计，用于统计安装用户数量和排查故障。",
+    "仅提交匿名安装编号、系统版本、架构、公网 IP 和运行错误，不包含账号、自选股或行情内容。",
+    "统计全程静默异步执行，不影响应用启动和正常使用。"
   ],
   "assets": {
     "x64": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.6-win-x64-setup.exe",
-      "size": 85258034,
-      "sha256": "2373d2368fc487b3d4e3e1806c67d3ee72765386f968da97631db3c3b6ad19ea"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-x64-setup.exe",
+      "size": 83381643,
+      "sha256": "03dfe7392ddeb7e19256f8f9555de34c04fb78638e6c76d98e8cec26b525681c"
     },
     "ia32": {
-      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.2.6-win-ia32-setup.exe",
-      "size": 80511050,
-      "sha256": "b9f7ca984276191b3aaf3fb13b696db6ac2d513ed1afae9e9c6c812b97c80b98"
+      "url": "https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-ia32-setup.exe",
+      "size": 77746042,
+      "sha256": "b03a60593e55c74ab33fed46f470139e70d794bf3ecfb7c84251ad2586437489"
     }
   }
 }

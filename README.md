@@ -14,11 +14,11 @@
 
 当前 Windows 版本：`0.3.0`
 
-- [Windows 64 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
-- [Windows 32 位安装包](https://github.com/rjf1979/review_stock/releases/download/v0.3.0/hangqing-desktop-0.3.0-win-ia32-setup.exe)：仅用于 32 位 Windows。
-- [查看全部版本与发布说明](https://github.com/rjf1979/review_stock/releases)。
+- [Windows 64 位安装包](https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑。
+- [Windows 32 位安装包](https://dailystock.zhicha.io/updates/files/hangqing-desktop-0.3.0-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
 
-安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从本仓库 Release 页面下载并核对发布页提供的 SHA-256。
+安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示。请从官网下载并核对发布页提供的 SHA-256。
 
 ## 使用许可
 
