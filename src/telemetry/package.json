@@ -1,0 +1,12 @@
+{
+  "name": "hangqing-telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "股市脉搏匿名安装与错误遥测接收服务",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check telemetry-server.test.js",
+    "test": "node telemetry-server.test.js"
+  }
+}

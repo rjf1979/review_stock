@@ -2,12 +2,14 @@
 const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, screen } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const review = require('./review-core');
 const { createReviewScheduler } = require('./review-scheduler');
 const { startServer } = require('./server');
 const { createStorage } = require('./storage');
 const { DEFAULT_MANIFEST_URL, CHECK_INTERVAL_MS, compareVersions, selectAsset, fetchManifest, downloadUpdate } = require('./updater');
+const { createTelemetry } = require('./telemetry');
 
 if (process.platform === 'win32') app.setAppUserModelId('io.zhicha.dailystock');
 
@@ -30,6 +32,7 @@ let scheduler;
 let savedState = {};
 let storage;
 let localServer;
+let telemetry;
 let updateTimer;
 let updateJob;
 let updateManifest;
@@ -131,6 +134,32 @@ function startUpdateChecks() {
 
 function statePath() {
   return path.join(app.getPath('userData'), 'desktop-state.json');
+}
+
+function telemetryEnabled() {
+  return app.isPackaged || Boolean(process.env.TELEMETRY_ENDPOINT);
+}
+
+function installTelemetryErrorHandlers() {
+  const originalConsoleError = console.error.bind(console);
+  console.error = (...args) => {
+    originalConsoleError(...args);
+    try {
+      const message = args.map(arg => {
+        if (arg instanceof Error) return arg.stack || arg.message;
+        if (typeof arg === 'string') return arg;
+        try { return JSON.stringify(arg); } catch { return String(arg); }
+      }).join(' ').slice(0, 500);
+      telemetry?.captureError(new Error(message), 'console');
+    } catch {}
+  };
+  process.on('uncaughtException', error => {
+    try { telemetry?.captureError(error, 'uncaughtException'); } catch {}
+  });
+  process.on('unhandledRejection', reason => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    try { telemetry?.captureError(error, 'unhandledRejection'); } catch {}
+  });
 }
 
 function loadState() {
@@ -486,6 +515,17 @@ app.whenReady().then(async () => {
     legacyReviewsDir: path.join(userData, 'reviews'),
   });
   loadState();
+  telemetry = createTelemetry({
+    storage,
+    queuePath: path.join(userData, 'telemetry-queue.json'),
+    appVersion: app.getVersion(),
+    arch: process.arch,
+    osVersion: `${process.platform} ${os.release()}`,
+    enabled: telemetryEnabled,
+  });
+  installTelemetryErrorHandlers();
+  const installedNow = telemetry.reportInstall();
+  if (!installedNow) telemetry.reportStartup();
   localServer = await startServer({ storage, port: PORT });
   createWindow();
   screen.on('display-metrics-changed', () => { fitWindowToDisplay(); refitMonitorWindow(); });
@@ -506,6 +546,10 @@ app.on('before-quit', () => {
   if (localServer) localServer.close();
   clearTimeout(monitorBoundsTimer);
   if (monitorWin && !monitorWin.isDestroyed()) monitorWin.destroy();
+  if (telemetry) {
+    telemetry.reportClose();
+    telemetry.close();
+  }
   if (storage) storage.close();
 });
 

@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>股市脉搏 · 遥测后台</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --ink: #17212b;
+      --muted: #5b6672;
+      --line: #dbe1e7;
+      --accent: #1f6feb;
+      --accent-ink: #ffffff;
+      --danger: #b42318;
+      --ok: #15803d;
+      --radius: 8px;
+      --shadow: 0 1px 2px rgba(18, 28, 42, .06);
+      --focus: 0 0 0 3px rgba(31, 111, 235, .28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .shell { width: min(1120px, 100%); margin: 0 auto; padding: 24px 20px 48px; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 16px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 650; letter-spacing: 0; }
+
+    .login {
+      width: min(420px, 100%);
+      margin: 48px auto 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .login h1 { margin-bottom: 18px; }
+
+    label { display: block; margin-bottom: 8px; font-size: .88rem; color: var(--muted); }
+
+    input[type="password"] {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+    }
+
+    input:focus-visible,
+    button:focus-visible,
+    summary:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+      border-color: var(--accent);
+    }
+
+    button {
+      min-height: 44px;
+      padding: 10px 16px;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: var(--accent-ink);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { filter: brightness(1.05); }
+    button:disabled { cursor: wait; opacity: .72; }
+
+    button.secondary {
+      background: transparent;
+      color: var(--ink);
+      border-color: var(--line);
+      font-weight: 500;
+    }
+
+    .login button { width: 100%; margin-top: 14px; }
+
+    .status { min-height: 24px; margin: 16px 0 0; color: var(--muted); font-size: .9rem; }
+    .status.error { color: var(--danger); }
+    .login .status { margin-top: 14px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .metric {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .metric small { display: block; color: var(--muted); font-size: .82rem; }
+    .metric strong { display: block; margin-top: 6px; font-size: 1.8rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .metric.danger strong { color: var(--danger); }
+
+    section {
+      margin-top: 24px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    h2 { margin: 0 0 14px; font-size: 1rem; font-weight: 650; }
+
+    .distribution { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .distribution h3 { margin: 0 0 8px; font-size: .9rem; color: var(--muted); font-weight: 600; }
+    .distribution ul { margin: 0; padding: 0; list-style: none; }
+    .distribution li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+    .distribution li:last-child { border-bottom: 0; }
+
+    .muted { color: var(--muted); }
+    .empty { padding: 28px 12px; text-align: center; color: var(--muted); }
+
+    .error-list { margin: 0; padding: 0; list-style: none; }
+    .error-list li { padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .error-list li:last-child { border-bottom: 0; }
+
+    .error-meta { display: flex; gap: 8px 14px; flex-wrap: wrap; color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
+    .error-message { margin: 8px 0 0; color: var(--ink); overflow-wrap: anywhere; }
+
+    details { margin-top: 8px; }
+    summary { display: inline-block; min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--accent); cursor: pointer; font-size: .85rem; user-select: none; }
+
+    pre {
+      margin: 8px 0 0;
+      padding: 12px;
+      background: #0f172a;
+      color: #e6edf3;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      font-size: .82rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 820px) {
+      .distribution { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .shell { padding: 16px 12px 32px; }
+      .topbar { align-items: stretch; flex-direction: column; }
+      .topbar button { width: 100%; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition-duration: 0s !important;
+        animation-duration: 0s !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section id="login" class="login" aria-labelledby="login-title">
+      <h1 id="login-title">股市脉搏 · 遥测后台</h1>
+      <label for="admin-key">查看密钥</label>
+      <input id="admin-key" type="password" autocomplete="current-password" placeholder="输入 TELEMETRY_ADMIN_KEY">
+      <button id="login-btn" type="button">登录</button>
+      <p id="login-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="dashboard" hidden>
+      <header class="topbar">
+        <h1>股市脉搏 · 遥测后台</h1>
+        <button id="logout-btn" class="secondary" type="button">退出</button>
+      </header>
+
+      <p id="status" class="status" role="status" aria-live="polite">正在加载数据…</p>
+
+      <div class="metrics" aria-label="概览">
+        <div class="metric"><small>安装用户</small><strong id="metric-installs">0</strong></div>
+        <div class="metric"><small>安装事件</small><strong id="metric-install-events">0</strong></div>
+        <div class="metric"><small>公网 IP</small><strong id="metric-ips">0</strong></div>
+        <div class="metric"><small>启动事件</small><strong id="metric-startups">0</strong></div>
+        <div class="metric"><small>关闭事件</small><strong id="metric-closes">0</strong></div>
+        <div class="metric danger"><small>错误事件</small><strong id="metric-errors">0</strong></div>
+        <div class="metric"><small>总事件</small><strong id="metric-total">0</strong></div>
+      </div>
+
+      <section aria-labelledby="distribution-title">
+        <h2 id="distribution-title">分布</h2>
+        <div class="distribution">
+          <div><h3>版本</h3><ul id="by-version"></ul></div>
+          <div><h3>架构</h3><ul id="by-arch"></ul></div>
+          <div><h3>系统</h3><ul id="by-os"></ul></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="errors-title">
+        <h2 id="errors-title">最近错误</h2>
+        <ul id="error-list" class="error-list"></ul>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const loginView = document.getElementById('login');
+    const dashboardView = document.getElementById('dashboard');
+    const loginStatus = document.getElementById('login-status');
+    const status = document.getElementById('status');
+    const keyInput = document.getElementById('admin-key');
+    const loginButton = document.getElementById('login-btn');
+    const logoutButton = document.getElementById('logout-btn');
+
+    function setLoginStatus(text, isError = false) {
+      loginStatus.textContent = text;
+      loginStatus.classList.toggle('error', isError);
+    }
+
+    function setStatus(text, isError = false) {
+      status.textContent = text;
+      status.classList.toggle('error', isError);
+    }
+
+    function showLogin() {
+      dashboardView.hidden = true;
+      loginView.hidden = false;
+    }
+
+    function showDashboard() {
+      loginView.hidden = true;
+      dashboardView.hidden = false;
+      keyInput.value = '';
+      load();
+    }
+
+    function number(value) {
+      return Number(value || 0).toLocaleString('zh-CN');
+    }
+
+    function renderList(target, values) {
+      target.replaceChildren();
+      const entries = Object.entries(values || {}).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) {
+        const empty = document.createElement('li');
+        empty.className = 'muted';
+        empty.textContent = '暂无数据';
+        target.append(empty);
+        return;
+      }
+      for (const [label, value] of entries) {
+        const item = document.createElement('li');
+        const name = document.createElement('span');
+        name.textContent = label;
+        const count = document.createElement('span');
+        count.textContent = number(value);
+        item.append(name, count);
+        target.append(item);
+      }
+    }
+
+    function shortId(value) {
+      return value ? String(value).slice(0, 8) : '未知';
+    }
+
+    function renderErrors(errors) {
+      const target = document.getElementById('error-list');
+      target.replaceChildren();
+      if (!errors?.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = '暂无错误记录';
+        target.append(empty);
+        return;
+      }
+      for (const error of errors) {
+        const item = document.createElement('li');
+        const meta = document.createElement('div');
+        meta.className = 'error-meta';
+        const parts = [
+          error.timestamp ? new Date(error.timestamp).toLocaleString('zh-CN', { hour12: false }) : '时间未知',
+          `v${error.appVersion || '-'}`,
+          error.arch || '-',
+          error.source || '-',
+          error.ip || 'IP 未知',
+          `#${shortId(error.installId)}`,
+        ];
+        for (const part of parts) {
+          const span = document.createElement('span');
+          span.textContent = part;
+          meta.append(span);
+        }
+        const message = document.createElement('p');
+        message.className = 'error-message';
+        message.textContent = error.message || '未知错误';
+        item.append(meta, message);
+        if (error.stack) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.textContent = '查看堆栈';
+          const pre = document.createElement('pre');
+          pre.textContent = error.stack;
+          details.append(summary, pre);
+          item.append(details);
+        }
+        target.append(item);
+      }
+    }
+
+    async function load() {
+      setStatus('正在加载数据…');
+      try {
+        const [summaryResponse, errorsResponse] = await Promise.all([
+          fetch('/api/telemetry/summary'),
+          fetch('/api/telemetry/errors?limit=100'),
+        ]);
+        if (summaryResponse.status === 401 || errorsResponse.status === 401) {
+          showLogin();
+          return;
+        }
+        if (summaryResponse.status === 503 || errorsResponse.status === 503) {
+          throw new Error('服务端尚未配置 TELEMETRY_ADMIN_KEY。');
+        }
+        if (!summaryResponse.ok || !errorsResponse.ok) throw new Error('数据加载失败，请稍后重试。');
+        const summary = await summaryResponse.json();
+        const errorData = await errorsResponse.json();
+        document.getElementById('metric-installs').textContent = number(summary.installs);
+        document.getElementById('metric-install-events').textContent = number(summary.installEvents);
+        document.getElementById('metric-ips').textContent = number(summary.uniqueIps);
+        document.getElementById('metric-startups').textContent = number(summary.startupEvents);
+        document.getElementById('metric-closes').textContent = number(summary.closeEvents);
+        document.getElementById('metric-errors').textContent = number(summary.errorEvents);
+        document.getElementById('metric-total').textContent = number(summary.totalEvents);
+        renderList(document.getElementById('by-version'), summary.byVersion);
+        renderList(document.getElementById('by-arch'), summary.byArch);
+        renderList(document.getElementById('by-os'), summary.byOsVersion);
+        renderErrors(errorData.errors);
+        setStatus(`已更新，共 ${number(summary.installs)} 位安装用户。`);
+      } catch (error) {
+        setStatus(error.message || '加载失败。', true);
+      }
+    }
+
+    async function login() {
+      const key = keyInput.value.trim();
+      if (!key) {
+        setLoginStatus('请输入查看密钥。', true);
+        return;
+      }
+      loginButton.disabled = true;
+      setLoginStatus('正在登录…');
+      try {
+        const response = await fetch('/api/telemetry/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key }),
+        });
+        if (response.status === 401) throw new Error('密钥不正确。');
+        if (response.status === 503) throw new Error('服务端尚未配置 TELEMETRY_ADMIN_KEY。');
+        if (!response.ok) throw new Error('登录失败，请稍后重试。');
+        showDashboard();
+      } catch (error) {
+        setLoginStatus(error.message || '登录失败。', true);
+      } finally {
+        loginButton.disabled = false;
+      }
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/telemetry/logout', { method: 'POST' });
+      } finally {
+        showLogin();
+      }
+    }
+
+    loginButton.addEventListener('click', login);
+    logoutButton.addEventListener('click', logout);
+    keyInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') login();
+    });
+
+    (async () => {
+      const response = await fetch('/api/telemetry/summary').catch(() => null);
+      if (response?.ok) showDashboard();
+      else showLogin();
+    })();
+  </script>
+</body>
+</html>

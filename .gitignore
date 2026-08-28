@@ -5,6 +5,7 @@ build/
 out/
 src/desktop/release/
 src/web/public/updates/files/*.exe
+src/telemetry/data/
 
 # Local runtime state and logs
 .runtime/
