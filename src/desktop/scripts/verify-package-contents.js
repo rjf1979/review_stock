@@ -11,7 +11,8 @@ const requiredFiles = [
   'review-core.js',
   'review-scheduler.js',
   'updater.js',
-  'telemetry.js'
+  'telemetry.js',
+  'cloud-upload.js'
 ];
 const archives = {
   x64: path.join(root, 'release', 'win-unpacked', 'resources', 'app.asar'),

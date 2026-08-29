@@ -1,0 +1,11 @@
+{
+  "name": "hangqing-mapi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "股市脉搏 · 云端行情 API（接收 PC 采集上传，供移动端读取）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  }
+}

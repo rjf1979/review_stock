@@ -5,9 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const review = require('./review-core');
 const { createStorage } = require('./storage');
+const cloudUpload = require('./cloud-upload');
 
 const PORT = 3100;
 const FRONTEND = path.join(__dirname, 'frontend');
+const CLOUD_THROTTLE_MS = 60 * 1000;
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
@@ -277,11 +279,64 @@ async function buildReviewData(date, breadth = null, currentDate = latestTrading
   };
 }
 
+// 云端上传：读取设置 → 配置 cloud-upload → 异步推送。失败仅记录，不阻塞本地 UI。
+function createCloudPush(storage) {
+  const throttleMap = new Map();
+  function configure() {
+    const s = storage.getSettings();
+    cloudUpload.setConfig({
+      enabled: s.cloud_enabled === true,
+      url: s.cloud_url || '',
+      token: s.cloud_token || '',
+    });
+    return cloudUpload.getConfig();
+  }
+  function throttled(key, minMs) {
+    if (!key || !minMs) return false;
+    const now = Date.now();
+    const last = throttleMap.get(key) || 0;
+    if (now - last < minMs) return true;
+    throttleMap.set(key, now);
+    return false;
+  }
+  function run(kind, data, opts = {}) {
+    const cfg = configure();
+    if (!cfg.enabled) return Promise.resolve({ skipped: true });
+    if (!cfg.url || !cfg.token) {
+      console.warn('[云端上传] 未配置云端地址/令牌，跳过 ' + kind);
+      return Promise.resolve({ skipped: true, reason: 'not_configured' });
+    }
+    if (throttled(opts.key, opts.minMs)) return Promise.resolve({ throttled: true });
+    const fn = cloudUpload[kind];
+    if (typeof fn !== 'function') return Promise.resolve({ skipped: true, reason: 'unknown' });
+    return Promise.resolve()
+      .then(() => fn(data))
+      .then((result) => {
+        console.log('[云端上传] ' + kind + ' 成功：' + JSON.stringify(result));
+        return result;
+      })
+      .catch((error) => {
+        console.warn('[云端上传] ' + kind + ' 失败：' + error.message);
+        return { failed: true, error: error.message };
+      });
+  }
+  return {
+    realtime: (payload) => run('uploadRealtime', payload, { key: 'realtime', minMs: CLOUD_THROTTLE_MS }),
+    review: (payload) => run('uploadReview', payload),
+    dragon: (payload) => run('uploadDragon', payload),
+    quotes: (payload) => run('uploadQuotes', payload, { key: 'quotes', minMs: CLOUD_THROTTLE_MS }),
+    kline: (payload) => run('uploadKline', payload, { key: 'kline:' + (payload?.code || ''), minMs: CLOUD_THROTTLE_MS }),
+    heartbeat: (payload) => run('heartbeat', payload),
+    configure,
+  };
+}
+
 function createHttpServer(storage) {
   let lastSnapshotAt = 0;
   let breadthSnapshot = null;
   let breadthJob = null;
   let latestRealtimePayload = null;
+  const cloud = createCloudPush(storage);
   const responseCache = new Map();
   const cached = async (key, ttl, loader, force = false) => {
     const hit = responseCache.get(key);
@@ -385,6 +440,7 @@ function createHttpServer(storage) {
         };
         latestRealtimePayload = payload;
         if (Date.now() - lastSnapshotAt > 30000) { storage.saveSnapshot(payload); lastSnapshotAt = Date.now(); }
+        cloud.realtime(payload);
         return json(res, 200, payload);
       } catch (error) {
         const cached = storage.getSnapshot();
@@ -421,6 +477,7 @@ function createHttpServer(storage) {
       const breadth = date === currentDate ? (breadthSnapshot || { status: 'collecting', quality: 'pending', capturedAt: null }) : null;
       const payload = await buildReviewData(date, breadth, currentDate);
       storage.saveReviewSnapshot(date, payload);
+      cloud.review({ ...payload, markdown: storage.getReviewMarkdown(date) || '' });
       return json(res, 200, { ...payload, persisted: true, persistedAt: new Date().toISOString() });
     }
     if (url.pathname === '/api/reviews') return json(res, 200, { entries: storage.getHistoryEntries() });
@@ -430,6 +487,7 @@ function createHttpServer(storage) {
       const ttl = date === latestTradingISO() ? 10 * 60 * 1000 : Number.POSITIVE_INFINITY;
       const payload = await cached(`dragon:${date}`, ttl, async () => ({ date, list: await review.fetchDragonTiger(date) }));
       storage.saveDragonSnapshot(date, payload);
+      cloud.dragon(payload);
       return json(res, 200, payload);
     }
     if (url.pathname === '/api/global') {
@@ -439,7 +497,9 @@ function createHttpServer(storage) {
       const codes = url.searchParams.get('codes') || '';
       const marketSession = getMarketSession();
       const ttl = marketSession.isTrading ? 3000 : 15 * 60 * 1000;
-      return json(res, 200, await cached(stockQuoteCacheKey(codes, marketSession), ttl, async () => ({ stocks: await review.fetchStockQuotes(codes) })));
+      const payload = await cached(stockQuoteCacheKey(codes, marketSession), ttl, async () => ({ stocks: await review.fetchStockQuotes(codes) }));
+      cloud.quotes(payload);
+      return json(res, 200, payload);
     }
     if (url.pathname === '/api/kline') {
       const code = url.searchParams.get('code') || '';
@@ -448,11 +508,13 @@ function createHttpServer(storage) {
       const symbol = review.toTxSymbol ? review.toTxSymbol(code) : '';
       if (!symbol) return json(res, 400, { error: '代码格式不正确' });
       const ttl = klineCacheTtl(date, marketSession);
-      return json(res, 200, await cached(`kline:${code}:${date}`, ttl, async () => {
+      const payload = await cached(`kline:${code}:${date}`, ttl, async () => {
         const kline = await review.fetchDailyKline(symbol, date);
         const latestDate = kline.at(-1)?.date || null;
         return { code, tradeDate: date, latestDate, isFresh: latestDate === date, kline };
-      }));
+      });
+      cloud.kline(payload);
+      return json(res, 200, payload);
     }
     // 静态：前端
     const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
@@ -477,10 +539,20 @@ async function startServer({ storage, port = PORT } = {}) {
   });
   const server = createHttpServer(activeStorage);
   await new Promise(resolve => server.listen(port, resolve));
+  // 云端心跳：告知云端本机为最新采集源（若已开启且配置完整）。
+  const settings = activeStorage.getSettings();
+  if (settings.cloud_enabled === true && settings.cloud_url && settings.cloud_token) {
+    cloudUpload.setConfig({ enabled: true, url: settings.cloud_url, token: settings.cloud_token });
+    try {
+      await cloudUpload.heartbeat({ version: require('./package.json').version, fetchedAt: new Date().toISOString(), ok: true });
+    } catch (error) {
+      console.warn('[云端上传] 启动心跳失败：' + error.message);
+    }
+  }
   console.log(`行情日报 Desktop 本地后端运行于 http://localhost:${port}`);
   return server;
 }
 
 if (require.main === module) startServer().catch(error => { console.error('[桌面端] 本地服务启动失败：', error); process.exitCode = 1; });
 
-module.exports = { startServer, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes, resolveDashboardDate };
+module.exports = { startServer, createCloudPush, snapshotTradeDate, expectedSnapshotDate, canReuseClosedSnapshot, stockQuoteCacheKey, klineCacheTtl, buildMonitorPayload, normalizeMonitorCodes, resolveDashboardDate };

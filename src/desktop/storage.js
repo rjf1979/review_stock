@@ -3,7 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const DEFAULT_SETTINGS = { theme: 'light', refreshSec: 3, notify: false, monitorEnabled: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60 };
+const DEFAULT_SETTINGS = {
+  theme: 'light', refreshSec: 3, notify: false,
+  monitorEnabled: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60,
+  cloud_enabled: false, cloud_url: '', cloud_token: '',
+};
 const WATCHLIST_LIMIT = 9;
 const MONITOR_LIMIT = 5;
 
@@ -126,6 +130,9 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     settings.monitorOnMainClose = settings.monitorOnMainClose === true;
     settings.monitorWatchlist = normalizeMonitorList(settings.monitorWatchlist);
     settings.monitorOpacity = normalizeMonitorOpacity(settings.monitorOpacity);
+    settings.cloud_enabled = settings.cloud_enabled === true;
+    settings.cloud_url = String(settings.cloud_url || '').trim();
+    settings.cloud_token = String(settings.cloud_token || '').trim();
     return settings;
   }
   function setSettings(values) {
@@ -133,6 +140,9 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     if (clean.monitorEnabled !== undefined) clean.monitorEnabled = clean.monitorEnabled === true;
     if (clean.monitorOnMainClose !== undefined) clean.monitorOnMainClose = clean.monitorOnMainClose === true;
     if (clean.monitorOpacity !== undefined) clean.monitorOpacity = normalizeMonitorOpacity(clean.monitorOpacity);
+    if (clean.cloud_enabled !== undefined) clean.cloud_enabled = clean.cloud_enabled === true;
+    if (clean.cloud_url !== undefined) clean.cloud_url = String(clean.cloud_url || '').trim();
+    if (clean.cloud_token !== undefined) clean.cloud_token = String(clean.cloud_token || '').trim();
     if (clean.monitorWatchlist !== undefined) {
       const allowed = new Set(getWatchlist());
       clean.monitorWatchlist = normalizeMonitorList(clean.monitorWatchlist).filter(code => allowed.has(code));
@@ -198,6 +208,10 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     const row = queryOne('SELECT payload, report_mode, quality_status, as_of, updated_at FROM reviews WHERE date = $date', { $date: date });
     const payload = parseValue(row?.payload, null);
     return payload ? { ...payload, persisted: true, persistedAt: row.updated_at } : null;
+  }
+  function getReviewMarkdown(date) {
+    const row = queryOne('SELECT markdown FROM reviews WHERE date = $date', { $date: date });
+    return row?.markdown || null;
   }
   function getReviewDates() {
     return queryAll('SELECT date, temperature, report_mode, quality_status, as_of, updated_at FROM reviews WHERE payload IS NOT NULL ORDER BY date DESC')
@@ -290,6 +304,7 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     saveReview,
     saveReviewSnapshot,
     getReviewSnapshot,
+    getReviewMarkdown,
     getReviewDates,
     saveDragonSnapshot,
     getDragonSnapshot,

@@ -1,7 +1,7 @@
 # 项目记忆 · 行情日报
 
 ## 架构与数据
-- `src/desktop/` 是主产品；`src/web/` 只提供官网、下载和升级清单；`src/app/` 是独立移动端占位。
+- `src/desktop/` 是主产品；`src/web/` 只提供官网、下载和升级清单；`src/app/` 是独立移动端 uni-app(Vue3) 工程。
 - 所有设置、自选股、复盘和龙虎榜快照都在 Electron `userData` 目录下的 SQLite，本地优先且不经云端账号。
 - 内部包名与 Windows AppUserModelId 必须保持 `hangqing-desktop` / `io.zhicha.dailystock`，否则 Electron 会切换 userData 目录，造成旧数据看似消失；对外可执行文件名为 `StockPulse.exe`。
 
@@ -15,6 +15,13 @@
 - 线上升级清单位于云服务器 `/var/www/dailystock-updates/latest.json`，通过 SSH 主机别名 `zhicha-vps`（`~/.ssh/config` 已配置密钥 `zhicha_vps_ed25519`）访问，域名 `dailystock.zhicha.io` 走 Cloudflare。
 - 发布手法：`scp src/web/public/updates/latest.json zhicha-vps:/var/www/dailystock-updates/latest.json.tmp-0.3.6`，再在服务器 `cp latest.json latest.json.bak-<时间戳>`、`mv latest.json.tmp-* latest.json` 原子替换；公网回读 `https://dailystock.zhicha.io/updates/latest.json` 校验 version/URL/SHA。
 - 坑：本地 PowerShell `Invoke-WebRequest` 会把 UTF-8 中文显示成乱码，属显示问题；用 `curl` 落盘后 `node -e JSON.parse(readFileSync(...,'utf8'))` 校验即正确。远程命令不要内联 `$(date ...)`，PowerShell 会错误展开，应把远程命令放进单引号变量传给 ssh。
+
+## 手机端 + 云端行情 API（2026-08-29 骨架）
+- `src/app/` 为 uni-app(Vue3) 移动端，照搬 PC 7 视图（实时/自选/K线/大盘/复盘/龙虎榜/历史/设置），走 `src/api/` 封装 `uni.request`，构建 `npm run build:h5` 通过。
+- 采集仍由 PC 完成：`src/desktop/cloud-upload.js`（`setConfig`/指数退避重试）在 `server.js` 的 `createCloudPush` 中被调用，实时/复盘/龙虎榜/自选报价/K线/心跳异步 POST 到云端；实时与报价 60s 节流，失败仅记录不阻塞 UI。
+- 云端服务 `src/mapi/server.js`：写端 `/collect/*` 需 `X-Upload-Token`，读端 `/api/*` 只读下发；JSON 落盘 `data/`，含 `stale` 标记（`MAPI_STALE_MS` 默认 10 分钟）。未授权写返回 401 且不落盘。
+- 桌面设置页新增云同步三项：`cloud_enabled`/`cloud_url`/`cloud_token`；接口契约与流程图见 `docs/mobile-architecture.md`。
+- 待办：把 mapi 部署到 VPS（nginx 反代 `mapi.zhicha.io`，token 从 `.env` 读），及移动端真机打包联调。
 
 ## 网络配置：GitHub 稳定访问
 - 本机 `github.com` 曾偶发解析到不稳的亚太节点（`20.205.243.166`），导致 `git push` 超时；`gh` 走 `api.github.com` 正常。`github.com` 是 git 智能 HTTP 唯一端点，`github.com:443` 波动时 git 会卡。

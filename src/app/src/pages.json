@@ -1,0 +1,59 @@
+{
+  "pages": [
+    {
+      "path": "pages/realtime/index",
+      "style": { "navigationBarTitleText": "实时行情", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/review/index",
+      "style": { "navigationBarTitleText": "每日复盘", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/watchlist/index",
+      "style": { "navigationBarTitleText": "自选股" }
+    },
+    {
+      "path": "pages/settings/index",
+      "style": { "navigationBarTitleText": "设置" }
+    },
+    {
+      "path": "pages/overview/index",
+      "style": { "navigationBarTitleText": "大盘概况" }
+    },
+    {
+      "path": "pages/dragon/index",
+      "style": { "navigationBarTitleText": "龙虎榜", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/history/index",
+      "style": { "navigationBarTitleText": "历史报告", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/review/detail",
+      "style": { "navigationBarTitleText": "复盘详情" }
+    },
+    {
+      "path": "pages/kline/index",
+      "style": { "navigationBarTitleText": "K 线" }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "股市脉搏",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f4f0",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "color": "#6b6a66",
+    "selectedColor": "#d23a2f",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/realtime/index", "text": "实时" },
+      { "pagePath": "pages/review/index", "text": "复盘" },
+      { "pagePath": "pages/watchlist/index", "text": "自选" },
+      { "pagePath": "pages/settings/index", "text": "设置" }
+    ]
+  }
+}

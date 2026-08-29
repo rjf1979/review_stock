@@ -29,7 +29,7 @@
     "asar": true,
     "compression": "maximum",
     "directories": { "output": "release" },
-    "files": ["electron-main.js", "preload.js", "server.js", "storage.js", "review-core.js", "review-scheduler.js", "updater.js", "telemetry.js", "assets/icon.png", "frontend/**/*", "!node_modules/sql.js/**", "node_modules/sql.js/package.json", "node_modules/sql.js/dist/sql-wasm.js", "node_modules/sql.js/dist/sql-wasm.wasm", "package.json"],
+    "files": ["electron-main.js", "preload.js", "server.js", "storage.js", "review-core.js", "review-scheduler.js", "updater.js", "telemetry.js", "cloud-upload.js", "assets/icon.png", "frontend/**/*", "!node_modules/sql.js/**", "node_modules/sql.js/package.json", "node_modules/sql.js/dist/sql-wasm.js", "node_modules/sql.js/dist/sql-wasm.wasm", "package.json"],
     "extraResources": [{ "from": "../../LICENSE", "to": "LICENSE.txt" }],
     "win": {
       "icon": "assets/icon.ico",
