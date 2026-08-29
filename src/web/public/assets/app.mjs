@@ -375,7 +375,7 @@ function Nt(A) {
     e !== A && (A.prevSub = e, e && (e.nextSub = A)), A.dep.subs = A;
   }
 }
-const Re = /* @__PURE__ */ new WeakMap(), KA = Symbol(
+const Re = /* @__PURE__ */ new WeakMap(), GA = Symbol(
   ""
 ), oe = Symbol(
   ""
@@ -411,19 +411,19 @@ function XA(A, i, e, t, s, n) {
     } else
       switch ((e !== void 0 || r.has(void 0)) && I(r.get(e)), o && I(r.get(Ci)), i) {
         case "add":
-          u ? o && I(r.get("length")) : (I(r.get(KA)), li(A) && I(r.get(oe)));
+          u ? o && I(r.get("length")) : (I(r.get(GA)), li(A) && I(r.get(oe)));
           break;
         case "delete":
-          u || (I(r.get(KA)), li(A) && I(r.get(oe)));
+          u || (I(r.get(GA)), li(A) && I(r.get(oe)));
           break;
         case "set":
-          li(A) && I(r.get(KA));
+          li(A) && I(r.get(GA));
           break;
       }
   }
   Ve();
 }
-function kA(A) {
+function MA(A) {
   const i = F(A);
   return i === A ? i : (k(i, "iterate", Ci), lA(A) ? i : i.map(AA));
 }
@@ -436,8 +436,8 @@ const js = {
     return te(this, Symbol.iterator, AA);
   },
   concat(...A) {
-    return kA(this).concat(
-      ...A.map((i) => V(i) ? kA(i) : i)
+    return MA(this).concat(
+      ...A.map((i) => V(i) ? MA(i) : i)
     );
   },
   entries() {
@@ -472,7 +472,7 @@ const js = {
     return se(this, "indexOf", A);
   },
   join(A) {
-    return kA(this).join(A);
+    return MA(this).join(A);
   },
   // keys() iterator only reads `length`, no optimisation required
   lastIndexOf(...A) {
@@ -504,13 +504,13 @@ const js = {
     return fi(this, "splice", A);
   },
   toReversed() {
-    return kA(this).toReversed();
+    return MA(this).toReversed();
   },
   toSorted(A) {
-    return kA(this).toSorted(A);
+    return MA(this).toSorted(A);
   },
   toSpliced(...A) {
-    return kA(this).toSpliced(...A);
+    return MA(this).toSpliced(...A);
   },
   unshift(...A) {
     return fi(this, "unshift", A);
@@ -613,8 +613,8 @@ class Tt extends Dt {
   set(i, e, t, s) {
     let n = i[e];
     if (!this._isShallow) {
-      const u = MA(n);
-      if (!lA(t) && !MA(t) && (n = F(n), t = F(t)), !V(i) && J(n) && !J(t))
+      const u = KA(n);
+      if (!lA(t) && !KA(t) && (n = F(n), t = F(t)), !V(i) && J(n) && !J(t))
         return u ? !1 : (n.value = t, !0);
     }
     const r = V(i) && Pe(e) ? Number(e) < i.length : B(i, e), I = Reflect.set(
@@ -639,7 +639,7 @@ class Tt extends Dt {
     return k(
       i,
       "iterate",
-      V(i) ? "length" : KA
+      V(i) ? "length" : GA
     ), Reflect.ownKeys(i);
   }
 }
@@ -662,7 +662,7 @@ function An(A, i, e) {
     return !i && k(
       n,
       "iterate",
-      u ? oe : KA
+      u ? oe : GA
     ), {
       // iterator protocol
       next() {
@@ -698,7 +698,7 @@ function en(A, i) {
     },
     get size() {
       const s = this.__v_raw;
-      return !A && k(F(s), "iterate", KA), Reflect.get(s, "size", s);
+      return !A && k(F(s), "iterate", GA), Reflect.get(s, "size", s);
     },
     has(s) {
       const n = this.__v_raw, r = F(n), I = F(s);
@@ -706,7 +706,7 @@ function en(A, i) {
     },
     forEach(s, n) {
       const r = this, I = r.__v_raw, u = F(I), o = i ? de : A ? ce : AA;
-      return !A && k(u, "iterate", KA), I.forEach((l, c) => s.call(n, o(l), o(c), r));
+      return !A && k(u, "iterate", GA), I.forEach((l, c) => s.call(n, o(l), o(c), r));
     }
   };
   return tA(
@@ -718,12 +718,12 @@ function en(A, i) {
       clear: Hi("clear")
     } : {
       add(s) {
-        !i && !lA(s) && !MA(s) && (s = F(s));
+        !i && !lA(s) && !KA(s) && (s = F(s));
         const n = F(this);
         return qi(n).has.call(n, s) || (n.add(s), XA(n, "add", s, s)), this;
       },
       set(s, n) {
-        !i && !lA(n) && !MA(n) && (n = F(n));
+        !i && !lA(n) && !KA(n) && (n = F(n));
         const r = F(this), { has: I, get: u } = qi(r);
         let o = I.call(r, s);
         o || (s = F(s), o = I.call(r, s));
@@ -790,7 +790,7 @@ function In(A) {
   return A.__v_skip || !Object.isExtensible(A) ? 0 : fn(xs(A));
 }
 function Fe(A) {
-  return MA(A) ? A : Be(
+  return KA(A) ? A : Be(
     A,
     !1,
     Js,
@@ -832,9 +832,9 @@ function Be(A, i, e, t, s) {
   return s.set(A, I), I;
 }
 function ci(A) {
-  return MA(A) ? ci(A.__v_raw) : !!(A && A.__v_isReactive);
+  return KA(A) ? ci(A.__v_raw) : !!(A && A.__v_isReactive);
 }
-function MA(A) {
+function KA(A) {
   return !!(A && A.__v_isReadonly);
 }
 function lA(A) {
@@ -868,7 +868,7 @@ class on {
     return this.dep.track(), this._value;
   }
   set value(i) {
-    const e = this._rawValue, t = this.__v_isShallow || lA(i) || MA(i);
+    const e = this._rawValue, t = this.__v_isShallow || lA(i) || KA(i);
     i = t ? i : F(i), OA(i, e) && (this._rawValue = i, this._value = t ? i : AA(i), this.dep.trigger());
   }
 }
@@ -1073,7 +1073,7 @@ function hn(A, i, e, t = !0, s = !1) {
 const iA = [];
 let bA = -1;
 const $A = [];
-let wA = null, JA = 0;
+let wA = null, kA = 0;
 const Gt = /* @__PURE__ */ Promise.resolve();
 let Di = null;
 function pn(A) {
@@ -1099,7 +1099,7 @@ function Kt() {
   Di || (Di = Gt.then(kt));
 }
 function zn(A) {
-  V(A) ? $A.push(...A) : wA && A.id === -1 ? wA.splice(JA + 1, 0, A) : A.flags & 1 || ($A.push(A), A.flags |= 1), Kt();
+  V(A) ? $A.push(...A) : wA && A.id === -1 ? wA.splice(kA + 1, 0, A) : A.flags & 1 || ($A.push(A), A.flags |= 1), Kt();
 }
 function $e(A, i, e = bA + 1) {
   for (; e < iA.length; e++) {
@@ -1120,11 +1120,11 @@ function Mt(A) {
       wA.push(...i);
       return;
     }
-    for (wA = i, JA = 0; JA < wA.length; JA++) {
-      const e = wA[JA];
+    for (wA = i, kA = 0; kA < wA.length; kA++) {
+      const e = wA[kA];
       e.flags & 4 && (e.flags &= -2), e.flags & 8 || e(), e.flags &= -2;
     }
-    wA = null, JA = 0;
+    wA = null, kA = 0;
   }
 }
 const zi = (A) => A.id == null ? A.flags & 2 ? -1 : 1 / 0 : A.id;
@@ -3157,7 +3157,7 @@ function ii(A, i, e = !1, t = !1) {
     u.clone(l)
   ), l;
 }
-function GA(A = " ", i = 0) {
+function JA(A = " ", i = 0) {
   return zA(Ji, null, A, i);
 }
 function Ei(A, i) {
@@ -3195,7 +3195,7 @@ function Ze(A, i) {
       const s = i._;
       !s && !fs(i) ? i._ctx = pA : s === 3 && pA && (pA.slots._ === 1 ? i._ = 1 : (i._ = 2, A.patchFlag |= 1024));
     }
-  else x(i) ? (i = { default: i, _ctx: pA }, e = 32) : (i = String(i), t & 64 ? (e = 16, i = [GA(i)]) : e = 8);
+  else x(i) ? (i = { default: i, _ctx: pA }, e = 32) : (i = String(i), t & 64 ? (e = 16, i = [JA(i)]) : e = 8);
   A.children = i, A.shapeFlag |= e;
 }
 function hr(...A) {
@@ -3730,27 +3730,26 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
 }, df = { class: "page-showcase" }, cf = { class: "page-feature" }, af = ["src"], vf = { class: "page-feature reverse" }, bf = ["src"], hf = { class: "page-feature" }, pf = ["src"], Cf = { class: "page-feature reverse" }, zf = ["src"], Wf = {
   id: "download",
   class: "download-section"
-}, gf = { class: "download-options" }, Lf = ["href"], Pf = ["href"], Qf = { class: "download-note" }, Xf = ["href"], mf = ["href"], Vf = ["href"], xf = ["aria-label"], qf = { class: "image-lightbox-content" }, Hf = ["src", "alt"], wf = {
+}, gf = { class: "download-options" }, Lf = ["href"], Pf = ["href"], Qf = { class: "download-note" }, Xf = ["href"], mf = ["href"], Vf = ["aria-label"], xf = { class: "image-lightbox-content" }, qf = ["src", "alt"], Hf = {
   __name: "App",
   setup(A) {
     const i = {
-      x64: "https://oss.askcode.cn/files/hangqing-desktop-0.3.3-win-x64-setup.exe",
-      ia32: "https://oss.askcode.cn/files/hangqing-desktop-0.3.2-win-ia32-setup.exe",
-      ia32Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.2/hangqing-desktop-0.3.2-win-ia32-setup.exe",
-      x64Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.3-win-x64-setup.exe",
-      ia32Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.2-win-ia32-setup.exe"
+      x64: "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-x64-setup.exe",
+      ia32: "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-ia32-setup.exe",
+      x64Backup: "https://github.com/rjf1979/review_stock/releases/download/v0.3.4/hangqing-desktop-0.3.4-win-x64-setup.exe",
+      x64Backup2: "https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.4-win-x64-setup.exe"
     }, e = ln(null);
     function t(s, n) {
       e.value = { src: s, alt: n };
     }
     return (s, n) => (pe(), Et("div", If, [
-      n[33] || (n[33] = Ei('<header class="nav"><a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#pages">页面</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
+      n[32] || (n[32] = Ei('<header class="nav"><a class="logo" href="#top" aria-label="返回股市脉搏首页">股市脉搏<span>DESKTOP MARKET DESK</span></a><nav aria-label="主导航"><a href="#features">功能</a><a href="#pages">页面</a><a href="#how">工作方式</a><a href="#download">下载</a></nav></header>', 1)),
       d("main", null, [
         d("section", Ef, [
           d("div", uf, [
             n[8] || (n[8] = d("p", { class: "kicker" }, "LOCAL MARKET DESK · WINDOWS DESKTOP", -1)),
             n[9] || (n[9] = d("h1", null, [
-              GA("股市脉搏，"),
+              JA("股市脉搏，"),
               d("br"),
               d("em", null, "一屏看懂。")
             ], -1)),
@@ -3769,7 +3768,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
           ]),
           n[12] || (n[12] = Ei('<div class="hero-console" aria-label="股市脉搏桌面版功能预览"><div class="console-bar"><span class="console-brand"><i aria-hidden="true"></i> 股市脉搏</span><span class="console-caption">DESKTOP APP</span><span class="console-status">本地运行</span></div><div class="console-content"><div class="console-heading"><div><small>MARKET DESK / FEATURES</small><strong>收盘后的工作台</strong></div><span class="console-refresh">无需登录</span></div><div class="console-indices"><div class="console-index"><small>实时行情</small><strong>本地更新</strong><span>指数与自选股</span></div><div class="console-index"><small>每日复盘</small><strong>16:00</strong><span>工作日整理</span></div><div class="console-index"><small>系统通知</small><strong>可选</strong><span>托盘运行</span></div></div><div class="console-table"><div><span>数据来源</span><b>腾讯行情 · 东方财富</b></div><div><span>运行方式</span><b>本地直连公开接口</b></div><div><span>数据保存</span><b>当前 Windows 用户本地</b></div></div></div></div>', 1))
         ]),
-        n[30] || (n[30] = Ei('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。从盘中观察到收盘复盘，每个页面都围绕一个明确任务展开。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数、市场宽度、涨跌停、行业资金、涨跌榜和盘口异动集中显示，交易时段自动刷新。</p></article><article><span class="feature-index">02</span><h3>自选股工作区</h3><p>保存常看股票，查看最新报价、涨跌幅与日 K 走势，还能把股票即时加入浮动监控。</p></article><article><span class="feature-index">03</span><h3>每日复盘</h3><p>用市场温度、情绪指标、指数结构、主线排序、连板高度和数据质量核对还原收盘状态。</p></article><article><span class="feature-index">04</span><h3>龙虎榜联动</h3><p>展开买卖前五席位，查看净买入与上榜原因，并将关注股票直接加入自选股。</p></article></div></section>', 1)),
+        n[29] || (n[29] = Ei('<section id="features" class="feature-section"><div class="section-heading"><p class="kicker">DESKTOP FEATURES</p><h2>为每天收盘后的十分钟设计</h2><p>把需要反复打开的行情入口，收拢成一张安静、可扫描的桌面工作台。从盘中观察到收盘复盘，每个页面都围绕一个明确任务展开。</p></div><div class="feature-grid"><article><span class="feature-index">01</span><h3>实时行情</h3><p>A 股指数、市场宽度、涨跌停、行业资金、涨跌榜和盘口异动集中显示，交易时段自动刷新。</p></article><article><span class="feature-index">02</span><h3>自选股工作区</h3><p>保存常看股票，查看最新报价、涨跌幅与日 K 走势，还能把股票即时加入浮动监控。</p></article><article><span class="feature-index">03</span><h3>每日复盘</h3><p>用市场温度、情绪指标、指数结构、主线排序、连板高度和数据质量核对还原收盘状态。</p></article><article><span class="feature-index">04</span><h3>龙虎榜联动</h3><p>展开买卖前五席位，查看净买入与上榜原因，并将关注股票直接加入自选股。</p></article></div></section>', 1)),
         d("section", of, [
           n[21] || (n[21] = d("div", { class: "section-heading" }, [
             d("p", { class: "kicker" }, "INSIDE THE DESK"),
@@ -3887,12 +3886,12 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
             ])
           ])
         ]),
-        n[31] || (n[31] = Ei('<section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 1)),
+        n[30] || (n[30] = Ei('<section id="how" class="how section"><div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div><div class="steps"><div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div><div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div><div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div></div></section>', 1)),
         d("section", Wf, [
-          n[29] || (n[29] = d("div", null, [
-            d("p", { class: "kicker" }, "DESKTOP RELEASE · V0.3.3 (X64)"),
+          n[28] || (n[28] = d("div", null, [
+            d("p", { class: "kicker" }, "DESKTOP RELEASE · V0.3.4"),
             d("h2", null, "把股市脉搏放在桌面上"),
-            d("p", null, "Windows 64 位修复版现已提供；32 位版本仍为 0.3.2。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到备用镜像。")
+            d("p", null, "Windows 64 位与 32 位安装包现已提供。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到 GitHub Release 或备用镜像。")
           ], -1)),
           d("div", gf, [
             d("a", {
@@ -3911,7 +3910,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
               d("strong", null, "下载安装包", -1),
               d("small", null, "仅用于 32 位 Windows", -1)
             ]), 8, Pf),
-            n[28] || (n[28] = d("div", {
+            n[27] || (n[27] = d("div", {
               class: "download-option unavailable",
               role: "note"
             }, [
@@ -3920,23 +3919,19 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
               d("small", null, "当前仅支持 Windows")
             ], -1)),
             d("p", Qf, [
-              n[24] || (n[24] = GA("64 位修复版可使用 ", -1)),
+              n[24] || (n[24] = JA("境内主下载经阿里云 OSS + CDN；海外或主源失效时可使用 ", -1)),
+              d("a", {
+                href: i.x64Backup
+              }, "GitHub Release", 8, Xf),
+              n[25] || (n[25] = JA(" 与 ", -1)),
               d("a", {
                 href: i.x64Backup2
-              }, "OSS 备用镜像", 8, Xf),
-              n[25] || (n[25] = GA("；32 位用户可继续使用 ", -1)),
-              d("a", {
-                href: i.ia32Backup
-              }, "GitHub x86", 8, mf),
-              n[26] || (n[26] = GA(" 或 ", -1)),
-              d("a", {
-                href: i.ia32Backup2
-              }, "OSS 镜像二（x86）", 8, Vf),
-              n[27] || (n[27] = GA("。", -1))
+              }, "OSS 备用镜像", 8, mf),
+              n[26] || (n[26] = JA("。", -1))
             ])
           ])
         ]),
-        n[32] || (n[32] = Ei('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
+        n[31] || (n[31] = Ei('<section id="future-app" class="future-section section"><div class="section-heading"><p class="kicker">FUTURE APP</p><h2>未来再延伸到移动端</h2><p>移动端目前只是工程占位，后续将单独设计数据访问、同步、离线和通知策略，不直接依赖 Electron 桌面端。</p></div></section><section id="data" class="compliance-section section"><div class="section-heading"><p class="kicker">DATA &amp; DISCLAIMER</p><h2>数据从哪里来？</h2></div><div class="compliance-grid"><div><h3>公开来源，本地整理</h3><p>股市脉搏使用腾讯行情、东方财富等公开免费数据源。桌面版在本地取数和整理，不采集你的交易信息，也不经过平台服务器中转。</p></div><div><h3>免责声明</h3><p>股市脉搏仅提供行情数据的展示与整理，所有数据来自公开来源，仅供参考，不构成任何投资建议。股市有风险，投资需谨慎。</p></div></div></section>', 2))
       ]),
       e.value ? (pe(), Et("div", {
         key: 0,
@@ -3947,7 +3942,7 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
         onClick: n[5] || (n[5] = $r((r) => e.value = null, ["self"])),
         onKeydown: n[6] || (n[6] = ef((r) => e.value = null, ["esc", "window"]))
       }, [
-        d("div", qf, [
+        d("div", xf, [
           d("button", {
             type: "button",
             class: "image-lightbox-close",
@@ -3957,18 +3952,18 @@ const gt = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABZAAAANDCAIAAAC8Ma2xAA
           d("img", {
             src: e.value.src,
             alt: e.value.alt
-          }, null, 8, Hf)
+          }, null, 8, qf)
         ])
-      ], 40, xf)) : br("", !0),
-      n[34] || (n[34] = d("footer", null, [
+      ], 40, Vf)) : br("", !0),
+      n[33] || (n[33] = d("footer", null, [
         d("span", null, "© 2026 股市脉搏 · Desktop Market Desk"),
         d("span", null, [
           d("a", { href: "#data" }, "数据来源与免责声明"),
-          GA(" · "),
+          JA(" · "),
           d("a", { href: "#download" }, "下载")
         ])
       ], -1))
     ]));
   }
 };
-nf(wf).mount("#app");
+nf(Hf).mount("#app");

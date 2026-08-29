@@ -1,14 +1,20 @@
 {
-  "version": "0.3.3",
-  "publishedAt": "2026-08-28T17:40:00.000Z",
+  "version": "0.3.4",
+  "publishedAt": "2026-08-29T00:25:06.137Z",
   "notes": [
-    "恢复既有本地数据目录兼容性，升级后继续显示自选股、每日复盘、龙虎榜和历史报告。"
+    "每日复盘与龙虎榜在周末和休市日自动显示最近交易日数据。",
+    "龙虎榜按交易日保存到本地历史报告，可随时查看已保存的席位明细。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.3-win-x64-setup.exe",
-      "size": 85198206,
-      "sha256": "b06e47804b4b2b1fd3c168889bbe2cd8f4bf7e9d082de2ba6242971a32d57e04"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-x64-setup.exe",
+      "size": 85198021,
+      "sha256": "a4ca5c0baa058c24cb5af6c034bbd1ee5a401545e8cc6182a0a342ed3ec2ea26"
+    },
+    "ia32": {
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-ia32-setup.exe",
+      "size": 80473454,
+      "sha256": "66d3ed7850f67d5a63b19102c75f5090a3e693e5bac86aeb88f19bdbddbddd81"
     }
   }
 }
