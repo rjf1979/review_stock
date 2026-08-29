@@ -128,7 +128,7 @@ async function installDownloadedUpdate() {
 }
 
 function startUpdateChecks() {
-  setTimeout(() => checkForUpdates({ silent: true }), 15000);
+  setTimeout(() => checkForUpdates({ silent: true }), 60 * 1000);
   updateTimer = setInterval(() => checkForUpdates({ silent: true }), CHECK_INTERVAL_MS);
 }
 

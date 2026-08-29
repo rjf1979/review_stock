@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_MANIFEST_URL = 'https://dailystock.zhicha.io/updates/latest.json';
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
 function parseVersion(value) {
   const match = String(value || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);

@@ -1,20 +1,20 @@
 {
-  "version": "0.3.5",
-  "publishedAt": "2026-08-29T01:51:26.621Z",
+  "version": "0.3.6",
+  "publishedAt": "2026-08-29T06:25:25.676Z",
   "notes": [
-    "历史报告改为卡片网格，集中展示市场温度、上涨平盘下跌与涨停跌停家数。",
-    "每日复盘与龙虎榜按交易日聚合，入口保持完整。"
+    "启动后延迟 1 分钟自动检查更新，之后每 2 小时检查一次。",
+    "调整无需手动刷新，打开应用即可自动检测到新版本。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.5-win-x64-setup.exe",
-      "size": 85204708,
-      "sha256": "8fb24d2e6d91f95b122da977d28e4917ae1318ac3d7db59828a711f9d250aff1"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.6-win-x64-setup.exe",
+      "size": 85206990,
+      "sha256": "323aa062eb3801bfbeb4104b30d021936714a3acc46336d25b67ecdb9cd4facf"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.5-win-ia32-setup.exe",
-      "size": 80505788,
-      "sha256": "6bccbcae4328a0bf9e647336c579b714091a40ee2139e0dd4afa204bfcd220fc"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.6-win-ia32-setup.exe",
+      "size": 80494858,
+      "sha256": "be3786524f360ed7115b1fdb61aa3e82bc68e419b23654787fa1dcb7584fe2f4"
     }
   }
 }

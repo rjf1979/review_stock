@@ -6,10 +6,21 @@
 - 内部包名与 Windows AppUserModelId 必须保持 `hangqing-desktop` / `io.zhicha.dailystock`，否则 Electron 会切换 userData 目录，造成旧数据看似消失；对外可执行文件名为 `StockPulse.exe`。
 
 ## 当前开发状态（2026-08-29）
-- `0.3.4` 已发布 x64/ia32：非交易日的每日复盘与龙虎榜默认解析为最近交易日；历史报告按日期汇总“每日复盘”和“龙虎榜”，可分别打开。
-- 新增 `dragon_snapshots` 本地表；每次成功加载龙虎榜即保存完整列表和席位明细，已有复盘数据不改写。
+- `0.3.6` 已发布 x64/ia32：更新检查周期从 6 小时调整为 2 小时，启动后延迟 1 分钟自动检查；官网下载页与升级清单同步到 `0.3.6`。
 - 构建链路：`npm run dist` 产出 `win-unpacked` 与 `win-ia32-unpacked` 后，需用 electron-builder 缓存中的 `makensis.exe` 分别以 `-DBUILD_ARCH=x64/ia32` 编译 `installer.nsi` 生成 `-setup.exe`。
-- 官网升级清单与下载页均为 `0.3.4` 双架构；GitHub Release `v0.3.4` 已上传两个安装包。
+- 官网升级清单与下载页均为 `0.3.6` 双架构；GitHub Release `v0.3.6` 已上传两个安装包，SHA-256 与本地及 OSS 一致。
+
+## 升级清单在线发布
+- 安装包（x64/ia32 `-setup.exe`）永远只托管在阿里云 OSS（`oss.askcode.cn/files/`）与 GitHub Release；官网服务器不挂载 `.exe`。
+- 线上升级清单位于云服务器 `/var/www/dailystock-updates/latest.json`，通过 SSH 主机别名 `zhicha-vps`（`~/.ssh/config` 已配置密钥 `zhicha_vps_ed25519`）访问，域名 `dailystock.zhicha.io` 走 Cloudflare。
+- 发布手法：`scp src/web/public/updates/latest.json zhicha-vps:/var/www/dailystock-updates/latest.json.tmp-0.3.6`，再在服务器 `cp latest.json latest.json.bak-<时间戳>`、`mv latest.json.tmp-* latest.json` 原子替换；公网回读 `https://dailystock.zhicha.io/updates/latest.json` 校验 version/URL/SHA。
+- 坑：本地 PowerShell `Invoke-WebRequest` 会把 UTF-8 中文显示成乱码，属显示问题；用 `curl` 落盘后 `node -e JSON.parse(readFileSync(...,'utf8'))` 校验即正确。远程命令不要内联 `$(date ...)`，PowerShell 会错误展开，应把远程命令放进单引号变量传给 ssh。
+
+## 网络配置：GitHub 稳定访问
+- 本机 `github.com` 曾偶发解析到不稳的亚太节点（`20.205.243.166`），导致 `git push` 超时；`gh` 走 `api.github.com` 正常。`github.com` 是 git 智能 HTTP 唯一端点，`github.com:443` 波动时 git 会卡。
+- 已用 hosts 固定 GitHub 到实测可达 IP：`github.com=140.82.112.3`、`api.github.com=140.82.112.6`、`raw/objects/avatars/codeload.githubusercontent.com=185.199.109.133`；并配置 git 全局 `http.version=HTTP/1.1`、`http.postBuffer=524288000`、`core.compression=9`、慢速超时重试。
+- 一键脚本在 `.deploy/`（已被 .gitignore 忽略）：管理员运行 `Set-GitHubHosts.ps1`（自动备份并刷新 DNS），回退用 `Restore-GitHubHosts.ps1`；条目源在 `github-hosts-entries.txt`，换节点改它重跑即可。
+- 写入 hosts 需管理员权限；普通权限会提示失败，需手动 UAC。备份为 `hosts.codex-backup-<时间戳>`。
 
 ## 发布与风险
 - 升级清单必须在两种架构安装包上传、公开回读和 SHA-256 校验后最后原子切换；未签名安装包可能触发 Windows 提示。
