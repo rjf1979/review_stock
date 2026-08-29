@@ -1,20 +1,20 @@
 {
-  "version": "0.3.4",
-  "publishedAt": "2026-08-29T00:25:06.137Z",
+  "version": "0.3.5",
+  "publishedAt": "2026-08-29T01:51:26.621Z",
   "notes": [
-    "每日复盘与龙虎榜在周末和休市日自动显示最近交易日数据。",
-    "龙虎榜按交易日保存到本地历史报告，可随时查看已保存的席位明细。"
+    "历史报告改为卡片网格，集中展示市场温度、上涨平盘下跌与涨停跌停家数。",
+    "每日复盘与龙虎榜按交易日聚合，入口保持完整。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-x64-setup.exe",
-      "size": 85198021,
-      "sha256": "a4ca5c0baa058c24cb5af6c034bbd1ee5a401545e8cc6182a0a342ed3ec2ea26"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.5-win-x64-setup.exe",
+      "size": 85204708,
+      "sha256": "8fb24d2e6d91f95b122da977d28e4917ae1318ac3d7db59828a711f9d250aff1"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.4-win-ia32-setup.exe",
-      "size": 80473454,
-      "sha256": "66d3ed7850f67d5a63b19102c75f5090a3e693e5bac86aeb88f19bdbddbddd81"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.5-win-ia32-setup.exe",
+      "size": 80505788,
+      "sha256": "6bccbcae4328a0bf9e647336c579b714091a40ee2139e0dd4afa204bfcd220fc"
     }
   }
 }
