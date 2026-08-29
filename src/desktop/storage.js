@@ -218,7 +218,23 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     return payload?.date === date && Array.isArray(payload.list) ? payload : null;
   }
   function getHistoryEntries() {
-    const reviews = new Map(getReviewDates().map(item => [item.date, { date: item.date, review: item, dragon: null }]));
+    const reviews = new Map(getReviewDates().map(item => [item.date, {
+      date: item.date,
+      review: { ...item, temperatureLevel: null, up: null, down: null, flat: null, limitUpCount: null, limitDownCount: null },
+      dragon: null,
+    }]));
+    for (const row of queryAll('SELECT date, payload FROM reviews WHERE payload IS NOT NULL')) {
+      const entry = reviews.get(row.date);
+      if (!entry?.review) continue;
+      const payload = parseValue(row.payload, null);
+      if (!payload) continue;
+      entry.review.temperatureLevel = payload.temperature?.level || null;
+      entry.review.up = Number.isFinite(Number(payload.breadth?.up)) ? Number(payload.breadth.up) : null;
+      entry.review.down = Number.isFinite(Number(payload.breadth?.down)) ? Number(payload.breadth.down) : null;
+      entry.review.flat = Number.isFinite(Number(payload.breadth?.flat)) ? Number(payload.breadth.flat) : null;
+      entry.review.limitUpCount = Number.isFinite(Number(payload.limitUpCount)) ? Number(payload.limitUpCount) : null;
+      entry.review.limitDownCount = Number.isFinite(Number(payload.limitDownCount)) ? Number(payload.limitDownCount) : null;
+    }
     for (const row of queryAll('SELECT date, updated_at FROM dragon_snapshots ORDER BY date DESC')) {
       const entry = reviews.get(row.date) || { date: row.date, review: null, dragon: null };
       entry.dragon = { updatedAt: row.updated_at };

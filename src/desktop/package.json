@@ -1,6 +1,6 @@
 {
   "name": "hangqing-desktop",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "description": "股市脉搏 - A股实时行情与每日复盘桌面工具（本地取数）",
