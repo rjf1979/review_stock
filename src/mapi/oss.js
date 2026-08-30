@@ -4,8 +4,10 @@
 function createOss(cfg) {
   let OSS;
   try { OSS = require('ali-oss'); } catch { throw new Error('缺少依赖 ali-oss，请先 npm install'); }
+  // endpoint（含 `oss-` 前缀，如 oss-cn-shanghai.aliyuncs.com）优先，避免 setRegion 只拼 `{region}.aliyuncs.com` 导致域名缺 `oss-`。
   const client = new OSS({
     region: cfg.region,
+    endpoint: cfg.endpoint || undefined,
     accessKeyId: cfg.accessKeyId,
     accessKeySecret: cfg.accessKeySecret,
     bucket: cfg.bucket,
@@ -18,7 +20,7 @@ function createOss(cfg) {
     return `https://${cfg.bucket}.${endpoint}/${key}`;
   }
   async function putPublic(key, body) {
-    const res = await client.put(key, body, { headers: { 'x-oss-object-acl': 'public-read' } });
+    const res = await client.put(key, Buffer.from(String(body), 'utf8'), { headers: { 'x-oss-object-acl': 'public-read' } });
     const etag = (res && res.res && res.res.headers && res.res.headers.etag) || (res && res.etag) || null;
     return { url: url(key), etag: typeof etag === 'string' ? etag.replace(/^"|"$/g, '') : etag };
   }
