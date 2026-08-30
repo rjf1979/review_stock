@@ -30,6 +30,7 @@
 - 主题皮肤明暗两套已对齐 PC 版（`AppPalette`，红涨绿跌用 PC red/green）；K线图标用 koboyo 手绘 candlestick SVG 重上色（`.runtime/icon_dark.png`/`icon_white.png`），未接入 App 图标。
 - **部署目标**：独立行情 API 在 `api.dailystock.askcode.cn`（`47.92.170.168`，自带 PG）；SSH 候选 `~/.ssh/deploy_market_daily`（config 无别名，需补）。
 - **决策（明天执行）**：采集方=PC+移动端，**默认分享、无用户开关**。明天①部署 mapi 到 api.dailystock.askcode.cn；②PC 默认分享+去开关（storage `cloud_enabled:true`、内置默认 cloud_url、设置页移除云同步控件）。执行清单见 `docs/app-deploy-plan.md`；当日记录见 `2026-08-29.md`。
+- **进展（2026-08-30）**：已提交并推送骨架（`161041c`）与 PC 默认分享去开关（`363060c`；含 cloud-upload 默认设备注册测试 + storage 默认分享断言，npm test/check 通过）。**②已落地，①部署仍阻塞**：缺 `api.dailystock.askcode.cn` 的 SSH 账号/端口、PG 连接与域名 SSL/DNS 状态；待补后按 `docs/app-deploy-plan.md` §三执行。
 
 ## 网络配置：GitHub 稳定访问
 - 本机 `github.com` 曾偶发解析到不稳的亚太节点（`20.205.243.166`），导致 `git push` 超时；`gh` 走 `api.github.com` 正常。`github.com` 是 git 智能 HTTP 唯一端点，`github.com:443` 波动时 git 会卡。
