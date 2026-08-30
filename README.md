@@ -12,11 +12,11 @@
 
 ## 下载
 
-当前 Windows 版本：`0.3.6`
+当前 Windows 版本：`0.3.7`
 
-- [Windows 64 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.6-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑，经阿里云 OSS + CDN 加速。
-- [Windows 32 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.6-win-ia32-setup.exe)：仅用于 32 位 Windows。
-- [海外·GitHub x64](https://github.com/rjf1979/review_stock/releases/download/v0.3.6/hangqing-desktop-0.3.6-win-x64-setup.exe) · [海外·GitHub x86](https://github.com/rjf1979/review_stock/releases/download/v0.3.6/hangqing-desktop-0.3.6-win-ia32-setup.exe) · [OSS 备用镜像 x64](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.6-win-x64-setup.exe) · [OSS 备用镜像 x86](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.6-win-ia32-setup.exe) · [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
+- [Windows 64 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑，经阿里云 OSS + CDN 加速。
+- [Windows 32 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [海外·GitHub x64](https://github.com/rjf1979/review_stock/releases/download/v0.3.7/hangqing-desktop-0.3.7-win-x64-setup.exe) · [海外·GitHub x86](https://github.com/rjf1979/review_stock/releases/download/v0.3.7/hangqing-desktop-0.3.7-win-ia32-setup.exe) · [OSS 备用镜像 x64](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.7-win-x64-setup.exe) · [OSS 备用镜像 x86](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.7-win-ia32-setup.exe) · [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
 
 境内主下载经阿里云 OSS + CDN（HTTPS），海外请走 GitHub Release 原站链接，官网服务器不再挂载安装包。安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示，请下载后核对发布页提供的 SHA-256。
 
@@ -143,7 +143,7 @@ npm start
 
 ## Windows 打包
 
-桌面版当前版本为 `0.3.6`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.3.7`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop

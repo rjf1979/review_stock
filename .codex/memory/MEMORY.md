@@ -5,10 +5,10 @@
 - 所有设置、自选股、复盘和龙虎榜快照都在 Electron `userData` 目录下的 SQLite，本地优先且不经云端账号。
 - 内部包名与 Windows AppUserModelId 必须保持 `hangqing-desktop` / `io.zhicha.dailystock`，否则 Electron 会切换 userData 目录，造成旧数据看似消失；对外可执行文件名为 `StockPulse.exe`。
 
-## 当前开发状态（2026-08-29）
-- `0.3.6` 已发布 x64/ia32：更新检查周期从 6 小时调整为 2 小时，启动后延迟 1 分钟自动检查；官网下载页与升级清单同步到 `0.3.6`。
+## 当前开发状态（2026-08-30）
+- `0.3.7` 已发布 x64/ia32：接入云端行情数据平台（`api.dailystock.askcode.cn`），桌面版默认分享实时行情与复盘、移除「手机云同步」开关；官网下载页与升级清单同步到 `0.3.7`。
 - 构建链路：`npm run dist` 产出 `win-unpacked` 与 `win-ia32-unpacked` 后，需用 electron-builder 缓存中的 `makensis.exe` 分别以 `-DBUILD_ARCH=x64/ia32` 编译 `installer.nsi` 生成 `-setup.exe`。
-- 官网升级清单与下载页均为 `0.3.6` 双架构；GitHub Release `v0.3.6` 已上传两个安装包，SHA-256 与本地及 OSS 一致。
+- 官网升级清单与下载页均为 `0.3.7` 双架构；GitHub Release `v0.3.7` 已上传两个安装包，SHA-256 与本地及 OSS 一致（x64 `8f9fd793...f2320`，ia32 `eb2f8a78...bafc3`）。
 
 ## 升级清单在线发布
 - 安装包（x64/ia32 `-setup.exe`）永远只托管在阿里云 OSS（`oss.askcode.cn/files/`）与 GitHub Release；官网服务器不挂载 `.exe`。

@@ -5,7 +5,7 @@ SetCompressor /SOLID lzma
 !insertmacro VersionCompare
 
 !define PRODUCT_NAME "股市脉搏"
-!define PRODUCT_VERSION "0.3.6"
+!define PRODUCT_VERSION "0.3.7"
 !define PRODUCT_EXE "StockPulse.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hangqing Desktop"
 !define INSTALL_DIR_NAME "Hangqing Desktop"
