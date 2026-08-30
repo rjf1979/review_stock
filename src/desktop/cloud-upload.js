@@ -10,11 +10,16 @@ const TIME_OUT = 12000;
 let config = {
   enabled: false,
   url: process.env.MAPI_URL || '',
-  token: process.env.MAPI_TOKEN || ''
+  token: process.env.MAPI_TOKEN || '',
+  deviceId: '',
+  deviceToken: '',
 };
+let onDevice = null;
 
 function setConfig(next) {
-  config = { ...config, ...(next || {}) };
+  const { onDevice: cb, ...rest } = next || {};
+  if (typeof cb === 'function') onDevice = cb;
+  config = { ...config, ...rest };
 }
 
 function getConfig() {
@@ -23,6 +28,31 @@ function getConfig() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function authHeaders(body) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+  };
+  if (config.token) headers['X-Upload-Token'] = config.token;
+  if (config.deviceToken) headers['Authorization'] = 'Bearer ' + config.deviceToken;
+  return headers;
+}
+
+let devicePromise = null;
+async function registerDevice() {
+  const response = await postJson('/auth/device', config.deviceId ? { deviceId: config.deviceId } : {});
+  config.deviceId = response.deviceId || config.deviceId;
+  config.deviceToken = response.token || '';
+  if (onDevice) { try { onDevice({ deviceId: config.deviceId, deviceToken: config.deviceToken }); } catch {} }
+  return { deviceId: config.deviceId, token: config.deviceToken };
+}
+function ensureDevice() {
+  if (config.deviceToken) return Promise.resolve({ deviceId: config.deviceId, token: config.deviceToken });
+  if (devicePromise) return devicePromise;
+  devicePromise = registerDevice().catch((e) => { devicePromise = null; throw e; });
+  return devicePromise;
 }
 
 function postJson(endpoint, data, { timeout = TIME_OUT } = {}) {
@@ -37,11 +67,7 @@ function postJson(endpoint, data, { timeout = TIME_OUT } = {}) {
       port: target.port || (target.protocol === 'https:' ? 443 : 80),
       path: target.pathname + target.search,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        'X-Upload-Token': config.token
-      }
+      headers: authHeaders(body)
     }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
@@ -66,7 +92,7 @@ function postJson(endpoint, data, { timeout = TIME_OUT } = {}) {
 async function upload(endpoint, data) {
   if (!config.enabled) return { skipped: true };
   if (!config.url) throw new Error('未配置云端 API 地址');
-  if (!config.token) throw new Error('未配置上传 Token');
+  if (!config.token && !config.deviceToken) await ensureDevice();
   let lastErr;
   for (let i = 0; i < MAX_RETRY; i++) {
     try {

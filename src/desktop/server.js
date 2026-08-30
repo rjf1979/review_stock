@@ -288,6 +288,9 @@ function createCloudPush(storage) {
       enabled: s.cloud_enabled === true,
       url: s.cloud_url || '',
       token: s.cloud_token || '',
+      deviceId: s.cloud_device_id || '',
+      deviceToken: s.cloud_device_token || '',
+      onDevice: (d) => storage.setSettings({ cloud_device_id: d.deviceId, cloud_device_token: d.deviceToken }),
     });
     return cloudUpload.getConfig();
   }
@@ -302,8 +305,8 @@ function createCloudPush(storage) {
   function run(kind, data, opts = {}) {
     const cfg = configure();
     if (!cfg.enabled) return Promise.resolve({ skipped: true });
-    if (!cfg.url || !cfg.token) {
-      console.warn('[云端上传] 未配置云端地址/令牌，跳过 ' + kind);
+    if (!cfg.url) {
+      console.warn('[云端上传] 未配置云端地址，跳过 ' + kind);
       return Promise.resolve({ skipped: true, reason: 'not_configured' });
     }
     if (throttled(opts.key, opts.minMs)) return Promise.resolve({ throttled: true });

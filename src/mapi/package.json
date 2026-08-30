@@ -1,11 +1,16 @@
 {
   "name": "hangqing-mapi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "股市脉搏 · 云端行情 API（接收 PC 采集上传，供移动端读取）",
+  "description": "股市脉搏 · 云端行情 API（众包采集：OSS 存储 + PG 索引，先采集先共享）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js && node --check keys.js && node --check validate.js && node --check auth.js && node --check rateLimit.js && node --check claim.js && node --check db.js && node --check oss.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ali-oss": "^6.20.1",
+    "pg": "^8.11.3"
   }
 }

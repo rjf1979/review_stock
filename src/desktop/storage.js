@@ -6,7 +6,7 @@ const initSqlJs = require('sql.js');
 const DEFAULT_SETTINGS = {
   theme: 'light', refreshSec: 3, notify: false,
   monitorEnabled: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60,
-  cloud_enabled: false, cloud_url: '', cloud_token: '',
+  cloud_enabled: false, cloud_url: '', cloud_token: '', cloud_device_id: '', cloud_device_token: '',
 };
 const WATCHLIST_LIMIT = 9;
 const MONITOR_LIMIT = 5;
@@ -133,6 +133,8 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     settings.cloud_enabled = settings.cloud_enabled === true;
     settings.cloud_url = String(settings.cloud_url || '').trim();
     settings.cloud_token = String(settings.cloud_token || '').trim();
+    settings.cloud_device_id = String(settings.cloud_device_id || '').trim();
+    settings.cloud_device_token = String(settings.cloud_device_token || '').trim();
     return settings;
   }
   function setSettings(values) {
@@ -143,6 +145,8 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
     if (clean.cloud_enabled !== undefined) clean.cloud_enabled = clean.cloud_enabled === true;
     if (clean.cloud_url !== undefined) clean.cloud_url = String(clean.cloud_url || '').trim();
     if (clean.cloud_token !== undefined) clean.cloud_token = String(clean.cloud_token || '').trim();
+    if (clean.cloud_device_id !== undefined) clean.cloud_device_id = String(clean.cloud_device_id || '').trim();
+    if (clean.cloud_device_token !== undefined) clean.cloud_device_token = String(clean.cloud_device_token || '').trim();
     if (clean.monitorWatchlist !== undefined) {
       const allowed = new Set(getWatchlist());
       clean.monitorWatchlist = normalizeMonitorList(clean.monitorWatchlist).filter(code => allowed.has(code));
