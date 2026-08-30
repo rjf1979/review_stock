@@ -21,16 +21,16 @@
 - 采集仍由 PC 完成：`src/desktop/cloud-upload.js`（`setConfig`/指数退避重试）在 `server.js` 的 `createCloudPush` 中被调用，实时/复盘/龙虎榜/自选报价/K线/心跳异步 POST 到云端；实时与报价 60s 节流，失败仅记录不阻塞 UI。
 - 云端服务 `src/mapi/server.js`：写端 `/collect/*` 需 `X-Upload-Token`，读端 `/api/*` 只读下发；JSON 落盘 `data/`，含 `stale` 标记（`MAPI_STALE_MS` 默认 10 分钟）。未授权写返回 401 且不落盘。
 - 桌面设置页新增云同步三项：`cloud_enabled`/`cloud_url`/`cloud_token`；接口契约与流程图见 `docs/mobile-architecture.md`。
-- 待办：把 mapi 部署到 VPS（nginx 反代 `mapi.zhicha.io`，token 从 `.env` 读），及移动端真机打包联调。
+- **mapi 已上线（2026-08-30）**：`https://api.dailystock.askcode.cn`（47.92.170.168，Debian 13）。自装 PG17（`pg_hba` 全 trust + 只回环）建 `hangqing_mapi`；部署 `/opt/apps/hangqing-mapi/{current,shared}`；systemd `hangqing-mapi`；nginx 单站点 + certbot SSL；Node 只监听 `127.0.0.1:3102`。OS：bucket `my-soft-2026`（cn-shanghai），CDN `oss.askcode.cn`，前缀 `hangqing/`。待办改为：移动端真机打包联调。
 
 ## App 端众包采集方案（2026-08-29 定稿；Phase 1/2/5 + Flutter 骨架/7页已开发并单测通过）
 - 移动端技术栈改为 **Flutter**（`src/app_flutter/`，已 `flutter create` + analyze 零问题 + test 7/7 + Chrome 运行）；采集从「PC 唯一」改为「多设备众包」，诉求「谁先采集谁先共享」，用 OSS + 独立 API 实现。
 - 后端 `src/mapi/`（file/cloud 双模式）已实现：`keys`/`validate`/`rateLimit`/`auth`/`db`/`oss`/`claim` + `schema.sql`；`npm test` 22/22 通过。要点：去重键=数据逻辑身份；槽位认领(first-writer-wins, PG `ON CONFLICT`)+头指针(freshest-wins 单调守卫)；OSS AK/SK 只在服务端、客户端只拿 Device Token、读走 CDN。
 - PC 端已接入设备鉴权（`cloud-upload.js` 懒注册 Bearer + `storage` 持久化 device id/token），桌面测试通过。
 - 主题皮肤明暗两套已对齐 PC 版（`AppPalette`，红涨绿跌用 PC red/green）；K线图标用 koboyo 手绘 candlestick SVG 重上色（`.runtime/icon_dark.png`/`icon_white.png`），未接入 App 图标。
-- **部署目标**：独立行情 API 在 `api.dailystock.askcode.cn`（`47.92.170.168`，自带 PG）；SSH 候选 `~/.ssh/deploy_market_daily`（config 无别名，需补）。
+- **部署现状**：独立行情 API 已在 `api.dailystock.askcode.cn`（47.92.170.168）上线，SSH 别名 `api-dailystock`（密钥 `~/.ssh/deploy_market_daily`）。PG17 trust 本地只回环；systemd `hangqing-mapi`；nginx `sites-enabled` 只保留本站点；certbot 自动续期。
 - **决策（明天执行）**：采集方=PC+移动端，**默认分享、无用户开关**。明天①部署 mapi 到 api.dailystock.askcode.cn；②PC 默认分享+去开关（storage `cloud_enabled:true`、内置默认 cloud_url、设置页移除云同步控件）。执行清单见 `docs/app-deploy-plan.md`；当日记录见 `2026-08-29.md`。
-- **进展（2026-08-30）**：已提交并推送骨架（`161041c`）与 PC 默认分享去开关（`363060c`；含 cloud-upload 默认设备注册测试 + storage 默认分享断言，npm test/check 通过）。**②已落地，①部署仍阻塞**：缺 `api.dailystock.askcode.cn` 的 SSH 账号/端口、PG 连接与域名 SSL/DNS 状态；待补后按 `docs/app-deploy-plan.md` §三执行。
+- **进展（2026-08-30）**：骨架（`161041c`）、PC 默认分享去开关（`363060c`）、mapi OSS 修复（`2498b43`）均已推送 origin/main。**①②均已落地**：mapi 已上线 `https://api.dailystock.askcode.cn`，端到端验证 1–7 通过；服务器与 chitu 已清理。详见当日 `2026-08-30.md`。
 
 ## 网络配置：GitHub 稳定访问
 - 本机 `github.com` 曾偶发解析到不稳的亚太节点（`20.205.243.166`），导致 `git push` 超时；`gh` 走 `api.github.com` 正常。`github.com` 是 git 智能 HTTP 唯一端点，`github.com:443` 波动时 git 会卡。

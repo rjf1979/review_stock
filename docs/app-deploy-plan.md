@@ -1,6 +1,6 @@
 # App 众包采集 · 明天部署与默认分享方案
 
-> 状态：方案定稿（2026-08-29），**明天执行部署 + 开发**，今天只落文档不动代码。
+> 状态：**已执行（2026-08-30）**。部署方案见第三节（含实际落地记录）；PC 默认分享 + 去开关已提交并推送（`363060c` / `161041c`），mapi 已上线 `https://api.dailystock.askcode.cn`。
 > 决策：**PC 与移动端都参与数据分享，默认开启，不提供用户侧开关。**
 
 ---
@@ -32,9 +32,32 @@
 
 ---
 
-## 三、mapi 部署（明天）
+## 三、mapi 部署（2026-08-30 已执行）
 
 目标：`api.dailystock.askcode.cn`（`47.92.170.168`），该服务器自带 PG。
+
+### 实际执行记录（2026-08-30）
+
+服务器：Debian 13，Node v22.23.1（npm 在 `/opt/node-v22.23.1/bin`，不在 PATH）。SSH 免密别名 `api-dailystock`（Host 47.92.170.168, Port 22, User root, IdentityFile `~/.ssh/deploy_market_daily`），已加入 `~/.ssh/config`。
+
+- **数据库**：原机未装 PG，本次自装 PostgreSQL 17。`pg_hba.conf` 全部改为 `trust`（local + 127.0.0.1 + ::1），`listen_addresses='127.0.0.1, ::1'`（只回环，不对外）；建 `mapi` 角色与 `hangqing_mapi` 库，本地无密连接。
+- **部署结构**：`/opt/apps/hangqing-mapi/{releases/20260830113401,shared}`，`current -> releases/20260830113401`。`shared/.env`（600）含 PG/OSS/MAPI 全部配置，`shared/aliyun-oss.env` 亦上传；密钥只存服务器，不落库不入文。
+- **systemd**：`hangqing-mapi.service`，`EnvironmentFile=/opt/apps/hangqing-mapi/shared/.env`，`Restart=always`，`ProtectSystem=strict` + `ReadWritePaths=.../shared/data`，已 `enable --now`。生产 Node 只监听 `127.0.0.1:3102`。
+- **nginx + SSL**：nginx 1.26 + certbot。`sites-enabled` **只保留 `api.dailystock` 一个站点**（默认站点已删），对外 443/80 反代 `127.0.0.1:3102`；certbot 签发的 Let's Encrypt 证书自动续期（timer）。
+- **OSS**：bucket `my-soft-2026`（cn-shanghai），CDN 域名 `oss.askcode.cn`，前缀 `hangqing/`。
+- **代码修复（`2498b43`）**：`src/mapi/oss.js` 两处——① `putPublic` 需传 `Buffer.from(String(body),'utf8')`，否则 ali-oss 当本地文件路径 stat 触发 `ENOENT`；② 客户端必须显式传 `endpoint=oss-cn-shanghai.aliyuncs.com`，否则 `setRegion` 拼出 `{region}.aliyuncs.com`（缺 `oss-`）导致 `ENOTFOUND`。已上传服务器并命中。
+
+### 上线验证（端到端，全部通过）
+
+1. `GET /api/status` → 200，含 `serverTime`。
+2. `POST /auth/device` → 返回 `deviceId`+`token`；同设备复用 token 稳定。
+3. `POST /collect/realtime` 首次 `accepted:true`；同 `updatedAt` 二次 `accepted:false, stale:true`（去重生效）。
+4. `POST /collect/review` 首次 `won:true`；同日期二次 `won:false, ready:true`（first-writer-wins 生效）。
+5. `GET /api/realtime` → `fromCloud:true` 带 `url`；`GET /api/review` → `persisted:true`；`GET /api/reviews` 列出条目。
+6. OSS CDN 公网直链 `https://oss.askcode.cn/hangqing/review/20260828/close.json` 与 realtime 对象均可读。
+7. `http://api.dailystock.askcode.cn` → 301 到 HTTPS；HTTPS `Server: nginx`。
+
+验证后已用测试数据清理：PG `devices/slots/heads` 已 TRUNCATE（0/0/0），OSS 两个测试对象已 delete；空态复验 `/api/realtime` 503 no_data、`/api/review` 404、`/api/reviews` entries 空。
 
 ### 0. 前置（明天先确认）
 - SSH：`~/.ssh/config` 目前只有 `zhicha-vps`（107.148.27.165:49073），**无本机别名**。候选密钥 `~/.ssh/deploy_market_daily`（ed25519，注释 `deploy-market-daily`）。→ 先加 Host 别名、验证连通与 sudo/目录权限。
