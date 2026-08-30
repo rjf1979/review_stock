@@ -728,9 +728,7 @@
             <div class="set-item"><small>关闭主窗口</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="monitorOnMainClose" @change="applyMonitorOnMainClose"> 关闭到托盘时显示监控浮窗</label><div style="color:var(--muted);font-size:.78rem;margin-top:6px">关闭主窗口后继续查看行情；退出托盘程序时不会显示。</div></div>
             <div class="set-item"><small>浮窗透明度</small><div style="display:flex;align-items:center;gap:12px"><input type="range" v-model.number="monitorOpacity" min="0" max="100" step="5" @change="applyMonitorOpacity" style="flex:1"><span style="min-width:42px;text-align:right;font-variant-numeric:tabular-nums">{{ monitorOpacity }}%</span></div><div style="color:var(--muted);font-size:.78rem;margin-top:6px">数值越高背景越实，越低越透明。默认 60%。</div></div>
             <div class="set-item"><small>数据源</small><div style="color:var(--muted);font-size:.8rem">腾讯行情 + 东方财富（本地直连）</div></div>
-            <div class="set-item"><small>手机云同步</small><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" v-model="cloudEnabled" @change="applyCloudEnabled"> 开启云端采集（供手机 App 使用）</label><div style="color:var(--muted);font-size:.78rem;margin-top:6px">本机采集的实时 / 复盘 / 龙虎榜 / 自选报价会异步上传到云端；关闭则仅保留本地。</div></div>
-            <div class="set-item"><small>云端接口地址</small><input type="text" v-model="cloudUrl" @change="applyCloudUrl" placeholder="https://mapi.zhicha.io" style="width:100%"><div style="color:var(--muted);font-size:.78rem;margin-top:6px">上传目标，手机 App 也读取该地址。</div></div>
-            <div class="set-item"><small>上传令牌</small><input type="password" v-model="cloudToken" @change="applyCloudToken" placeholder="X-Upload-Token" style="width:100%"><div style="color:var(--muted);font-size:.78rem;margin-top:6px">仅保存于本机设置，不会写入仓库。</div></div>
+            <div class="set-item"><small>云端共享</small><div style="color:var(--muted);font-size:.8rem">本机采集的实时 / 复盘 / 龙虎榜 / 自选报价会匿名共享到云端，供手机 App 读取；默认开启，无需配置。关闭请退出应用。</div></div>
           </div>
         </div>
         <div class="panel"><h2>软件更新</h2>
@@ -837,7 +835,6 @@
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
         historyEntries: [], appVersion: '-', changelog: [], updateState: { status: 'idle', currentVersion: '-', availableVersion: null, progress: null, error: null, checkedAt: null }, refreshSec: Number(localStorage.getItem('hq_refresh') || 3), theme: localStorage.getItem('hq_theme') || (localStorage.getItem('hq_dark') === '1' ? 'dark' : 'light'), notify: localStorage.getItem('hq_notify') === '1', loadingJobs: [], pankouHistory: [], pankouPendingEvents: [], pankouSeenKeys: [], pankouHistoryDate: null, todayStr,
         isMonitorMode, monitorEnabled: false, monitorVisible: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60, monitorPayload: null, monitorLoading: false, monitorError: '', MONITOR_LIMIT,
-        cloudEnabled: false, cloudUrl: '', cloudToken: ''
       }; },
       computed: {
         marketOpen() { return this.marketStatus.open; },
@@ -951,9 +948,6 @@
           this.monitorOnMainClose = settings.monitorOnMainClose === true;
           this.monitorWatchlist = Array.isArray(settings.monitorWatchlist) ? settings.monitorWatchlist.slice(0, MONITOR_LIMIT) : [];
           this.monitorOpacity = this.normalizeMonitorOpacity(settings.monitorOpacity);
-          this.cloudEnabled = settings.cloud_enabled === true;
-          this.cloudUrl = settings.cloud_url || '';
-          this.cloudToken = settings.cloud_token || '';
            this.applyMonitorOpacity(false);
            this.applyTheme(this.theme, false);
            const nativeState = await window.desktopBridge?.getMonitorState?.();
@@ -1148,9 +1142,6 @@
         closeSponsor() { this.sponsorOpen = false; },
         applyTheme(theme = this.theme, persist = true) { this.theme = theme === 'dark' ? 'dark' : 'light'; localStorage.setItem('hq_theme', this.theme); localStorage.setItem('hq_dark', this.theme === 'dark' ? '1' : '0'); document.body.classList.toggle('dark', this.theme === 'dark'); if (persist) this.persistSettings({ theme: this.theme }); },
         applyNotify(persist = true) { localStorage.setItem('hq_notify', this.notify ? '1' : '0'); if (persist) this.persistSettings({ notify: this.notify }); window.desktopBridge?.setNotifyEnabled(this.notify); },
-        applyCloudEnabled(persist = true) { if (persist) this.persistSettings({ cloud_enabled: this.cloudEnabled === true }); },
-        applyCloudUrl(persist = true) { this.cloudUrl = String(this.cloudUrl || '').trim(); if (persist) this.persistSettings({ cloud_url: this.cloudUrl }); },
-        applyCloudToken(persist = true) { this.cloudToken = String(this.cloudToken || '').trim(); if (persist) this.persistSettings({ cloud_token: this.cloudToken }); },
         isMonitorWatched(code) { return this.monitorWatchlist.includes(String(code)); },
         async toggleMonitorWatch(stock) {
           const code = String(stock.code);

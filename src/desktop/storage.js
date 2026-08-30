@@ -3,10 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
+// 云端行情 API 内置默认地址（移动端与桌面端共用同一目标）
+const DEFAULT_CLOUD_URL = 'https://api.dailystock.askcode.cn';
+
 const DEFAULT_SETTINGS = {
   theme: 'light', refreshSec: 3, notify: false,
   monitorEnabled: false, monitorOnMainClose: false, monitorWatchlist: [], monitorOpacity: 60,
-  cloud_enabled: false, cloud_url: '', cloud_token: '', cloud_device_id: '', cloud_device_token: '',
+  cloud_enabled: true, cloud_url: DEFAULT_CLOUD_URL, cloud_token: '', cloud_device_id: '', cloud_device_token: '',
 };
 const WATCHLIST_LIMIT = 9;
 const MONITOR_LIMIT = 5;
@@ -319,4 +322,4 @@ async function createStorage({ dbPath, legacyStatePath, legacyReviewsDir }) {
   };
 }
 
-module.exports = { createStorage };
+module.exports = { createStorage, DEFAULT_CLOUD_URL };

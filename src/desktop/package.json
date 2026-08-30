@@ -8,8 +8,8 @@
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "check": "node --check storage.js && node --check storage.test.js && node --check review-core.js && node --check review-scheduler.js && node --check updater.js && node --check telemetry.js && node --check telemetry.test.js && node --check preload.js && node --check server.js && node --check server.test.js && node --check updater.test.js && node --check electron-main.js && node --check scripts/generate-update-manifest.js && node --check scripts/verify-package-contents.js && node scripts/check-changelog.js",
-    "test": "node server.test.js && node storage.test.js && node updater.test.js && node telemetry.test.js",
+    "check": "node --check storage.js && node --check storage.test.js && node --check cloud-upload.js && node --check cloud-upload.test.js && node --check review-core.js && node --check review-scheduler.js && node --check updater.js && node --check telemetry.js && node --check telemetry.test.js && node --check preload.js && node --check server.js && node --check server.test.js && node --check updater.test.js && node --check electron-main.js && node --check scripts/generate-update-manifest.js && node --check scripts/verify-package-contents.js && node scripts/check-changelog.js",
+    "test": "node server.test.js && node storage.test.js && node cloud-upload.test.js && node updater.test.js && node telemetry.test.js",
     "updates:manifest": "node scripts/generate-update-manifest.js",
     "pack": "electron-builder --dir && node scripts/verify-package-contents.js",
     "dist": "set \"ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/\" && set \"ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/\" && electron-builder && node scripts/verify-package-contents.js"

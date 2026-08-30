@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const review = require('./review-core');
-const { createStorage } = require('./storage');
+const { createStorage, DEFAULT_CLOUD_URL } = require('./storage');
 const cloudUpload = require('./cloud-upload');
 
 const PORT = 3100;
@@ -285,8 +285,8 @@ function createCloudPush(storage) {
   function configure() {
     const s = storage.getSettings();
     cloudUpload.setConfig({
-      enabled: s.cloud_enabled === true,
-      url: s.cloud_url || '',
+      enabled: true, // 分享总开关恒真：采集方默认分享，不暴露用户开关
+      url: s.cloud_url || DEFAULT_CLOUD_URL,
       token: s.cloud_token || '',
       deviceId: s.cloud_device_id || '',
       deviceToken: s.cloud_device_token || '',
@@ -542,15 +542,19 @@ async function startServer({ storage, port = PORT } = {}) {
   });
   const server = createHttpServer(activeStorage);
   await new Promise(resolve => server.listen(port, resolve));
-  // 云端心跳：告知云端本机为最新采集源（若已开启且配置完整）。
+  // 云端心跳：默认分享，告知云端本机为最新采集源；失败仅记录不阻塞。
   const settings = activeStorage.getSettings();
-  if (settings.cloud_enabled === true && settings.cloud_url && settings.cloud_token) {
-    cloudUpload.setConfig({ enabled: true, url: settings.cloud_url, token: settings.cloud_token });
-    try {
-      await cloudUpload.heartbeat({ version: require('./package.json').version, fetchedAt: new Date().toISOString(), ok: true });
-    } catch (error) {
-      console.warn('[云端上传] 启动心跳失败：' + error.message);
-    }
+  cloudUpload.setConfig({
+    enabled: true,
+    url: settings.cloud_url || DEFAULT_CLOUD_URL,
+    token: settings.cloud_token || '',
+    deviceId: settings.cloud_device_id || '',
+    deviceToken: settings.cloud_device_token || '',
+  });
+  try {
+    await cloudUpload.heartbeat({ version: require('./package.json').version, fetchedAt: new Date().toISOString(), ok: true });
+  } catch (error) {
+    console.warn('[云端上传] 启动心跳失败：' + error.message);
   }
   console.log(`行情日报 Desktop 本地后端运行于 http://localhost:${port}`);
   return server;

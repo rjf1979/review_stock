@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createStorage } = require('./storage');
+const { createStorage, DEFAULT_CLOUD_URL } = require('./storage');
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hangqing-storage-'));
@@ -16,6 +16,10 @@ const { createStorage } = require('./storage');
   assert.strictEqual(settings.monitorEnabled, false);
   assert.strictEqual(settings.monitorOnMainClose, false);
   assert.deepStrictEqual(settings.monitorWatchlist, []);
+  // 默认分享（无用户开关）：云同步恒真，云端地址内置默认
+  assert.strictEqual(settings.cloud_enabled, true);
+  assert.strictEqual(settings.cloud_url, DEFAULT_CLOUD_URL);
+  assert.strictEqual(settings.cloud_token, '');
 
   storage.replaceWatchlist(['600519', '000858']);
   storage.setSettings({ monitorEnabled: true, monitorOnMainClose: true, monitorWatchlist: ['600519', '999999', '000858', '600520'] });
