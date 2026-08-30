@@ -1,20 +1,20 @@
 {
-  "version": "0.3.7",
-  "publishedAt": "2026-08-30T04:09:13.125Z",
+  "version": "0.3.8",
+  "publishedAt": "2026-08-30T04:56:14.765Z",
   "notes": [
-    "新增云端行情数据平台（api.dailystock.askcode.cn），桌面版默认将实时行情与每日复盘等自动共享到云端。",
-    "移除设置页的「手机云同步」开关与云端接口地址、上传令牌配置，无需手动开启，已安装版本自动继承默认开启。"
+    "修复云端数据分享鉴权：桌面端内置上传令牌，采集的实时行情、复盘、龙虎榜、自选报价与K线自动上报云端行情数据平台。",
+    "网络可连通但未收到云端数据的问题已解决，安装后默认参与数据分享。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-x64-setup.exe",
-      "size": 85215399,
-      "sha256": "8f9fd7932ecad04ed576820990ae04bcc5b8d01292b006518d23353b829f2320"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-x64-setup.exe",
+      "size": 85223330,
+      "sha256": "ae0b66739b4b53d71aa6fdad875851d848fc2f09207a4aee69870c6d73e5e0c0"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-ia32-setup.exe",
-      "size": 80489846,
-      "sha256": "eb2f8a78f99d1413b1e823673061f9c6e0af129477ea02baddc7dd0bba8bafc3"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-ia32-setup.exe",
+      "size": 80474732,
+      "sha256": "d5623e7082f930e18bf0ba5dac9cc4e8f8fb58a311d30b240a9dd86eb5938f95"
     }
   }
 }

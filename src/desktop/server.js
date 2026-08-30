@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const review = require('./review-core');
-const { createStorage, DEFAULT_CLOUD_URL } = require('./storage');
+const { createStorage, DEFAULT_CLOUD_URL, BUILTIN_CLOUD_TOKEN } = require('./storage');
 const cloudUpload = require('./cloud-upload');
 
 const PORT = 3100;
@@ -287,7 +287,7 @@ function createCloudPush(storage) {
     cloudUpload.setConfig({
       enabled: true, // 分享总开关恒真：采集方默认分享，不暴露用户开关
       url: s.cloud_url || DEFAULT_CLOUD_URL,
-      token: s.cloud_token || '',
+      token: s.cloud_token || BUILTIN_CLOUD_TOKEN,
       deviceId: s.cloud_device_id || '',
       deviceToken: s.cloud_device_token || '',
       onDevice: (d) => storage.setSettings({ cloud_device_id: d.deviceId, cloud_device_token: d.deviceToken }),
@@ -547,7 +547,7 @@ async function startServer({ storage, port = PORT } = {}) {
   cloudUpload.setConfig({
     enabled: true,
     url: settings.cloud_url || DEFAULT_CLOUD_URL,
-    token: settings.cloud_token || '',
+    token: settings.cloud_token || BUILTIN_CLOUD_TOKEN,
     deviceId: settings.cloud_device_id || '',
     deviceToken: settings.cloud_device_token || '',
   });

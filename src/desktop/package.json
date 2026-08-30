@@ -1,6 +1,6 @@
 {
   "name": "hangqing-desktop",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "license": "SEE LICENSE IN ../../LICENSE",
   "description": "股市脉搏 - A股实时行情与每日复盘桌面工具（本地取数）",
@@ -29,7 +29,7 @@
     "asar": true,
     "compression": "maximum",
     "directories": { "output": "release" },
-    "files": ["electron-main.js", "preload.js", "server.js", "storage.js", "review-core.js", "review-scheduler.js", "updater.js", "telemetry.js", "cloud-upload.js", "assets/icon.png", "frontend/**/*", "!node_modules/sql.js/**", "node_modules/sql.js/package.json", "node_modules/sql.js/dist/sql-wasm.js", "node_modules/sql.js/dist/sql-wasm.wasm", "package.json"],
+    "files": ["electron-main.js", "preload.js", "server.js", "storage.js", "review-core.js", "review-scheduler.js", "updater.js", "telemetry.js", "cloud-upload.js", "upload-token.builtin.js", "assets/icon.png", "frontend/**/*", "!node_modules/sql.js/**", "node_modules/sql.js/package.json", "node_modules/sql.js/dist/sql-wasm.js", "node_modules/sql.js/dist/sql-wasm.wasm", "package.json"],
     "extraResources": [{ "from": "../../LICENSE", "to": "LICENSE.txt" }],
     "win": {
       "icon": "assets/icon.ico",

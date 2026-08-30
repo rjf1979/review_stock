@@ -17,6 +17,7 @@ src/telemetry/data/
 !.env.example
 .deploy/
 docs/云服务器配置.txt
+src/desktop/upload-token.builtin.js
 
 # Local helper binaries
 .runtime-ssh-askpass.exe

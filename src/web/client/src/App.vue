@@ -6,13 +6,13 @@ import dailyReviewImage from './assets/desktop-screens/daily-review.png'
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
 
 const downloads = {
-  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-x64-setup.exe',
-  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.7-win-ia32-setup.exe',
-  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.7/hangqing-desktop-0.3.7-win-x64-setup.exe',
-  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.7/hangqing-desktop-0.3.7-win-ia32-setup.exe',
-  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.7-win-x64-setup.exe',
-  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.7-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.7'
+  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-x64-setup.exe',
+  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-ia32-setup.exe',
+  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.8/hangqing-desktop-0.3.8-win-x64-setup.exe',
+  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.8/hangqing-desktop-0.3.8-win-ia32-setup.exe',
+  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.8-win-x64-setup.exe',
+  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.8-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.8'
 }
 
 const activeImage = ref(null)
@@ -102,7 +102,7 @@ function openImage(src, alt) {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.3.7</p><h2>把股市脉搏放在桌面上</h2><p>Windows 64 位与 32 位安装包现已提供。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到 GitHub Release 或备用镜像。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.3.8</p><h2>把股市脉搏放在桌面上</h2><p>Windows 64 位与 32 位安装包现已提供。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到 GitHub Release 或备用镜像。</p></div>
         <div class="download-options">
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
