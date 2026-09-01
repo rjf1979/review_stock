@@ -28,5 +28,14 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Temporary visual and device validation artifacts
+/*.png
+/.codex/visualizations/
+/scripts/push-via-api.js
+src/app_flutter/*.png
+src/app_flutter/*.xml
+src/web/.tmp-webp*/
+src/web/client/src/assets/desktop-screens/webp/
+
 # Private source asset; the sanitized bundled copy lives under src/desktop/frontend/assets.
 docs/赞助收款码.jpg

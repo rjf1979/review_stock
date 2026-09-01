@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 /// 上游公开行情源抓取（复刻 PC 端 `review-core.js` 的取数）。
@@ -13,19 +15,22 @@ class MarketSource {
   /// 三大指数（东财 push2 ulist，UTF-8）。返回 [{'code','name','price','changePct'}]。
   /// 字段：f2=最新价 f3=涨跌幅 f12=代码 f14=名称。TODO: 与 PC 端口径对齐。
   Future<List<Map<String, dynamic>>> fetchIndices() async {
-    final res = await _dio.get<Map<String, dynamic>>(
+    final res = await _dio.get<dynamic>(
       'https://push2.eastmoney.com/api/qt/ulist.np/get',
       queryParameters: {
         'secids': '1.000001,0.399001,0.399006',
         'fields': 'f2,f3,f12,f14',
+        'fltt': '2',
+        'invt': '2',
       },
     );
-    final diff = (res.data?['data']?['diff'] as List?) ?? const [];
+    final payload = _jsonPayload(res.data);
+    final diff = (payload['data']?['diff'] as List?) ?? const [];
     return diff.whereType<Map<String, dynamic>>().map((m) {
       return {
         'code': '${m['f12'] ?? ''}',
         'name': '${m['f14'] ?? ''}',
-        'price': (m['f2'] as num?)?.toDouble(),
+        'close': (m['f2'] as num?)?.toDouble(),
         'changePct': (m['f3'] as num?)?.toDouble(),
       };
     }).toList();
@@ -35,11 +40,17 @@ class MarketSource {
   Future<List<Map<String, dynamic>>> fetchQuotes(List<String> codes) async {
     final out = <Map<String, dynamic>>[];
     for (final code in codes) {
-      final res = await _dio.get<Map<String, dynamic>>(
+    final res = await _dio.get<dynamic>(
         'https://push2.eastmoney.com/api/qt/stock/get',
-        queryParameters: {'secid': _secid(code), 'fields': 'f43,f57,f58,f170'},
+      queryParameters: {
+        'secid': _secid(code),
+        'fields': 'f43,f57,f58,f170',
+        'fltt': '2',
+        'invt': '2',
+      },
       );
-      final d = res.data?['data'] as Map<String, dynamic>?;
+    final payload = _jsonPayload(res.data);
+    final d = payload['data'] as Map<String, dynamic>?;
       if (d == null) continue;
       out.add({
         'code': code,
@@ -57,7 +68,14 @@ class MarketSource {
   }
 
   String _secid(String code) {
-    if (code.startsWith('6') || code.startsWith('9')) return '1.$code';
-    return '0.$code';
+    final symbol = code.toLowerCase().replaceFirst(RegExp(r'^(sh|sz|bj)'), '');
+    if (symbol.startsWith('6') || symbol.startsWith('9')) return '1.$symbol';
+    return '0.$symbol';
+  }
+
+  Map<String, dynamic> _jsonPayload(Object? data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is String) return jsonDecode(data) as Map<String, dynamic>;
+    throw StateError('行情源返回格式异常');
   }
 }

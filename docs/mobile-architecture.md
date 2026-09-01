@@ -1,6 +1,6 @@
-# 手机 App（uni-app Vue3）架构与接口契约
+# 手机 App 架构与接口契约
 
-> 状态：设计定稿（v0.1）。移动端沿用 PC 桌面版的 7 视图结构；行情数据由 PC 端采集后上传，移动端通过云端行情 API 读取。移动端不依赖 `src/desktop/` 的 Electron 主进程与本地 HTTP 服务。
+> 状态：接口契约仍可参考；早期 uni-app(Vue3) 实现已废弃，当前实现为 `src/app_flutter/`（Flutter）。移动端沿用 PC 桌面版的 7 视图结构，行情数据由采集端上传，移动端通过云端行情 API 读取。移动端不依赖 `src/desktop/` 的 Electron 主进程与本地 HTTP 服务。
 
 ## 一、总体数据流
 
@@ -23,7 +23,7 @@
                │ HTTPS（公开只读）
                ▼
 ┌──────────────────────────────┐
-│  移动端 uni-app(Vue3)           │
+│  移动端 Flutter                  │
 │  7 视图：实时/自选/大盘/复盘/龙虎榜/   │
 │  历史/设置，均消费云端行情 API        │
 └──────────────────────────────┘
@@ -75,9 +75,9 @@
 - 与现有 `review-scheduler.js` 结合：`12:00` 上传午间快照，`16:00` 上传收盘复盘；实时快照按频率（如 60s）上传。
 - 上传不阻塞本地 UI；失败仅记录，不影响桌面功能。
 
-## 四、移动端 uni-app(Vue3)
+## 四、移动端 Flutter
 
-目录 `src/app/`，标准 uni-app Vite 工程。7 个页面照搬 PC 结构：
+目录 `src/app_flutter/`，Flutter 工程。7 个页面照搬 PC 结构：
 
 | 页面 | 路由 | 数据接口 | 说明 |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@
 | 每日复盘 | `pages/review/index` | `/api/review?date=` | 温度 + 结构化复盘（markdown 渲染） |
 | 龙虎榜 | `pages/dragon/index` | `/api/dragon?date=` | 表格 |
 | 历史报告 | `pages/history/index` | `/api/reviews` + `/api/review?date=` | 日期列表 → 详情 |
-| 设置 | `pages/settings/index` | 本地存储 + `/api/status` | API 地址、数据源、主题、免责 |
+| 设置 | `features/settings/settings_page` | 本地存储 + `/api/status` | API 地址、数据源、主题、免责 |
 
 ### 前端分层
 - `src/api/client.js`：`request('/api/realtime')` 封装 uni.request，统一超时/错误/`status:'stale'` 降级。
@@ -97,7 +97,7 @@
 
 ## 五、关键约束
 
-- 移动端不得 `require`/`import` `src/desktop/`；数据交互只通过云端行情 API 契约。
+- 移动端不得引用 `src/desktop/`；数据交互只通过云端行情 API 契约。
 - 红涨绿跌、免责声明、温度/情绪 = 统计指标不上引（沿用 PC 合规红线）。
-- 工程独立构建（`npm run dev:h5` / `build:app`），与桌面端互不影响。
+- 工程独立构建（`flutter run` / `flutter build`），与桌面端互不影响。
 - 敏感信息（上传 Token）不写入仓库，PC 端存本地设置、云端存 `.env`。

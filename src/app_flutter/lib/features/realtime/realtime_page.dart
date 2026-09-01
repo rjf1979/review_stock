@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,10 +15,57 @@ class RealtimePage extends ConsumerStatefulWidget {
   ConsumerState<RealtimePage> createState() => _RealtimePageState();
 }
 
-class _RealtimePageState extends ConsumerState<RealtimePage> {
+class _RealtimePageState extends ConsumerState<RealtimePage>
+    with WidgetsBindingObserver {
+  Timer? _autoRefreshTimer;
+  int _intervalSeconds = 60;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startAutoRefresh(ref.read(refreshIntervalProvider));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startAutoRefresh(_intervalSeconds);
+    } else {
+      _stopAutoRefresh();
+    }
+  }
+
+  void _startAutoRefresh(int seconds) {
+    _intervalSeconds = seconds;
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+      final isResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (mounted && isResumed) ref.invalidate(realtimeProvider);
+    });
+  }
+
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _stopAutoRefresh();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final realtime = ref.watch(realtimeProvider);
+    ref.listen(refreshIntervalProvider, (previous, next) {
+      if (previous != next) {
+        ref.invalidate(realtimeProvider);
+        _startAutoRefresh(next);
+      }
+    });
     return RefreshIndicator(
       onRefresh: () async => ref.invalidate(realtimeProvider),
       child: realtime.when(
@@ -44,7 +93,7 @@ class _RealtimePageState extends ConsumerState<RealtimePage> {
           _card(theme, '盘口异动', child: _pankou(r.pankou)),
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Text('数据来自公开行情源，仅供参考，不构成投资建议。红涨绿跌。',
+          child: Text('数据来自公开行情源，仅供参考，不构成投资建议。红涨绿跌。前台每 $_intervalSeconds 秒自动刷新。',
               style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
         ),
       ],

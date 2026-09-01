@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="hangqing_app"
+        android:label="股市脉搏"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

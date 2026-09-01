@@ -10,7 +10,7 @@ class Stock {
   factory Stock.fromJson(Map<String, dynamic> j) => Stock(
         code: '${j['code'] ?? ''}',
         name: '${j['name'] ?? ''}',
-        price: (j['price'] as num?)?.toDouble(),
+        price: ((j['price'] ?? j['latest'] ?? j['close']) as num?)?.toDouble(),
         changePct: (j['changePct'] as num?)?.toDouble(),
       );
 }
@@ -34,10 +34,10 @@ class IndexQuote {
   factory IndexQuote.fromJson(Map<String, dynamic> j) => IndexQuote(
         code: '${j['code'] ?? ''}',
         name: '${j['name'] ?? ''}',
-        price: (j['price'] as num?)?.toDouble(),
+        price: ((j['price'] ?? j['close']) as num?)?.toDouble(),
         changePct: (j['changePct'] as num?)?.toDouble(),
         change: (j['change'] as num?)?.toDouble(),
-        amount: (j['amount'] as num?)?.toDouble(),
+        amount: ((j['amount'] ?? j['amountYi']) as num?)?.toDouble(),
       );
 }
 
@@ -60,7 +60,7 @@ class Breadth {
       flat: (j['flat'] as num?)?.toInt(),
       limitUp: (j['limitUp'] as num?)?.toInt(),
       limitDown: (j['limitDown'] as num?)?.toInt(),
-      amount: (j['amount'] as num?)?.toDouble(),
+      amount: ((j['amount'] ?? j['turnoverYi']) as num?)?.toDouble(),
       sampleCount: (j['sampleCount'] as num?)?.toInt(),
       reportedCount: (j['reportedCount'] as num?)?.toInt(),
     );
@@ -104,7 +104,7 @@ class PankouEvent {
 
   factory PankouEvent.fromJson(Map<String, dynamic> j) => PankouEvent(
         time: '${j['time'] ?? j['t'] ?? ''}',
-        text: '${j['name'] ?? j['code'] ?? ''} ${j['title'] ?? j['event'] ?? ''}'.trim(),
+        text: '${j['event'] ?? j['title'] ?? ''} ${j['name'] ?? j['code'] ?? ''}'.trim(),
       );
 }
 
@@ -132,7 +132,20 @@ class RealtimeSnapshot {
     final list = (j['indices'] as List?) ?? const [];
     final sectors = (j['sectors'] as List?) ?? const [];
     final limitUp = (j['limitUpStocks'] as List?) ?? const [];
-    final pankou = (j['pankou'] as List?) ?? const [];
+    final pankouJson = j['pankou'];
+    final pankou = <dynamic>[];
+    if (pankouJson is List) {
+      pankou.addAll(pankouJson);
+    } else if (pankouJson is Map<String, dynamic>) {
+      final categories = (pankouJson['categories'] as List?) ?? const [];
+      for (final category in categories.whereType<Map<String, dynamic>>()) {
+        final label = '${category['label'] ?? ''}';
+        final events = (category['events'] as List?) ?? const [];
+        for (final event in events.whereType<Map<String, dynamic>>()) {
+          pankou.add({...event, 'event': label});
+        }
+      }
+    }
     return RealtimeSnapshot(
       indices: list.whereType<Map<String, dynamic>>().map(IndexQuote.fromJson).toList(),
       breadth: Breadth.fromJson(j['breadth'] as Map<String, dynamic>?),

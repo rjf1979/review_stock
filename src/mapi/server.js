@@ -173,9 +173,49 @@ const collectKline = async (body, deviceId) => {
   return { status: 200, body: { ok: true, ...r } };
 };
 
+function realtimeCompletenessScore(data) {
+  let score = 0;
+  if (Array.isArray(data?.indices) && data.indices.length > 0) score += 1;
+  if (data?.breadth && (Number.isFinite(data.breadth.up) || Number.isFinite(data.breadth.down))) score += 1;
+  if (Array.isArray(data?.limitUpStocks) && data.limitUpStocks.length > 0) score += 1;
+  if (Array.isArray(data?.sectors) && data.sectors.length > 0) score += 1;
+  if (Array.isArray(data?.pankou) && data.pankou.length > 0) score += 1;
+  if (data?.marketSession) score += 1;
+  return score;
+}
+
+function realtimeTradeDate(data) {
+  return data?.meta?.trade_date || data?.asOfDate || null;
+}
+
 const collectRealtime = async (body, deviceId) => {
   const v = validate.validateRealtime(body);
   if (!v.ok) return { status: 400, body: { error: v.error } };
+  const incomingTradeDate = realtimeTradeDate(body);
+  const incomingScore = realtimeCompletenessScore(body);
+  if (cloudReady()) {
+    const head = await cloud.db.getHead('realtime');
+    const existing = head?.object_key ? await readObjectByKey(head.object_key) : null;
+    const existingTradeDate = realtimeTradeDate(existing?.data);
+    const existingScore = realtimeCompletenessScore(existing?.data);
+    if (
+      incomingTradeDate &&
+      existingTradeDate &&
+      incomingTradeDate === existingTradeDate &&
+      incomingScore < existingScore
+    ) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          accepted: false,
+          reason: 'lower_completeness',
+          score: incomingScore,
+          existingScore,
+        },
+      };
+    }
+  }
   const { date, hhmmss } = keys.timeBucket(body.updatedAt);
   const objectKey = keys.realtimeKey(date, hhmmss);
   const r = await updateHeadAndWrite({ db: cloud.db, oss: cloud.oss, stream: 'realtime', objectKey, updatedAt: body.updatedAt, deviceId, data: body });

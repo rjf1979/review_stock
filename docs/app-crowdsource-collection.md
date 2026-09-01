@@ -2,7 +2,7 @@
 
 > 决策（2026-08-29 定稿）：**采集方 = PC 桌面版 + 移动端 App（多设备众包），默认分享、不提供用户侧开关**。PC 与手机同为采集竞争方（谁先采到谁发布），移动端不依赖 PC 在线；PC 走设备鉴权作为高可信源。具体部署与默认分享改动见 `docs/app-deploy-plan.md`。
 
-> 状态：方案定稿（v0.1，2026-08-29），尚未开发。移动端技术栈由 uni-app(Vue3) 改为 Flutter；采集从「PC 唯一」扩展为「多用户众包」，核心是解决「谁先采集谁先共享」的分布式去重与原子仲裁。本文档是落地设计，替代 `docs/mobile-architecture.md` 中「PC 唯一采集」的数据流描述（接口契约整体仍兼容）。
+> 状态：实现中（2026-08-30）。移动端技术栈为 Flutter；采集从「PC 唯一」扩展为「多用户众包」，核心是解决「谁先采集谁先共享」的分布式去重与原子仲裁。本文档是落地设计，替代 `docs/mobile-architecture.md` 中「PC 唯一采集」的数据流描述（接口契约整体仍兼容）。
 
 ## 一、背景与目标
 
@@ -109,7 +109,7 @@ CREATE TABLE heads (
 
 - **mapi（`src/mapi/`）**：`server.js` 拆分路由；新增 `oss.js`（`ali-oss` 封装，AK/SK 从 `.deploy/aliyun-oss.env` 注入）、`auth.js`（设备注册 + JWT）、`claim.js`（槽位认领 + 头指针单调更新）、`validate.js`（schema/合理性/交易日）、`rateLimit.js`、`schema.sql`（`devices`/`slots`/`heads` 三表）。`package.json` 新增 `ali-oss`、`pg`。环境变量新增 `PG_*`、`MAPI_JWT_SECRET`、`OSS_*`。
 - **PC（`src/desktop/cloud-upload.js`）**：过渡期保持 `X-Upload-Token`，新增可选 `device_id` 注册，让 PC 作为 trusted collector 入新体系；改动最小。
-- **Flutter（新增 `src/app_flutter/`，与 `src/app` 并存）**：
+- **Flutter（`src/app_flutter/`）**：
   ```
   lib/
     main.dart

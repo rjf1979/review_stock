@@ -15,8 +15,15 @@ class CollectorService {
   final MarketApi _api;
   final MarketSource _source;
 
-  /// 是否处于交易时段（骨架版：仅判断工作日，未含节假日日历）。
-  static bool _isTradingDay(DateTime now) => now.weekday >= 1 && now.weekday <= 5;
+  /// 是否处于连续交易时段（骨架版：仅判断工作日，未含节假日日历）。
+  static bool _isTradingSession(DateTime now) {
+    if (now.weekday < DateTime.monday || now.weekday > DateTime.friday) {
+      return false;
+    }
+    final minuteOfDay = now.hour * 60 + now.minute;
+    return (minuteOfDay >= 9 * 60 + 30 && minuteOfDay < 11 * 60 + 30) ||
+        (minuteOfDay >= 13 * 60 && minuteOfDay < 15 * 60);
+  }
 
   static String _today() {
     final n = DateTime.now();
@@ -24,11 +31,11 @@ class CollectorService {
   }
 
   /// ensureRealtime：确保云端有新鲜实时快照，否则本机抓取并上传。
-  Future<void> ensureRealtime() async {
-    if (!_isTradingDay(DateTime.now())) return;
+  Future<void> ensureRealtime({Duration maxAge = const Duration(minutes: 10)}) async {
+    if (!_isTradingSession(DateTime.now())) return;
     final status = await _api.status();
     final at = status['realtimeAt'] as String?;
-    final fresh = at != null && DateTime.now().difference(DateTime.parse(at)).inMinutes < 10;
+    final fresh = at != null && DateTime.now().difference(DateTime.parse(at)) < maxAge;
     if (fresh) return;
 
     final indices = await _source.fetchIndices();
@@ -42,12 +49,14 @@ class CollectorService {
   }
 
   /// ensureQuotes：确保自选股报价新鲜。
-  Future<void> ensureQuotes(List<String> codes) async {
+  Future<void> ensureQuotes(List<String> codes, {bool force = false}) async {
     if (codes.isEmpty) return;
-    final status = await _api.status();
-    final at = status['quotesAt'] as String?;
-    final fresh = at != null && DateTime.now().difference(DateTime.parse(at)).inMinutes < 10;
-    if (fresh) return;
+    if (!force) {
+      final status = await _api.status();
+      final at = status['quotesAt'] as String?;
+      final fresh = at != null && DateTime.now().difference(DateTime.parse(at)).inMinutes < 10;
+      if (fresh) return;
+    }
 
     final stocks = await _source.fetchQuotes(codes);
     if (stocks.isEmpty) return;
