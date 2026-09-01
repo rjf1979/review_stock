@@ -7,7 +7,25 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hangqing-telemetry-serv
 process.env.DATA_DIR = directory;
 process.env.TELEMETRY_ADMIN_KEY = 'test-admin-key';
 
-const { server, summary } = require('./server');
+// 行情云 API mock 上游：先占一个空闲端口，再让 server.js 以它为 MARKET_API_ORIGIN 加载
+const mockMarket = require('http').createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ upstreamPath: req.url, version: '0.3.8' }));
+});
+
+const listen = (srv, port) => new Promise(resolve => srv.listen(port, '127.0.0.1', resolve));
+
+let server;
+let summary;
+
+async function prepareUpstream() {
+  await listen(mockMarket, 0);
+  const marketPort = mockMarket.address().port;
+  await new Promise(resolve => mockMarket.close(resolve));
+  process.env.MARKET_API_ORIGIN = `http://127.0.0.1:${marketPort}`;
+  ({ server, summary } = require('./server'));
+  await listen(mockMarket, marketPort);
+}
 
 function request(port, method, pathname, { body, authorization, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -60,7 +78,8 @@ const validStartup = { ...validEvent, eventType: 'startup', payload: {} };
 const validClose = { ...validEvent, eventType: 'close', payload: {} };
 
 async function main() {
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await prepareUpstream();
+  await listen(server, 0);
   const port = server.address().port;
 
   try {
@@ -130,8 +149,28 @@ async function main() {
 
     const afterLogout = await request(port, 'GET', '/api/telemetry/summary', { headers: { Cookie: cookie } });
     assert.strictEqual(afterLogout.status, 401);
+
+    // 行情同步反代：匿名/错误密钥一律 401，登录后透传上游
+    const marketUnauthorized = await request(port, 'GET', '/api/market/status');
+    assert.strictEqual(marketUnauthorized.status, 401);
+
+    const marketWrongKey = await request(port, 'GET', '/api/market/status', { authorization: 'Bearer wrong' });
+    assert.strictEqual(marketWrongKey.status, 401);
+
+    const marketPost = await request(port, 'POST', '/api/market/status', { authorization: 'Bearer test-admin-key', body: '{}' });
+    assert.strictEqual(marketPost.status, 405);
+
+    const marketProxied = await request(port, 'GET', '/api/market/status', { authorization: 'Bearer test-admin-key' });
+    assert.strictEqual(marketProxied.status, 200);
+    assert.strictEqual(marketProxied.body.upstreamPath, '/api/status');
+    assert.strictEqual(marketProxied.body.version, '0.3.8');
+
+    const marketRealtime = await request(port, 'GET', '/api/market/realtime', { authorization: 'Bearer test-admin-key' });
+    assert.strictEqual(marketRealtime.status, 200);
+    assert.strictEqual(marketRealtime.body.upstreamPath, '/api/realtime');
   } finally {
     await new Promise(resolve => server.close(resolve));
+    await new Promise(resolve => mockMarket.close(resolve));
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }

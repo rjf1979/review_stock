@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const path = require('path');
 
 const PORT = Number(process.env.PORT || 3101);
@@ -9,6 +10,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const EVENTS_FILE = path.join(DATA_DIR, 'events.ndjson');
 const ADMIN_KEY = process.env.TELEMETRY_ADMIN_KEY || '';
+const MARKET_API_ORIGIN = process.env.MARKET_API_ORIGIN || 'https://api.dailystock.askcode.cn';
 
 const MAX_BODY_BYTES = 512 * 1024;
 const MAX_EVENTS_PER_REQUEST = 250;
@@ -197,6 +199,25 @@ function adminPage() {
   return fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf8');
 }
 
+// 行情云 API 只读反代：仅在后台登录态下可用，匿名请求一律 401。
+function proxyMarketApi(res, url) {
+  const target = new URL(url.pathname.replace(/^\/api\/market/, '/api') + url.search, MARKET_API_ORIGIN);
+  const transport = target.protocol === 'http:' ? http : https;
+  const upstream = transport.request(target, {
+    method: 'GET',
+    headers: { accept: 'application/json', 'user-agent': 'dailystock-admin/1.0' },
+    timeout: 15000,
+  }, up => {
+    res.writeHead(up.statusCode || 502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    up.pipe(res);
+  });
+  upstream.on('timeout', () => upstream.destroy(new Error('行情数据上游超时')));
+  upstream.on('error', () => {
+    if (!res.headersSent) send(res, 502, { error: '行情数据服务暂时不可用' });
+  });
+  upstream.end();
+}
+
 function resolveClientIp(req) {
   const realIp = String(req.headers['x-real-ip'] || '').trim();
   if (realIp) return realIp.slice(0, 64);
@@ -259,6 +280,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { errors: recentErrors.slice(-limit).reverse() });
     }
 
+    if (url.pathname.startsWith('/api/market/')) {
+      if (req.method !== 'GET') return send(res, 405, { error: 'Method Not Allowed' });
+      if (!requireAdmin(res, req)) return;
+      return proxyMarketApi(res, url);
+    }
+
     return send(res, 404, { error: 'Not found' });
   } catch (error) {
     return send(res, 500, { error: String(error?.message || '服务错误') });
@@ -269,4 +296,4 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`股市脉搏遥测服务运行于 http://${HOST}:${PORT}`));
 }
 
-module.exports = { server, summary, validateEvent, requireAdmin, adminPage, resolveClientIp, validSession };
+module.exports = { server, summary, validateEvent, requireAdmin, adminPage, resolveClientIp, validSession, proxyMarketApi, MARKET_API_ORIGIN };
