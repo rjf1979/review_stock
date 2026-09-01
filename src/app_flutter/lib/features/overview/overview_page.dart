@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors.dart';
 import '../../core/format.dart';
+import '../../core/status_views.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 
@@ -15,7 +17,10 @@ class OverviewPage extends ConsumerWidget {
       onRefresh: () async => ref.invalidate(realtimeProvider),
       child: realtime.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ListView(children: [const SizedBox(height: 120), Center(child: Text('加载失败：$e'))]),
+        error: (e, _) => RefreshableErrorView(
+          message: friendlyErrorMessage(e),
+          onRetry: () => ref.invalidate(realtimeProvider),
+        ),
         data: (r) => _body(context, r),
       ),
     );
@@ -34,8 +39,11 @@ class OverviewPage extends ConsumerWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('两市成交额', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                Text(fmtWan(r.breadth.amount), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const Text('两市成交额',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                Text(fmtWan(r.breadth.amount),
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -56,12 +64,23 @@ class OverviewPage extends ConsumerWidget {
               child: Row(
                 children: [
                   Expanded(flex: 1, child: Text(i.name)),
-                  Expanded(flex: 1, child: Text(fmtNum(i.price), textAlign: TextAlign.right,
-                      style: TextStyle(color: pctColor(context,i.changePct)))),
-                  Expanded(flex: 1, child: Text(pctText(i.changePct), textAlign: TextAlign.right,
-                      style: TextStyle(color: pctColor(context,i.changePct)))),
-                  Expanded(flex: 1, child: Text(fmtWan(i.amount), textAlign: TextAlign.right,
-                      style: const TextStyle(color: Colors.grey))),
+                  Expanded(
+                      flex: 1,
+                      child: Text(fmtNum(i.price),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                              color: pctColor(context, i.changePct)))),
+                  Expanded(
+                      flex: 1,
+                      child: Text(pctText(i.changePct),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                              color: pctColor(context, i.changePct)))),
+                  Expanded(
+                      flex: 1,
+                      child: Text(fmtWan(i.amount),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(color: Colors.grey))),
                 ],
               ),
             )),
@@ -74,17 +93,34 @@ class OverviewPage extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          Expanded(flex: 1, child: Text(a, style: const TextStyle(fontSize: 12, color: Colors.grey))),
-          Expanded(flex: 1, child: Text(b, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.right)),
-          Expanded(flex: 1, child: Text(c, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.right)),
-          Expanded(flex: 1, child: Text(d, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.right)),
+          Expanded(
+              flex: 1,
+              child: Text(a,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey))),
+          Expanded(
+              flex: 1,
+              child: Text(b,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.right)),
+          Expanded(
+              flex: 1,
+              child: Text(c,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.right)),
+          Expanded(
+              flex: 1,
+              child: Text(d,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.right)),
         ],
       ),
     );
   }
 
   Widget _sectors(BuildContext context, List<Sector> list) {
-    if (list.isEmpty) return const Text('暂无板块数据', style: TextStyle(color: Colors.grey));
+    if (list.isEmpty) {
+      return const Text('暂无板块数据', style: TextStyle(color: Colors.grey));
+    }
     return Column(
       children: list
           .take(8)
@@ -94,10 +130,18 @@ class OverviewPage extends ConsumerWidget {
                   children: [
                     Expanded(flex: 1, child: Text(s.name)),
                     const SizedBox(width: 8),
-                    Expanded(flex: 1, child: Text(fmtWan(s.mainNet), textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                    SizedBox(width: 70, child: Text(pctText(s.changePct), textAlign: TextAlign.right,
-                        style: TextStyle(color: pctColor(context,s.changePct)))),
+                    Expanded(
+                        flex: 1,
+                        child: Text(fmtWan(s.mainNet),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey))),
+                    SizedBox(
+                        width: 70,
+                        child: Text(pctText(s.changePct),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: pctColor(context, s.changePct)))),
                   ],
                 ),
               ))

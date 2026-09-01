@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors.dart';
 import '../../core/format.dart';
+import '../../core/status_views.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
@@ -40,7 +42,8 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
     _intervalSeconds = seconds;
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(Duration(seconds: seconds), (_) {
-      final isResumed = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      final isResumed =
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
       if (mounted && isResumed) ref.invalidate(realtimeProvider);
     });
   }
@@ -70,8 +73,9 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
       onRefresh: () async => ref.invalidate(realtimeProvider),
       child: realtime.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ListView(
-          children: [const SizedBox(height: 120), Center(child: Text('加载失败：$e'))],
+        error: (e, _) => RefreshableErrorView(
+          message: friendlyErrorMessage(e),
+          onRetry: () => ref.invalidate(realtimeProvider),
         ),
         data: (r) => _body(context, r),
       ),
@@ -83,17 +87,16 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
     return ListView(
       children: [
         _indexStrip(r.indices),
-        _card(theme, '全市场',
-            child: _breadth(r.breadth)),
+        _card(theme, '全市场', child: _breadth(r.breadth)),
         if (r.limitUpStocks.isNotEmpty)
           _card(theme, '涨停梯队', child: _ladder(r.limitUpStocks)),
         if (r.sectors.isNotEmpty)
           _card(theme, '领涨板块', child: _sectors(r.sectors)),
-        if (r.pankou.isNotEmpty)
-          _card(theme, '盘口异动', child: _pankou(r.pankou)),
+        if (r.pankou.isNotEmpty) _card(theme, '盘口异动', child: _pankou(r.pankou)),
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Text('数据来自公开行情源，仅供参考，不构成投资建议。红涨绿跌。前台每 $_intervalSeconds 秒自动刷新。',
+          child: Text(
+              '数据来自公开行情源，仅供参考，不构成投资建议。红涨绿跌。前台每 $_intervalSeconds 秒自动刷新。',
               style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
         ),
       ],
@@ -113,12 +116,19 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(i.name, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(i.name,
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                       const SizedBox(height: 4),
                       Text(fmtNum(i.price),
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: pctColor(context,i.changePct))),
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: pctColor(context, i.changePct))),
                       Text(pctText(i.changePct),
-                          style: TextStyle(fontSize: 12, color: pctColor(context,i.changePct))),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: pctColor(context, i.changePct))),
                     ],
                   ),
                 ))
@@ -133,7 +143,8 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
         _bCell('上涨', AppPalette.of(context).up, fmtNum(b.up, digits: 0)),
         _bCell('下跌', AppPalette.of(context).down, fmtNum(b.down, digits: 0)),
         _bCell('涨停', AppPalette.of(context).up, fmtNum(b.limitUp, digits: 0)),
-        _bCell('跌停', AppPalette.of(context).down, fmtNum(b.limitDown, digits: 0)),
+        _bCell(
+            '跌停', AppPalette.of(context).down, fmtNum(b.limitDown, digits: 0)),
         _bCell('成交额', AppPalette.of(context).ink, fmtWan(b.amount)),
       ],
     );
@@ -143,7 +154,9 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
     return Expanded(
       child: Column(
         children: [
-          Text(text, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
+          Text(text,
+              style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w700, color: color)),
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ],
@@ -160,13 +173,20 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
                   children: [
                     Expanded(child: Text(s.name)),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                          color: AppPalette.of(context).up.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                      child: Text('${s.streak ?? 1}板', style: TextStyle(fontSize: 12, color: AppPalette.of(context).up)),
+                          color:
+                              AppPalette.of(context).up.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8)),
+                      child: Text('${s.streak ?? 1}板',
+                          style: TextStyle(
+                              fontSize: 12, color: AppPalette.of(context).up)),
                     ),
                     const SizedBox(width: 12),
-                    Text(pctText(s.changePct), style: TextStyle(color: pctColor(context,s.changePct))),
+                    Text(pctText(s.changePct),
+                        style:
+                            TextStyle(color: pctColor(context, s.changePct))),
                   ],
                 ),
               ))
@@ -183,10 +203,16 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
                 child: Row(
                   children: [
                     Expanded(child: Text(s.name)),
-                    Text(fmtWan(s.mainNet), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(fmtWan(s.mainNet),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey)),
                     const SizedBox(width: 12),
-                    SizedBox(width: 70, child: Text(pctText(s.changePct), textAlign: TextAlign.right,
-                        style: TextStyle(color: pctColor(context,s.changePct)))),
+                    SizedBox(
+                        width: 70,
+                        child: Text(pctText(s.changePct),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: pctColor(context, s.changePct)))),
                   ],
                 ),
               ))
@@ -203,8 +229,14 @@ class _RealtimePageState extends ConsumerState<RealtimePage>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(width: 52, child: Text(fmtTime(e.time), style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                    Expanded(child: Text(e.text, style: const TextStyle(fontSize: 13))),
+                    SizedBox(
+                        width: 52,
+                        child: Text(fmtTime(e.time),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey))),
+                    Expanded(
+                        child:
+                            Text(e.text, style: const TextStyle(fontSize: 13))),
                   ],
                 ),
               ))
