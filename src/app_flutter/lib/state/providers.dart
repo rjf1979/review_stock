@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,25 +14,50 @@ import '../services/collector_service.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   return Dio(BaseOptions(
-    baseUrl: const String.fromEnvironment('MAPI_URL', defaultValue: 'https://api.dailystock.askcode.cn'),
+    baseUrl: const String.fromEnvironment('MAPI_URL',
+        defaultValue: 'https://api.dailystock.askcode.cn'),
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 20),
   ));
 });
 
-final secureStorageProvider = Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
-final authProvider = Provider<DeviceAuth>((ref) => DeviceAuth(ref.watch(dioProvider), ref.watch(secureStorageProvider)));
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient(ref.watch(dioProvider), ref.watch(authProvider)));
-final marketApiProvider = Provider<MarketApi>((ref) => MarketApi(ref.watch(apiClientProvider)));
-final marketSourceProvider = Provider<MarketSource>((ref) => MarketSource(ref.watch(dioProvider)));
-final collectorProvider = Provider<CollectorService>((ref) =>
-    CollectorService(ref.watch(marketApiProvider), ref.watch(marketSourceProvider)));
+final secureStorageProvider =
+    Provider<FlutterSecureStorage>((ref) => const FlutterSecureStorage());
+final authProvider = Provider<DeviceAuth>((ref) =>
+    DeviceAuth(ref.watch(dioProvider), ref.watch(secureStorageProvider)));
+final apiClientProvider = Provider<ApiClient>(
+    (ref) => ApiClient(ref.watch(dioProvider), ref.watch(authProvider)));
+final marketApiProvider =
+    Provider<MarketApi>((ref) => MarketApi(ref.watch(apiClientProvider)));
+final marketSourceProvider =
+    Provider<MarketSource>((ref) => MarketSource(ref.watch(dioProvider)));
+final collectorProvider = Provider<CollectorService>((ref) => CollectorService(
+    ref.watch(marketApiProvider), ref.watch(marketSourceProvider)));
 
 /// 实时页前台自动刷新频率，单位秒；本机持久化。
 final refreshIntervalProvider =
     StateNotifierProvider<RefreshIntervalController, int>((ref) {
   return RefreshIntervalController(ref.watch(secureStorageProvider));
 });
+
+/// 本机小型键值存储抽象，便于状态控制器与界面测试解耦。
+abstract class KeyValueStore {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+}
+
+class FlutterSecureKeyValueStore implements KeyValueStore {
+  FlutterSecureKeyValueStore(this._storage);
+
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<String?> read(String key) => _storage.read(key: key);
+
+  @override
+  Future<void> write(String key, String value) =>
+      _storage.write(key: key, value: value);
+}
 
 class RefreshIntervalController extends StateNotifier<int> {
   RefreshIntervalController(this._storage) : super(60) {
@@ -78,7 +105,12 @@ final realtimeProvider = FutureProvider<RealtimeSnapshot>((ref) async {
 
 /// 复盘列表
 final reviewsProvider = FutureProvider<List<ReviewEntry>>((ref) async {
-  return ref.watch(marketApiProvider).reviews();
+  try {
+    return await ref.watch(marketApiProvider).reviews();
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 404) return const [];
+    rethrow;
+  }
 });
 
 /// 最新复盘（无 date 参数时回退到列表首日）
@@ -86,16 +118,29 @@ final reviewProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   final api = ref.watch(marketApiProvider);
   try {
     return await api.review(_today());
-  } on DioException {
-    final entries = await api.reviews();
-    if (entries.isEmpty) return <String, dynamic>{};
-    return api.review(entries.first.date);
+  } on DioException catch (e) {
+    if (e.response?.statusCode != 404) rethrow;
+  }
+
+  final entries = await api.reviews();
+  if (entries.isEmpty) return const <String, dynamic>{};
+  try {
+    return await api.review(entries.first.date);
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 404) return const <String, dynamic>{};
+    rethrow;
   }
 });
 
 /// 指定日期复盘（历史进入）
-final reviewByDateProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, date) async {
-  return ref.watch(marketApiProvider).review(date);
+final reviewByDateProvider =
+    FutureProvider.family<Map<String, dynamic>, String>((ref, date) async {
+  try {
+    return await ref.watch(marketApiProvider).review(date);
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 404) return const <String, dynamic>{};
+    rethrow;
+  }
 });
 
 /// 龙虎榜（默认今天）
@@ -118,8 +163,58 @@ final statusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return ref.watch(marketApiProvider).status();
 });
 
-/// 自选股代码（本地存储）
-final watchlistProvider = StateProvider<List<String>>((ref) => const []);
+/// 自选股代码（本机持久化）
+final watchlistProvider =
+    StateNotifierProvider<WatchlistController, List<String>>((ref) {
+  return WatchlistController(ref.watch(watchlistStorageProvider));
+});
+
+final watchlistStorageProvider = Provider<KeyValueStore>((ref) {
+  return FlutterSecureKeyValueStore(ref.watch(secureStorageProvider));
+});
+
+class WatchlistController extends StateNotifier<List<String>> {
+  WatchlistController(this._storage) : super(const []) {
+    _load();
+  }
+
+  final KeyValueStore _storage;
+  static const _storageKey = 'watchlist_codes';
+
+  Future<void> _load() async {
+    try {
+      final raw = await _storage.read(_storageKey);
+      final decoded = raw == null ? null : jsonDecode(raw);
+      if (decoded is List) {
+        state = decoded
+            .whereType<String>()
+            .where((code) => code.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      // 损坏的本地数据按空自选处理，避免阻塞报价页。
+    }
+  }
+
+  Future<void> add(String code) async {
+    if (state.contains(code)) return;
+    await _replace([...state, code]);
+  }
+
+  Future<void> remove(String code) async {
+    await _replace(state.where((item) => item != code).toList());
+  }
+
+  Future<void> _replace(List<String> next) async {
+    final previous = state;
+    state = next;
+    try {
+      await _storage.write(_storageKey, jsonEncode(next));
+    } catch (_) {
+      state = previous;
+    }
+  }
+}
 
 /// 自选股报价
 final stocksProvider = FutureProvider<List<Stock>>((ref) async {
@@ -134,7 +229,9 @@ final stocksProvider = FutureProvider<List<Stock>>((ref) async {
     return list.whereType<Map<String, dynamic>>().map(Stock.fromJson).toList();
   }
 
-  await collector.ensureQuotes(codes).catchError((Object _) => <String, dynamic>{});
+  await collector
+      .ensureQuotes(codes)
+      .catchError((Object _) => <String, dynamic>{});
   try {
     final stocks = await readStocks();
     if (stocks.length >= codes.length) return stocks;

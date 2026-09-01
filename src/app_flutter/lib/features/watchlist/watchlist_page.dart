@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors.dart';
+import '../../core/status_views.dart';
 import '../../core/format.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
@@ -29,20 +31,19 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
     return null;
   }
 
-  void _add() {
+  Future<void> _add() async {
     final code = normalizeCode(_codeCtrl.text);
     if (code == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('代码不合法')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('代码不合法')));
       return;
     }
-    final list = ref.read(watchlistProvider);
-    if (!list.contains(code)) ref.read(watchlistProvider.notifier).state = [...list, code];
+    await ref.read(watchlistProvider.notifier).add(code);
     _codeCtrl.clear();
   }
 
   void _remove(String code) {
-    final list = ref.read(watchlistProvider).where((c) => c != code).toList();
-    ref.read(watchlistProvider.notifier).state = list;
+    ref.read(watchlistProvider.notifier).remove(code);
   }
 
   @override
@@ -75,7 +76,10 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
             onRefresh: () async => ref.invalidate(stocksProvider),
             child: stocks.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('加载失败：$e')),
+              error: (e, _) => RefreshableErrorView(
+                message: friendlyErrorMessage(e),
+                onRetry: () => ref.invalidate(stocksProvider),
+              ),
               data: (list) => list.isEmpty ? _empty() : _list(list),
             ),
           ),
@@ -101,10 +105,12 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
         final q = list[i];
         return ListTile(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => KlinePage(code: q.code, name: q.name)),
+            MaterialPageRoute(
+                builder: (_) => KlinePage(code: q.code, name: q.name)),
           ),
           title: Text(q.name),
-          subtitle: Text(q.code, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          subtitle: Text(q.code,
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -112,8 +118,13 @@ class _WatchlistPageState extends ConsumerState<WatchlistPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(fmtNum(q.price), style: TextStyle(color: pctColor(context,q.changePct), fontWeight: FontWeight.w600)),
-                  Text(pctText(q.changePct), style: TextStyle(fontSize: 12, color: pctColor(context,q.changePct))),
+                  Text(fmtNum(q.price),
+                      style: TextStyle(
+                          color: pctColor(context, q.changePct),
+                          fontWeight: FontWeight.w600)),
+                  Text(pctText(q.changePct),
+                      style: TextStyle(
+                          fontSize: 12, color: pctColor(context, q.changePct))),
                 ],
               ),
               IconButton(

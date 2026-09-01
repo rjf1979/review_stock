@@ -329,9 +329,12 @@ async function handleRead(req, res, url) {
         const obj = await readObjectByKey(s.object_key);
         if (!obj) continue;
         const p = obj.data;
+        const temperature = p?.temperature;
         entries.push({
           date: p?.date || s.slot_key.split(':')[1] || null,
-          temperature: p?.temperature ?? p?.temperature?.score ?? null,
+          temperature: typeof temperature === 'number'
+            ? temperature
+            : temperature?.score ?? null,
           reportMode: p?.meta?.report_mode || 'snapshot',
           qualityStatus: p?.quality?.status || null,
           asOf: p?.meta?.as_of || p?.generatedAt || null,
@@ -396,7 +399,9 @@ async function handleRead(req, res, url) {
           const p = readJson(path.join(dir, f));
           return {
             date: p?.date || f.replace('.json', ''),
-            temperature: p?.temperature ?? p?.temperature?.score ?? null,
+            temperature: typeof p?.temperature === 'number'
+              ? p.temperature
+              : p?.temperature?.score ?? null,
             reportMode: p?.meta?.report_mode || 'snapshot',
             qualityStatus: p?.quality?.status || null,
             asOf: p?.meta?.as_of || p?.generatedAt || null,

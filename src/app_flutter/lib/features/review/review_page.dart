@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../core/status_views.dart';
 import '../../state/providers.dart';
 
 /// 每日复盘：温度 + 宽窄指标 + 复盘正文。
@@ -15,11 +17,13 @@ class ReviewPage extends ConsumerWidget {
       onRefresh: () async => ref.invalidate(reviewProvider),
       child: review.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ListView(children: [
-          const SizedBox(height: 120),
-          Center(child: Text('加载失败：$e')),
-        ]),
-        data: (r) => _body(context, r),
+        error: (e, _) => RefreshableErrorView(
+          message: friendlyErrorMessage(e),
+          onRetry: () => ref.invalidate(reviewProvider),
+        ),
+        data: (r) => r.isEmpty
+            ? const Center(child: Text('暂无复盘数据，等待 PC 端生成后上传'))
+            : _body(context, r),
       ),
     );
   }
@@ -52,17 +56,28 @@ class ReviewPage extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(date, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                        Text(date,
+                            style: const TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 6),
                         Text(mode == 'close' ? '收盘复盘' : '午间快照',
-                            style: TextStyle(fontSize: 12, color: mode == 'close' ? AppPalette.of(context).up : Colors.grey)),
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: mode == 'close'
+                                    ? AppPalette.of(context).up
+                                    : Colors.grey)),
                       ],
                     ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text("${temp ?? '--'}°", style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: AppPalette.of(context).up)),
-                        const Text('市场温度', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        Text("${temp ?? '--'}°",
+                            style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                color: AppPalette.of(context).up)),
+                        const Text('市场温度',
+                            style: TextStyle(fontSize: 11, color: Colors.grey)),
                       ],
                     ),
                   ],
@@ -92,7 +107,10 @@ class ReviewPage extends ConsumerWidget {
                     ? const Text('暂无正文，敬请等待 PC 端生成复盘后上传。')
                     : Container(
                         constraints: const BoxConstraints(maxHeight: 500),
-                        child: SingleChildScrollView(child: Text(markdown, style: const TextStyle(height: 1.7, fontSize: 13))),
+                        child: SingleChildScrollView(
+                            child: Text(markdown,
+                                style: const TextStyle(
+                                    height: 1.7, fontSize: 13))),
                       ),
               ],
             ),
@@ -117,12 +135,17 @@ class ReviewPage extends ConsumerWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 3),
         padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(color: AppPalette.of(context).up.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+            color: AppPalette.of(context).up.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(8)),
         child: Column(
           children: [
-            Text(fmtNum(value, digits: 0), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
+            Text(fmtNum(value, digits: 0),
+                style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700, color: color)),
             const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(label,
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
       ),

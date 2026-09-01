@@ -1,7 +1,8 @@
 // 轻量数据模型：只建模页面直接展示的字段，其余字段以 raw Map 透传。
 
 class Stock {
-  const Stock({required this.code, required this.name, this.price, this.changePct});
+  const Stock(
+      {required this.code, required this.name, this.price, this.changePct});
   final String code;
   final String name;
   final double? price;
@@ -42,7 +43,15 @@ class IndexQuote {
 }
 
 class Breadth {
-  const Breadth({this.up, this.down, this.flat, this.limitUp, this.limitDown, this.amount, this.sampleCount, this.reportedCount});
+  const Breadth(
+      {this.up,
+      this.down,
+      this.flat,
+      this.limitUp,
+      this.limitDown,
+      this.amount,
+      this.sampleCount,
+      this.reportedCount});
   final int? up;
   final int? down;
   final int? flat;
@@ -81,7 +90,12 @@ class Sector {
 }
 
 class LimitUpStock {
-  const LimitUpStock({required this.name, this.code = '', this.changePct, this.streak, this.sector});
+  const LimitUpStock(
+      {required this.name,
+      this.code = '',
+      this.changePct,
+      this.streak,
+      this.sector});
   final String code;
   final String name;
   final double? changePct;
@@ -104,7 +118,9 @@ class PankouEvent {
 
   factory PankouEvent.fromJson(Map<String, dynamic> j) => PankouEvent(
         time: '${j['time'] ?? j['t'] ?? ''}',
-        text: '${j['event'] ?? j['title'] ?? ''} ${j['name'] ?? j['code'] ?? ''}'.trim(),
+        text:
+            '${j['event'] ?? j['title'] ?? ''} ${j['name'] ?? j['code'] ?? ''}'
+                .trim(),
       );
 }
 
@@ -147,11 +163,23 @@ class RealtimeSnapshot {
       }
     }
     return RealtimeSnapshot(
-      indices: list.whereType<Map<String, dynamic>>().map(IndexQuote.fromJson).toList(),
+      indices: list
+          .whereType<Map<String, dynamic>>()
+          .map(IndexQuote.fromJson)
+          .toList(),
       breadth: Breadth.fromJson(j['breadth'] as Map<String, dynamic>?),
-      sectors: sectors.whereType<Map<String, dynamic>>().map(Sector.fromJson).toList(),
-      limitUpStocks: limitUp.whereType<Map<String, dynamic>>().map(LimitUpStock.fromJson).toList(),
-      pankou: pankou.whereType<Map<String, dynamic>>().map(PankouEvent.fromJson).toList(),
+      sectors: sectors
+          .whereType<Map<String, dynamic>>()
+          .map(Sector.fromJson)
+          .toList(),
+      limitUpStocks: limitUp
+          .whereType<Map<String, dynamic>>()
+          .map(LimitUpStock.fromJson)
+          .toList(),
+      pankou: pankou
+          .whereType<Map<String, dynamic>>()
+          .map(PankouEvent.fromJson)
+          .toList(),
       updatedAt: j['updatedAt'] as String?,
       status: j['status'] as String?,
       raw: j,
@@ -160,7 +188,12 @@ class RealtimeSnapshot {
 }
 
 class ReviewEntry {
-  const ReviewEntry({required this.date, this.temperature, this.reportMode, this.qualityStatus, this.updatedAt});
+  const ReviewEntry(
+      {required this.date,
+      this.temperature,
+      this.reportMode,
+      this.qualityStatus,
+      this.updatedAt});
   final String date;
   final num? temperature;
   final String? reportMode;
@@ -169,11 +202,17 @@ class ReviewEntry {
 
   factory ReviewEntry.fromJson(Map<String, dynamic> j) => ReviewEntry(
         date: '${j['date'] ?? ''}',
-        temperature: j['temperature'] as num?,
+        temperature: _temperatureScore(j['temperature']),
         reportMode: j['reportMode'] as String?,
         qualityStatus: j['qualityStatus'] as String?,
         updatedAt: j['updatedAt'] as String?,
       );
+
+  static num? _temperatureScore(dynamic value) {
+    if (value is num) return value;
+    if (value is Map<String, dynamic>) return value['score'] as num?;
+    return null;
+  }
 }
 
 class DragonSeat {
@@ -232,8 +271,14 @@ class DragonItem {
       sell: (j['sell'] as num?)?.toDouble(),
       netBuy: (j['netBuy'] as num?)?.toDouble(),
       reason: '${j['reason'] ?? ''}',
-      buyers: buyers.whereType<Map<String, dynamic>>().map(DragonSeat.fromJson).toList(),
-      sellers: sellers.whereType<Map<String, dynamic>>().map(DragonSeat.fromJson).toList(),
+      buyers: buyers
+          .whereType<Map<String, dynamic>>()
+          .map(DragonSeat.fromJson)
+          .toList(),
+      sellers: sellers
+          .whereType<Map<String, dynamic>>()
+          .map(DragonSeat.fromJson)
+          .toList(),
     );
   }
 }

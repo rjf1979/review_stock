@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors.dart';
+import '../../core/status_views.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 
@@ -14,7 +16,10 @@ class HistoryPage extends ConsumerWidget {
       onRefresh: () async => ref.invalidate(reviewsProvider),
       child: entries.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ListView(children: [const SizedBox(height: 120), Center(child: Text('加载失败：$e'))]),
+        error: (e, _) => RefreshableErrorView(
+          message: friendlyErrorMessage(e),
+          onRetry: () => ref.invalidate(reviewsProvider),
+        ),
         data: (list) => list.isEmpty
             ? const Center(child: Text('暂无历史复盘报告'))
             : ListView.separated(
@@ -29,9 +34,11 @@ class HistoryPage extends ConsumerWidget {
   Widget _item(BuildContext context, ReviewEntry e) {
     return ListTile(
       title: Text(e.date),
-      subtitle: Text(e.reportMode == 'close' ? '收盘复盘' : '午间快照', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      subtitle: Text(e.reportMode == 'close' ? '收盘复盘' : '午间快照',
+          style: const TextStyle(fontSize: 12, color: Colors.grey)),
       trailing: e.temperature != null
-          ? Text('${e.temperature}°', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))
+          ? Text('${e.temperature}°',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))
           : null,
       onTap: () async {
         // 点开某个历史报告 → 复用复盘详情，临时按日期加载。
@@ -55,8 +62,12 @@ class _ReviewDetail extends ConsumerWidget {
       appBar: AppBar(title: Text(date)),
       body: detail.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('加载失败：$e')),
-        data: (r) => _DetailBody(r),
+        error: (e, _) => RefreshableErrorView(
+          message: friendlyErrorMessage(e),
+          onRetry: () => ref.invalidate(reviewByDateProvider(date)),
+        ),
+        data: (r) =>
+            r.isEmpty ? const Center(child: Text('该日期暂无复盘数据')) : _DetailBody(r),
       ),
     );
   }
@@ -75,7 +86,8 @@ class _DetailBody extends StatelessWidget {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(markdown.isEmpty ? '暂无正文' : markdown, style: const TextStyle(height: 1.7, fontSize: 13)),
+            child: Text(markdown.isEmpty ? '暂无正文' : markdown,
+                style: const TextStyle(height: 1.7, fontSize: 13)),
           ),
         ),
         const SizedBox(height: 8),
