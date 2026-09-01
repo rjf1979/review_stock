@@ -1,0 +1,74 @@
+:root {
+  --bg: #f7f7f2;
+  --surface: #ffffff;
+  --paper: #f1f2ec;
+  --ink: #191a17;
+  --muted: #5f665f;
+  --line: #d9ddd3;
+  --accent: #cc3327;
+  --accent-strong: #a92820;
+  --success: #197348;
+  --warning: #8a5300;
+  --danger: #a92820;
+  --radius: 14px;
+  --radius-small: 9px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --shadow: 0 10px 28px rgb(25 26 23 / 8%);
+  --duration: 180ms;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body {
+  color: var(--ink);
+  background: var(--bg);
+  font: 14px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+button { font: inherit; min-height: 44px; border-radius: var(--radius-small); }
+button:focus-visible,
+.progress:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.primary, .secondary { cursor: pointer; transition: background var(--duration) ease, border-color var(--duration) ease, color var(--duration) ease; }
+.primary { border: 0; padding: 0 18px; background: var(--accent); color: #fff; font-weight: 700; }
+.primary:hover:not(:disabled) { background: var(--accent-strong); }
+.primary:disabled { background: #c9c9c2; cursor: not-allowed; }
+.secondary { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 14px; font-weight: 650; }
+.secondary:hover { border-color: var(--accent); color: var(--accent); }
+.shell { display: flex; flex-direction: column; gap: var(--space-4); height: 100%; padding: var(--space-5); overflow: auto; }
+.hero { display: grid; gap: var(--space-1); }
+.kicker, .summary, .legal { color: var(--muted); }
+.kicker { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 28px; line-height: 1.2; }
+h2 { font-size: 16px; }
+.summary { max-width: 38ch; }
+.card { display: grid; gap: var(--space-3); padding: var(--space-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.badge { color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 700; }
+.badge.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 30%, var(--line)); }
+.check-list, .notes { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.check { display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-small); background: var(--paper); border: 1px solid color-mix(in srgb, var(--line) 75%, transparent); }
+.check b { font-size: 12px; letter-spacing: .02em; }
+.check.ok b { color: var(--success); }
+.check.warn b { color: var(--warning); }
+.check.error b { color: var(--danger); }
+.check span { font-size: 12px; color: var(--muted); }
+.progress-wrap { display: grid; gap: var(--space-2); }
+.progress { width: 100%; height: 10px; overflow: hidden; border-radius: 999px; background: var(--paper); border: 1px solid var(--line); }
+.progress-fill { display: block; width: 0; min-width: 4px; height: 100%; background: var(--accent); transition: width 220ms ease; }
+.progress.indeterminate .progress-fill { width: 38%; animation: slide 1.1s ease-in-out infinite; }
+.progress-meta { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.notes li { color: var(--muted); font-size: 12px; padding-left: 14px; position: relative; }
+.notes li::before { content: ""; position: absolute; left: 0; top: .65em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.status { min-height: 42px; display: flex; align-items: center; padding: var(--space-2) var(--space-3); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); }
+.status.error { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+.status.success { background: color-mix(in srgb, var(--success) 9%, var(--surface)); color: var(--success); }
+.actions { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.legal { font-size: 11px; line-height: 1.5; }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
+}

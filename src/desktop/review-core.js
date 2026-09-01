@@ -3,10 +3,10 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const REQUEST_GAP_MS = 1100; // 东财 2025 起风控加强：所有东财请求串行限流 ≥1s
 
-async function emJson(url) {
+async function emJson(url, timeoutMs = 15000) {
   const response = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', Referer: 'https://quote.eastmoney.com/' },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
@@ -241,7 +241,26 @@ const PANKOU_TYPES = [
   { key: 'openLimitDown', label: '打开跌停', type: '32', tone: 'up', format: 'open' },
 ];
 const pankouCache = new Map();
-const PANKOU_TTL_MS = 5000;
+const lastGoodPankou = new Map();
+const PANKOU_TTL_MS = 8000;
+const PANKOU_TIMEOUT_MS = 8000;
+const PANKOU_RETRY_MS = 600;
+const PANKOU_STALE_TTL_MS = 10 * 60 * 1000;
+const PANKOU_CONCURRENCY = 3;
+
+// 限制并发，避免每 5 秒向东财爆发 8 个并行请求触发限流
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
 
 function formatPankouTime(value) {
   const raw = String(value || '').padStart(6, '0');
@@ -265,21 +284,35 @@ function parsePankouEvent(row, definition) {
 async function fetchPankouCategory(definition) {
   const cached = pankouCache.get(definition.key);
   if (cached && Date.now() - cached.cachedAt < PANKOU_TTL_MS) return cached.value;
-  try {
-    const url = `https://push2ex.eastmoney.com/getAllStockChanges?type=${definition.type}&pageindex=0&pagesize=8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges`;
-    const d = await emJson(url);
-    const rows = Array.isArray(d?.data?.allstock) ? d.data.allstock : [];
-    const value = { key: definition.key, label: definition.label, tone: definition.tone, status: d?.rc === 0 ? 'ready' : 'error', events: rows.map(row => parsePankouEvent(row, definition)).filter(event => event.code && event.name && event.time), capturedAt: new Date().toISOString() };
-    pankouCache.set(definition.key, { cachedAt: Date.now(), value });
-    return value;
-  } catch (error) {
-    console.error(`[实时] ${definition.label}失败：`, error.message);
-    return { key: definition.key, label: definition.label, tone: definition.tone, status: 'error', events: [], capturedAt: new Date().toISOString(), error: error.message };
+  const lastGood = lastGoodPankou.get(definition.key);
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const url = `https://push2ex.eastmoney.com/getAllStockChanges?type=${definition.type}&pageindex=0&pagesize=8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges`;
+      const d = await emJson(url, PANKOU_TIMEOUT_MS);
+      const rows = Array.isArray(d?.data?.allstock) ? d.data.allstock : [];
+      const value = { key: definition.key, label: definition.label, tone: definition.tone, status: d?.rc === 0 ? 'ready' : 'error', events: rows.map(row => parsePankouEvent(row, definition)).filter(event => event.code && event.name && event.time), capturedAt: new Date().toISOString() };
+      pankouCache.set(definition.key, { cachedAt: Date.now(), value });
+      if (value.status === 'ready') lastGoodPankou.set(definition.key, { at: Date.now(), value });
+      return value;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) { await sleep(PANKOU_RETRY_MS); continue; }
+    }
   }
+  if (lastGood && Date.now() - lastGood.at < PANKOU_STALE_TTL_MS) {
+    const stale = { ...lastGood.value, status: 'stale', staleAt: new Date().toISOString() };
+    console.warn(`[实时] ${definition.label}超时（${lastError?.message}），已显示最近一次数据`);
+    return stale;
+  }
+  console.error(`[实时] ${definition.label}失败：`, lastError?.message);
+  return { key: definition.key, label: definition.label, tone: definition.tone, status: 'error', events: [], capturedAt: new Date().toISOString(), error: lastError?.message };
 }
 async function fetchPankouChanges() {
-  const categories = await Promise.all(PANKOU_TYPES.map(fetchPankouCategory));
-  return { status: categories.some(category => category.status === 'ready') ? 'ready' : 'error', categories, capturedAt: categories.map(category => category.capturedAt).filter(Boolean).sort().pop() || new Date().toISOString(), source: '东方财富公开盘口异动' };
+  const categories = await mapLimit(PANKOU_TYPES, PANKOU_CONCURRENCY, fetchPankouCategory);
+  const hasReady = categories.some(category => category.status === 'ready');
+  const hasStale = categories.some(category => category.status === 'stale');
+  return { status: hasReady ? 'ready' : hasStale ? 'stale' : 'error', categories, capturedAt: categories.map(category => category.capturedAt).filter(Boolean).sort().pop() || new Date().toISOString(), source: '东方财富公开盘口异动' };
 }
 
 // ── E 块 · 行业板块强弱（东财 push2delay，f62=主力净流入） ──

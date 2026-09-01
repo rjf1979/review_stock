@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <title>股市脉搏安装助手</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="kicker">统一安装应用</p>
+      <h1>股市脉搏</h1>
+      <p class="summary">自动检查电脑环境、选择匹配架构，并启动官方安装向导。</p>
+    </header>
+
+    <section class="card" aria-labelledby="environment-title">
+      <div class="section-head">
+        <h2 id="environment-title">安装环境</h2>
+        <button id="recheck" class="secondary" type="button">重新检查</button>
+      </div>
+      <ul id="check-list" class="check-list" aria-live="polite"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="download-title">
+      <div class="section-head">
+        <h2 id="download-title">安装包</h2>
+        <span id="version" class="badge">检查中</span>
+      </div>
+      <div id="progress-wrap" class="progress-wrap" hidden>
+        <div id="progress" class="progress" role="progressbar" aria-labelledby="progress-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="progress-fill" class="progress-fill"></span>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-label">准备下载</span>
+          <span id="progress-value">0%</span>
+        </div>
+      </div>
+      <ul id="notes" class="notes"></ul>
+      <p id="status" class="status" aria-live="polite">正在准备环境检查…</p>
+      <div class="actions">
+        <button id="retry" class="primary" type="button" disabled>重试下载</button>
+        <button id="quit" class="secondary" type="button">关闭助手</button>
+      </div>
+      <p class="legal">未签名程序可能触发 Windows SmartScreen 提示；如出现提示，请确认来源后选择“仍要运行”。</p>
+    </section>
+  </main>
+  <script src="./renderer.js"></script>
+</body>
+</html>

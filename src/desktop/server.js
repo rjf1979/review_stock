@@ -10,6 +10,7 @@ const cloudUpload = require('./cloud-upload');
 const PORT = 3100;
 const FRONTEND = path.join(__dirname, 'frontend');
 const CLOUD_THROTTLE_MS = 60 * 1000;
+const PANKOU_WAIT_CAP_MS = 6000; // 盘口单次最长等待，超出即回退最近一次数据，避免拖慢实时聚合
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
@@ -374,6 +375,21 @@ function createHttpServer(storage) {
     return breadthJob;
   }
 
+  // 盘口异动独立取数：与主实时聚合并行，超时/失败时回退最近一次数据，避免阻塞指数/板块/资金
+  async function loadPankou(marketSession, cachedSnapshot) {
+    const key = `pankou:${expectedSnapshotDate(marketSession)}`;
+    const ttl = marketSession.isTrading ? 8 * 1000 : 60 * 1000;
+    const fallback = latestRealtimePayload?.pankou || cachedSnapshot?.pankou || null;
+    try {
+      return await Promise.race([
+        cached(key, ttl, () => review.fetchPankouChanges()),
+        new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('盘口响应等待超时'), { code: 'PANKOU_TIMEOUT' })), PANKOU_WAIT_CAP_MS)),
+      ]);
+    } catch (error) {
+      if (error?.code === 'PANKOU_TIMEOUT') console.warn('[实时] 盘口数据等待超时，回退最近一次数据');
+      return fallback || { status: 'error', categories: [], capturedAt: null, source: '东方财富公开盘口异动' };
+    }
+  }
   return http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
@@ -415,7 +431,7 @@ function createHttpServer(storage) {
           review.fetchConcepts('asc'),
           review.fetchSectorFundFlow(),
           review.fetchSectorOutflow(),
-          review.fetchPankouChanges(),
+          loadPankou(marketSession, cachedSnapshot),
         ]);
         if (!breadthSnapshot || breadthSnapshot.status !== 'ready' || Date.now() - Date.parse(breadthSnapshot.capturedAt || 0) > 60000) startBreadthCollection();
         const breadth = breadthSnapshot || { status: 'collecting', quality: 'pending', capturedAt: null };
@@ -443,7 +459,7 @@ function createHttpServer(storage) {
         };
         latestRealtimePayload = payload;
         if (Date.now() - lastSnapshotAt > 30000) { storage.saveSnapshot(payload); lastSnapshotAt = Date.now(); }
-        cloud.realtime(payload);
+        if (marketSession.isTrading) cloud.realtime(payload);
         return json(res, 200, payload);
       } catch (error) {
         const cached = storage.getSnapshot();

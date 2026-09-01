@@ -1,0 +1,27 @@
+appId: io.zhicha.dailystock.installer
+productName: 股市脉搏安装助手
+executableName: StockPulseInstaller
+copyright: Copyright © 2026
+asar: true
+compression: maximum
+directories:
+  output: release/installer
+files:
+  - installer-app/**/*
+  - updater.js
+  - installer-core.js
+  - package.json
+extraMetadata:
+  main: installer-app/electron-main.js
+win:
+  icon: assets/icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+        - ia32
+portable:
+  artifactName: hangqing-installer-${version}-win-${arch}.exe
+  requestExecutionLevel: user
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

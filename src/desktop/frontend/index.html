@@ -856,7 +856,7 @@
         loadingTip() { const jobs = this.loadingJobs.filter(job => job.view === this.view); const job = jobs[jobs.length - 1]; return job ? job.label : ''; },
         breadthStateLabel() { const state = this.real.breadth?.status; return state === 'ready' ? '全市场样本已校验' : state === 'error' ? '全市场统计暂不可用' : '正在更新全市场样本'; },
         breadthMeta() { return this.real.breadth?.quality === 'verified' ? 'A 股全市场' : '采集完成后更新'; },
-        pankouStatusLabel() { const state = this.real.pankou?.status; return state === 'ready' ? '实时事件' : state === 'error' ? '接口异常' : '盘口更新中'; },
+        pankouStatusLabel() { const state = this.real.pankou?.status; return state === 'ready' ? '实时事件' : state === 'stale' ? '最近数据' : state === 'error' ? '接口异常' : '盘口更新中'; },
         pankouAllEvents() {
           return this.pankouHistory;
         },

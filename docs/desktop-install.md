@@ -4,6 +4,8 @@
 
 正式发布的安装包应内置 Electron、Node 运行时和桌面端取数服务，用户不需要单独安装 Node.js、npm、PostgreSQL 或 SQLite 服务。
 
+优先使用「股市脉搏安装助手」：`hangqing-installer-<version>-win.exe`。助手会检查 Windows 版本、系统架构、磁盘空间和运行库，自动选择 x64 或 x86 安装包，显示下载进度，校验 SHA-256 后启动 Windows 安装向导。若未签名程序触发 SmartScreen，请确认来源后选择“仍要运行”。
+
 首次启动需要：
 
 1. 从官网获取对应系统的安装包。
