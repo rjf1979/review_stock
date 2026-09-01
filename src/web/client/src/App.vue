@@ -1,18 +1,20 @@
 <script setup>
 import { ref } from 'vue'
-import realtimeImage from './assets/desktop-screens/realtime.png'
-import watchlistImage from './assets/desktop-screens/watchlist.png'
-import dailyReviewImage from './assets/desktop-screens/daily-review.png'
-import dragonTigerImage from './assets/desktop-screens/dragon-tiger.png'
+import realtimeImage from './assets/desktop-screens/realtime.webp?no-inline'
+import watchlistImage from './assets/desktop-screens/watchlist.webp?no-inline'
+import dailyReviewImage from './assets/desktop-screens/daily-review.webp?no-inline'
+import dragonTigerImage from './assets/desktop-screens/dragon-tiger.webp?no-inline'
 
 const downloads = {
-  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-x64-setup.exe',
-  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-ia32-setup.exe',
-  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.8/hangqing-desktop-0.3.8-win-x64-setup.exe',
-  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.8/hangqing-desktop-0.3.8-win-ia32-setup.exe',
-  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.8-win-x64-setup.exe',
-  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.8-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.8'
+  assistant: 'https://oss.askcode.cn/files/hangqing-installer-0.3.9-win.exe',
+  assistantBackup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.9/hangqing-installer-0.3.9-win.exe',
+  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.9-win-x64-setup.exe',
+  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.9-win-ia32-setup.exe',
+  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.9/hangqing-desktop-0.3.9-win-x64-setup.exe',
+  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.9/hangqing-desktop-0.3.9-win-ia32-setup.exe',
+  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.9-win-x64-setup.exe',
+  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.9-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.9'
 }
 
 const activeImage = ref(null)
@@ -40,10 +42,10 @@ function openImage(src, alt) {
           <h1>股市脉搏，<br><em>一屏看懂。</em></h1>
           <p class="lede">实时行情、板块、龙虎榜和收盘复盘。数据在你的电脑本地整理，打开应用就能开始工作。</p>
           <div class="actions">
-            <a class="primary" :href="downloads.x64">下载 Windows 64 位版</a>
+            <a class="primary" :href="downloads.assistant">一键安装 Windows 版</a>
             <a class="text-link" href="#features">查看功能</a>
           </div>
-          <p class="fine">Windows 10/11 · 提供 x64 与 x86 安装包 · macOS 暂未提供 · 免费 · 无需账号</p>
+          <p class="fine">Windows 10/11 · 自动匹配 x64 / x86 · macOS 暂未提供 · 免费 · 无需账号</p>
         </div>
 
         <div class="hero-console" aria-label="股市脉搏桌面版功能预览">
@@ -95,19 +97,20 @@ function openImage(src, alt) {
       <section id="how" class="how section">
         <div class="section-heading"><p class="kicker">HOW IT WORKS</p><h2>从数据到桌面，只需三步</h2><p>股市脉搏是本地优先的 Windows 工具，公开行情直接在电脑上整理。</p></div>
         <div class="steps">
-          <div><b>01</b><h3>安装桌面版</h3><p>下载对应架构的 Windows 安装包，按向导完成安装。</p></div>
+          <div><b>01</b><h3>安装桌面版</h3><p>运行安装助手，自动匹配架构并进入安装向导。</p></div>
           <div><b>02</b><h3>本地抓取行情</h3><p>应用直接读取公开行情源，在本机整理实时数据。</p></div>
           <div><b>03</b><h3>收盘后查看</h3><p>打开工作台查看盘面、异动、自选和每日复盘。</p></div>
         </div>
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.3.8</p><h2>把股市脉搏放在桌面上</h2><p>Windows 64 位与 32 位安装包现已提供。macOS 暂未提供。安装包未进行代码签名，下载后请核对 SHA-256。主下载走阿里云 OSS 加速，若失效可切换到 GitHub Release 或备用镜像。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.3.9</p><h2>把股市脉搏放在桌面上</h2><p>推荐使用统一安装应用：自动检查环境、匹配 x64 / x86、显示下载进度、校验文件后启动安装向导。也可按架构手动下载。macOS 暂未提供，安装包未签名，请核对发布页 SHA-256。</p></div>
         <div class="download-options">
+          <a class="download-option assistant" :href="downloads.assistant"><span>推荐 · 统一安装应用</span><strong>自动安装</strong><small>自动匹配架构并启动向导</small></a>
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>
           <a class="download-option" :href="downloads.ia32"><span>Windows 32 位 (x86)</span><strong>下载安装包</strong><small>仅用于 32 位 Windows</small></a>
           <div class="download-option unavailable" role="note"><span>macOS</span><strong>暂未提供</strong><small>当前仅支持 Windows</small></div>
-          <p class="download-note">境内主下载经阿里云 OSS + CDN；海外或主源失效时可使用 <a :href="downloads.x64Backup">GitHub Release</a> 与 <a :href="downloads.x64Backup2">OSS 备用镜像</a>。</p>
+          <p class="download-note">备用入口：<a :href="downloads.assistantBackup">安装助手</a> · <a :href="downloads.x64Backup">GitHub x64</a> · <a :href="downloads.ia32Backup">GitHub x86</a> · <a :href="downloads.x64Backup2">OSS x64</a> · <a :href="downloads.ia32Backup2">OSS x86</a> · <a :href="downloads.release">全部版本</a>。</p>
         </div>
       </section>
 

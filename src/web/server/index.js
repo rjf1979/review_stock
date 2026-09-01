@@ -4,7 +4,10 @@ const path = require('path');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
-const APP_SHELL = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="股市脉搏 Windows 桌面版：A股实时行情、盘面异动与每日复盘。"><title>股市脉搏 · A股行情与复盘</title><link rel="stylesheet" href="/assets/app.css"></head><body><div id="app"></div><script type="module" src="/assets/app.mjs"></script></body></html>';
+const APP_SHELL = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="股市脉搏 Windows 桌面版：A股实时行情、盘面异动与每日复盘。"><title>股市脉搏 · A股行情与复盘</title><link rel="stylesheet" href="/assets/app.css?v=3"></head><body><div id="app"></div><script type="module" src="/assets/app.js?v=3"></script></body></html>';
+const HTML_CACHE = 'public, max-age=30, s-maxage=300, stale-while-revalidate=86400';
+const ASSET_CACHE = 'public, max-age=300';
+const IMMUTABLE_ASSET_CACHE = 'public, max-age=31536000, immutable';
 const MIME_TYPES = {
   '.css': 'text/css',
   '.js': 'text/javascript',
@@ -19,8 +22,10 @@ const MIME_TYPES = {
   '.exe': 'application/octet-stream'
 };
 
-function send(res, status, body, type = 'text/html') {
-  res.writeHead(status, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' });
+function send(res, status, body, type = 'text/html', cacheControl = 'no-store') {
+  const headers = { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' };
+  if (cacheControl !== 'no-store') headers['CDN-Cache-Control'] = cacheControl;
+  res.writeHead(status, headers);
   res.end(body);
 }
 
@@ -49,12 +54,13 @@ const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   if (pathname.startsWith('/assets/')) {
     const file = assetPath(pathname);
-    return sendFile(req, res, file, 'public, max-age=600');
+    const cacheControl = /-[A-Za-z0-9_-]{8}\.\w+$/.test(pathname) ? IMMUTABLE_ASSET_CACHE : ASSET_CACHE;
+    return sendFile(req, res, file, cacheControl);
   }
   if (pathname === '/updates/latest.json') return sendFile(req, res, publicFile(pathname), 'no-store');
   if (pathname.startsWith('/updates/files/')) return sendFile(req, res, publicFile(pathname), 'public, max-age=31536000, immutable');
-  if (pathname === '/' || pathname === '/index.html') return send(res, 200, APP_SHELL);
+  if (pathname === '/' || pathname === '/index.html') return send(res, 200, APP_SHELL, 'text/html', HTML_CACHE);
   return send(res, 404, 'Not Found', 'text/plain');
 });
 
-server.listen(PORT, () => console.log(`股市脉搏官网运行于 http://localhost:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => console.log(`股市脉搏官网运行于 http://127.0.0.1:${PORT}`));

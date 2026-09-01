@@ -19,3 +19,8 @@ a:focus-visible{outline:3px solid rgba(227,72,69,.45);outline-offset:3px}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 .download-option.unavailable{cursor:default;opacity:.64}.download-option.unavailable strong{color:#d4dde1}.download-option.unavailable small{color:#a9b8c0}
 .download-note{grid-column:1/-1;margin:2px 0 0;color:#a9b8c0;font-size:.72rem;line-height:1.5}.download-note a{color:#ffb3a9;text-decoration:underline}
+.download-options{grid-template-columns:repeat(2,minmax(168px,1fr))}
+.download-option.assistant{grid-column:1/-1;border-color:rgba(255,179,169,.62);background:linear-gradient(135deg,#263640,#324850)}
+.download-option.assistant span{color:#ffb3a9}
+.download-option.assistant strong{font-size:1rem}
+.download-option.assistant small{color:#e8eef1}

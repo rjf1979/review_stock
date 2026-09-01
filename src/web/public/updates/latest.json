@@ -1,20 +1,21 @@
 {
-  "version": "0.3.8",
-  "publishedAt": "2026-08-30T04:56:14.765Z",
+  "version": "0.3.9",
+  "publishedAt": "2026-08-31T14:00:04.069Z",
   "notes": [
-    "修复云端数据分享鉴权：桌面端内置上传令牌，采集的实时行情、复盘、龙虎榜、自选报价与K线自动上报云端行情数据平台。",
-    "网络可连通但未收到云端数据的问题已解决，安装后默认参与数据分享。"
+    "优化实时盘口数据拉取：控制并发、加入独立超时与自动重试，避免单个盘口请求拖累实时行情聚合。",
+    "盘口请求超时后自动回退到最近一次成功数据，不再触发「猛烈打压失败」等超时错误。",
+    "放宽盘口缓存并降低超时告警噪声，整体提升实时行情稳定性。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-x64-setup.exe",
-      "size": 85223330,
-      "sha256": "ae0b66739b4b53d71aa6fdad875851d848fc2f09207a4aee69870c6d73e5e0c0"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.9-win-x64-setup.exe",
+      "size": 85209065,
+      "sha256": "eac51a9f563c1619b3aa36b3bc89dd26b1e3282bb8f952792c76b8e3a7129334"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.8-win-ia32-setup.exe",
-      "size": 80474732,
-      "sha256": "d5623e7082f930e18bf0ba5dac9cc4e8f8fb58a311d30b240a9dd86eb5938f95"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.9-win-ia32-setup.exe",
+      "size": 80489810,
+      "sha256": "a62cb10f10683b5d1c181024c6a7297a798f77ef14b4fe66c64ab024f3e674ee"
     }
   }
 }
