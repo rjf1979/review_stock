@@ -8,9 +8,9 @@
 ## 当前状态（2026-09-01）
 - 桌面 v0.3.9 已发布 x64/ia32，实时盘口优化、OSS/GitHub/升级清单一致；默认分享云端行情且无云同步开关。
 - 官网和「统一安装应用」已上线：release `20260901-132042`，助手 OSS/GitHub 资产校验一致，升级清单为 0.3.9。
-- mapi 已上线 `api.dailystock.askcode.cn`，systemd 服务 `hangqing-mapi`，SSH 别名 `api-dailystock`，最新 release `20260831132759`。
+- mapi 已上线 `api.dailystock.askcode.cn`，systemd 服务 `hangqing-mapi`，SSH 别名 `api-dailystock`，最新 release `20260901160108`；复盘温度已归一化为 number。
 - 官网 Node 只监听 `127.0.0.1:3002`，目录 `/var/www/dailystock`，升级清单 `/var/www/dailystock-updates/latest.json`，SSH 别名 `zhicha-vps`。
-- App 已完成桌面一致图标、线上行情契约、自选众包补数、龙虎榜回退、设置分区、5–60 秒刷新选择和午间快照保护；真机已验证。
+- App 已完成桌面一致图标、线上行情契约、自选众包补数、龙虎榜回退、设置分区、5–60 秒刷新选择和午间快照保护；历史/复盘异常与自选持久化已修复，待真机复验。
 
 ## 发布与风险
 - 发布必须先构建/上传/SHA 校验/公开回读，最后原子切换升级清单；未签名安装包可能触发系统提示。
