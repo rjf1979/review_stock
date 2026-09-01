@@ -31,11 +31,13 @@ class CollectorService {
   }
 
   /// ensureRealtime：确保云端有新鲜实时快照，否则本机抓取并上传。
-  Future<void> ensureRealtime({Duration maxAge = const Duration(minutes: 10)}) async {
+  Future<void> ensureRealtime(
+      {Duration maxAge = const Duration(minutes: 10)}) async {
     if (!_isTradingSession(DateTime.now())) return;
     final status = await _api.status();
     final at = status['realtimeAt'] as String?;
-    final fresh = at != null && DateTime.now().difference(DateTime.parse(at)) < maxAge;
+    final fresh =
+        at != null && DateTime.now().difference(DateTime.parse(at)) < maxAge;
     if (fresh) return;
 
     final indices = await _source.fetchIndices();
@@ -54,7 +56,8 @@ class CollectorService {
     if (!force) {
       final status = await _api.status();
       final at = status['quotesAt'] as String?;
-      final fresh = at != null && DateTime.now().difference(DateTime.parse(at)).inMinutes < 10;
+      final fresh = at != null &&
+          DateTime.now().difference(DateTime.parse(at)).inMinutes < 10;
       if (fresh) return;
     }
 
@@ -88,4 +91,39 @@ class CollectorService {
       'ok': true,
     });
   }
+
+  Future<List<Map<String, dynamic>>> ensureKline(String code) async {
+    try {
+      final cached = await _api.kline(code);
+      final rows = (cached['kline'] as List?) ?? const [];
+      final parsed = rows
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .where((row) => row['date'] != null)
+          .toList();
+      if (parsed.isNotEmpty) return parsed;
+    } catch (_) {
+      // 云端缺失或不可用时，直接回退公开源并尝试补数。
+    }
+
+    final kline = await _source.fetchKline(code);
+    if (kline.isEmpty) return const [];
+
+    try {
+      await _api.collectKline({
+        'code': code,
+        'latestDate': kline.last['date'],
+        'isFresh': kline.last['date'] == _shanghaiToday(),
+        'kline': kline,
+      });
+    } catch (_) {
+      // 上传失败时仍允许本机渲染，下次进入可重新补数。
+    }
+    return kline;
+  }
+}
+
+String _shanghaiToday() {
+  final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+  return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 }

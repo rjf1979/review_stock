@@ -215,6 +215,38 @@ class ReviewEntry {
   }
 }
 
+class KlinePoint {
+  const KlinePoint({
+    required this.date,
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+    required this.volume,
+  });
+  final String date;
+  final double open;
+  final double high;
+  final double low;
+  final double close;
+  final double volume;
+
+  factory KlinePoint.fromJson(Map<String, dynamic> j) => KlinePoint(
+        date: '${j['date'] ?? ''}',
+        open: _num(j['open']) ?? 0,
+        high: _num(j['high']) ?? 0,
+        low: _num(j['low']) ?? 0,
+        close: _num(j['close']) ?? 0,
+        volume: _num(j['volume']) ?? 0,
+      );
+
+  static double? _num(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+}
+
 class DragonSeat {
   const DragonSeat({
     required this.name,

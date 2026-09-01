@@ -163,6 +163,16 @@ final statusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return ref.watch(marketApiProvider).status();
 });
 
+/// 自选股日 K
+final klineProvider =
+    FutureProvider.family<List<KlinePoint>, String>((ref, code) async {
+  final rows = await ref.watch(collectorProvider).ensureKline(code);
+  return rows
+      .map(KlinePoint.fromJson)
+      .where((point) => point.date.isNotEmpty)
+      .toList();
+});
+
 /// 自选股代码（本机持久化）
 final watchlistProvider =
     StateNotifierProvider<WatchlistController, List<String>>((ref) {

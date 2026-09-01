@@ -40,17 +40,17 @@ class MarketSource {
   Future<List<Map<String, dynamic>>> fetchQuotes(List<String> codes) async {
     final out = <Map<String, dynamic>>[];
     for (final code in codes) {
-    final res = await _dio.get<dynamic>(
+      final res = await _dio.get<dynamic>(
         'https://push2.eastmoney.com/api/qt/stock/get',
-      queryParameters: {
-        'secid': _secid(code),
-        'fields': 'f43,f57,f58,f170',
-        'fltt': '2',
-        'invt': '2',
-      },
+        queryParameters: {
+          'secid': _secid(code),
+          'fields': 'f43,f57,f58,f170',
+          'fltt': '2',
+          'invt': '2',
+        },
       );
-    final payload = _jsonPayload(res.data);
-    final d = payload['data'] as Map<String, dynamic>?;
+      final payload = _jsonPayload(res.data);
+      final d = payload['data'] as Map<String, dynamic>?;
       if (d == null) continue;
       out.add({
         'code': code,
@@ -64,7 +64,39 @@ class MarketSource {
 
   /// 日 K。TODO: 复刻 PC 端 `web.ifzq.gtimg.cn/.../fqkline/get` 的完整实现。
   Future<List<Map<String, dynamic>>> fetchKline(String code) async {
-    return const [];
+    final symbol = code.toLowerCase();
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    final end = _isoDate(now);
+    final start = _isoDate(now.subtract(const Duration(days: 120)));
+    final res = await _dio.get<dynamic>(
+      'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$symbol,day,$start,$end,60,qfq',
+      options: Options(headers: {'User-Agent': 'Mozilla/5.0'}),
+    );
+    final payload = _jsonPayload(res.data);
+    final data = payload['data'];
+    final node = data is Map ? data[symbol] : null;
+    final rows = node is Map ? (node['qfqday'] ?? node['day']) : null;
+    if (rows is! List) return const [];
+
+    return rows
+        .whereType<List>()
+        .where((row) => row.length >= 6)
+        .map((row) {
+          return <String, dynamic>{
+            'date': '${row[0] ?? ''}',
+            'open': _num(row[1]),
+            'close': _num(row[2]),
+            'high': _num(row[3]),
+            'low': _num(row[4]),
+            'volume': _num(row[5]),
+          };
+        })
+        .where((item) =>
+            item['open'] != null &&
+            item['close'] != null &&
+            item['high'] != null &&
+            item['low'] != null)
+        .toList();
   }
 
   String _secid(String code) {
@@ -77,5 +109,15 @@ class MarketSource {
     if (data is Map<String, dynamic>) return data;
     if (data is String) return jsonDecode(data) as Map<String, dynamic>;
     throw StateError('行情源返回格式异常');
+  }
+
+  double? _num(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  String _isoDate(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
   }
 }
