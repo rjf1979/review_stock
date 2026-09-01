@@ -145,6 +145,36 @@ async function readObjectByKey(objectKey) {
   } catch { return null; }
 }
 
+async function enrichReviewWithPreviousTurnover(payload, readPreviousReview) {
+  const breadth = payload?.breadth;
+  if (!breadth || !Number.isFinite(breadth.turnoverYi) || breadth.previousTurnoverYi != null) {
+    return payload;
+  }
+
+  let previousDate = validate.previousWeekdayISO(payload?.date);
+  let previousReview = null;
+  for (let attempt = 0; attempt < 7 && previousDate && !previousReview; attempt++) {
+    previousReview = await readPreviousReview(previousDate);
+    if (!previousReview) previousDate = validate.previousWeekdayISO(previousDate);
+  }
+
+  const previousTurnover = Number(previousReview?.breadth?.turnoverYi);
+  if (!Number.isFinite(previousTurnover) || previousTurnover === 0) return payload;
+
+  const enriched = JSON.parse(JSON.stringify(payload));
+  enriched.breadth.previousTurnoverYi = previousTurnover;
+  enriched.breadth.previousTurnoverDate = previousReview.date || previousDate;
+  enriched.breadth.turnoverChangeRate =
+    ((Number(breadth.turnoverYi) - previousTurnover) / previousTurnover) * 100;
+  enriched.quality.missingFields = (enriched.quality?.missingFields || [])
+    .filter((field) => field !== 'breadth.previous_turnover_yuan' && field !== 'breadth.turnover_change_rate');
+  if (enriched.quality && !enriched.quality.missingFields.length) {
+    enriched.quality.status = 'ok';
+    enriched.quality.confidence = 'high';
+  }
+  return enriched;
+}
+
 // ── cloud 模式：写入 handler ──
 const collectReview = async (body, deviceId) => {
   const v = validate.validateReview(body);
@@ -320,7 +350,12 @@ async function handleRead(req, res, url) {
       const obj = (await readObjectByKey(keys.reviewSlot(date, 'close').objectKey))
         || (await readObjectByKey(keys.reviewSlot(date, 'morning').objectKey));
       if (!obj) return send(res, 404, { error: '该日期没有已保存的完整复盘快照' });
-      return send(res, 200, { ...obj.data, persisted: true, url: obj.url });
+      const payload = await enrichReviewWithPreviousTurnover(obj.data, async (previousDate) => {
+        const previous = (await readObjectByKey(keys.reviewSlot(previousDate, 'close').objectKey))
+          || (await readObjectByKey(keys.reviewSlot(previousDate, 'morning').objectKey));
+        return previous?.data || null;
+      });
+      return send(res, 200, { ...payload, persisted: true, url: obj.url });
     }
     if (url.pathname === '/api/reviews') {
       const slots = await cloud.db.listSlots('review:', 200);
@@ -411,12 +446,14 @@ async function handleRead(req, res, url) {
       : [];
     return send(res, 200, { entries });
   }
-  if (url.pathname === '/api/review') {
-    const date = url.searchParams.get('date');
-    if (!validDate(date)) return send(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
-    const p = readJson(path.join(DATA_DIR, 'reviews', `${date}.json`));
-    if (!p) return send(res, 404, { error: '该日期没有已保存的完整复盘快照' });
-    return send(res, 200, { ...p, persisted: true });
+    if (url.pathname === '/api/review') {
+      const date = url.searchParams.get('date');
+      if (!validDate(date)) return send(res, 400, { error: '日期格式不正确，应为 YYYY-MM-DD' });
+      const p = readJson(path.join(DATA_DIR, 'reviews', `${date}.json`));
+      if (!p) return send(res, 404, { error: '该日期没有已保存的完整复盘快照' });
+      const payload = await enrichReviewWithPreviousTurnover(p, async (previousDate) =>
+        readJson(path.join(DATA_DIR, 'reviews', `${previousDate}.json`)));
+      return send(res, 200, { ...payload, persisted: true });
   }
   if (url.pathname === '/api/dragon') {
     const date = url.searchParams.get('date');
@@ -490,4 +527,4 @@ async function start() {
 
 if (require.main === module) start();
 
-module.exports = { server, start, staleMark };
+module.exports = { server, start, staleMark, enrichReviewWithPreviousTurnover };

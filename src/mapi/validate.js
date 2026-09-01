@@ -20,6 +20,15 @@ function isWeekend(dateStr) {
   const w = weekdayOf(dateStr);
   return w === 0 || w === 6;
 }
+
+function previousWeekdayISO(dateStr) {
+  if (!validDate(dateStr)) return null;
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  do {
+    date.setUTCDate(date.getUTCDate() - 1);
+  } while (date.getUTCDay() === 0 || date.getUTCDay() === 6);
+  return date.toISOString().slice(0, 10);
+}
 // ISO 日期串按字典序比较即可判断先后。
 function isFutureDate(dateStr, today = shanghaiDate()) {
   return validDate(dateStr) && String(dateStr) > today;
@@ -86,6 +95,6 @@ function validateQuotes(body = {}, opts = {}) {
 }
 
 module.exports = {
-  validDate, shanghaiDate, weekdayOf, isWeekend, isFutureDate, isFutureTime,
+  validDate, shanghaiDate, weekdayOf, isWeekend, previousWeekdayISO, isFutureDate, isFutureTime,
   validateReview, validateDragon, validateKline, validateRealtime, validateQuotes,
 };

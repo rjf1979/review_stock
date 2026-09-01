@@ -14,6 +14,12 @@ test('validDate 校验格式', () => {
   assert.equal(v.validDate(undefined), false);
 });
 
+test('previousWeekdayISO 跳过周末', () => {
+  assert.equal(v.previousWeekdayISO('2026-08-31'), '2026-08-28');
+  assert.equal(v.previousWeekdayISO('2026-09-01'), '2026-08-31');
+  assert.equal(v.previousWeekdayISO('2026-09-05'), '2026-09-04');
+});
+
 test('isWeekend 识别周末', () => {
   assert.equal(v.isWeekend('2026-01-03'), true);  // 周六
   assert.equal(v.isWeekend('2026-01-01'), false); // 周四

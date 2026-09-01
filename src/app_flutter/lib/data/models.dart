@@ -53,6 +53,8 @@ class Breadth {
       this.redRatio,
       this.upDownRatio,
       this.amount,
+      this.previousTurnoverYi,
+      this.turnoverChangeRate,
       this.sampleCount,
       this.reportedCount,
       this.status});
@@ -65,6 +67,8 @@ class Breadth {
   final double? redRatio;
   final double? upDownRatio;
   final double? amount;
+  final double? previousTurnoverYi;
+  final double? turnoverChangeRate;
   final int? sampleCount;
   final int? reportedCount;
   final String? status;
@@ -81,6 +85,9 @@ class Breadth {
       redRatio: (j['redRatio'] as num?)?.toDouble(),
       upDownRatio: (j['upDownRatio'] as num?)?.toDouble(),
       amount: ((j['amount'] ?? j['turnoverYi']) as num?)?.toDouble(),
+      previousTurnoverYi:
+          (j['previousTurnoverYi'] as num?)?.toDouble(),
+      turnoverChangeRate: (j['turnoverChangeRate'] as num?)?.toDouble(),
       sampleCount: (j['sampleCount'] as num?)?.toInt(),
       reportedCount: (j['reportedCount'] as num?)?.toInt(),
       status: j['status'] as String?,
@@ -305,6 +312,214 @@ class ReviewEntry {
     if (value is num) return value;
     if (value is Map<String, dynamic>) return value['score'] as num?;
     return null;
+  }
+}
+
+class ReviewNews {
+  const ReviewNews({required this.title, this.time = '', this.digest = ''});
+  final String title;
+  final String time;
+  final String digest;
+
+  factory ReviewNews.fromJson(Map<String, dynamic> j) => ReviewNews(
+        title: '${j['title'] ?? ''}',
+        time: '${j['time'] ?? ''}',
+        digest: '${j['digest'] ?? ''}',
+      );
+}
+
+class BoardHeightGroup {
+  const BoardHeightGroup({
+    required this.boardHeight,
+    this.count,
+    this.leaders = const [],
+  });
+  final int boardHeight;
+  final int? count;
+  final List<String> leaders;
+
+  factory BoardHeightGroup.fromJson(Map<String, dynamic> j) =>
+      BoardHeightGroup(
+        boardHeight: (j['boardHeight'] as num?)?.toInt() ?? 1,
+        count: (j['count'] as num?)?.toInt(),
+        leaders: ((j['leaders'] as List?) ?? const [])
+            .whereType<String>()
+            .toList(),
+      );
+}
+
+class ReviewQuality {
+  const ReviewQuality({
+    this.status = '',
+    this.confidence = '',
+    this.missingFields = const [],
+    this.warnings = const [],
+  });
+  final String status;
+  final String confidence;
+  final List<String> missingFields;
+  final List<String> warnings;
+
+  factory ReviewQuality.fromJson(Map<String, dynamic>? j) {
+    if (j == null) return const ReviewQuality();
+    return ReviewQuality(
+      status: '${j['status'] ?? ''}',
+      confidence: '${j['confidence'] ?? ''}',
+      missingFields: _strings(j['missingFields']),
+      warnings: _strings(j['warnings']),
+    );
+  }
+
+  static List<String> _strings(dynamic value) =>
+      ((value as List?) ?? const []).whereType<String>().toList();
+}
+
+class ReviewDetail {
+  const ReviewDetail({
+    this.date = '',
+    this.reportMode = 'snapshot',
+    this.temperature,
+    this.temperatureLevel = '',
+    this.markdown = '',
+    this.breadth = const Breadth(),
+    this.indices = const [],
+    this.sectors = const [],
+    this.fundFlow = const [],
+    this.heightDistribution = const [],
+    this.limitUpStocks = const [],
+    this.limitDownStocks = const [],
+    this.brokenStocks = const [],
+    this.limitUpCount,
+    this.limitDownCount,
+    this.brokenCount,
+    this.maxBoardHeight,
+    this.promotionSuccessCount,
+    this.promotionBaseCount,
+    this.promotionRate,
+    this.sealRate,
+    this.news = const [],
+    this.techDetail = const [],
+    this.quality = const ReviewQuality(),
+  });
+
+  final String date;
+  final String reportMode;
+  final num? temperature;
+  final String temperatureLevel;
+  final String markdown;
+  final Breadth breadth;
+  final List<IndexQuote> indices;
+  final List<Sector> sectors;
+  final List<Sector> fundFlow;
+  final List<BoardHeightGroup> heightDistribution;
+  final List<LimitUpStock> limitUpStocks;
+  final List<LimitUpStock> limitDownStocks;
+  final List<LimitUpStock> brokenStocks;
+  final int? limitUpCount;
+  final int? limitDownCount;
+  final int? brokenCount;
+  final int? maxBoardHeight;
+  final int? promotionSuccessCount;
+  final int? promotionBaseCount;
+  final double? promotionRate;
+  final double? sealRate;
+  final List<ReviewNews> news;
+  final List<String> techDetail;
+  final ReviewQuality quality;
+
+  factory ReviewDetail.fromJson(Map<String, dynamic> j) {
+    final payload = j['payload'] is Map<String, dynamic>
+        ? j['payload'] as Map<String, dynamic>
+        : j;
+    final meta = j['meta'] is Map<String, dynamic>
+        ? j['meta'] as Map<String, dynamic>
+        : payload['meta'] as Map<String, dynamic>?;
+    final temperature = j['temperature'] ?? payload['temperature'];
+    final sentiment = payload['sentiment'] is Map<String, dynamic>
+        ? payload['sentiment'] as Map<String, dynamic>
+        : null;
+
+    return ReviewDetail(
+      date: '${j['date'] ?? payload['date'] ?? meta?['trade_date'] ?? ''}',
+      reportMode: '${meta?['report_mode'] ?? 'snapshot'}',
+      temperature: _temperatureScore(temperature),
+      temperatureLevel: '${temperature?['level'] ?? temperature?['zone'] ?? ''}',
+      markdown: '${j['markdown'] ?? payload['markdown'] ?? ''}',
+      breadth: Breadth.fromJson(
+          payload['breadth'] as Map<String, dynamic>?),
+      indices: _indices(payload['indices']),
+      sectors: _sectors(payload['sectors']),
+      fundFlow: _sectors(payload['fundFlow']),
+      heightDistribution: _heights(payload['heightDistribution']),
+      limitUpStocks: _stocks(payload['limitUpStocks']),
+      limitDownStocks: _stocks(payload['limitDownStocks']),
+      brokenStocks: _stocks(payload['brokenStocks']),
+      limitUpCount: _int(j['limitUpCount'] ?? payload['limitUpCount']),
+      limitDownCount: _int(j['limitDownCount'] ?? payload['limitDownCount']),
+      brokenCount: _int(j['brokenCount'] ?? payload['brokenCount']),
+      maxBoardHeight: _int(sentiment?['maxBoardHeight']),
+      promotionSuccessCount:
+          _int(sentiment?['promotionSuccessCount']),
+      promotionBaseCount: _int(sentiment?['promotionBaseCount']),
+      promotionRate: _ratio(sentiment?['promotionRate']),
+      sealRate: _ratio(sentiment?['sealRate']),
+      news: _news(payload['news']),
+      techDetail: ((payload['techDetail'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      quality: ReviewQuality.fromJson(
+          payload['quality'] as Map<String, dynamic>?),
+    );
+  }
+
+  static int? _int(dynamic value) => value is num ? value.toInt() : null;
+
+  static num? _temperatureScore(dynamic value) {
+    if (value is num) return value;
+    if (value is Map<String, dynamic>) return value['score'] as num?;
+    return null;
+  }
+
+  static double? _ratio(dynamic value) => value is num ? value.toDouble() : null;
+
+  static List<IndexQuote> _indices(dynamic value) {
+    final rows = (value as List?) ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(IndexQuote.fromJson)
+        .toList();
+  }
+
+  static List<Sector> _sectors(dynamic value) {
+    final rows = (value as List?) ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(Sector.fromJson)
+        .toList();
+  }
+
+  static List<BoardHeightGroup> _heights(dynamic value) {
+    final rows = (value as List?) ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(BoardHeightGroup.fromJson)
+        .toList();
+  }
+
+  static List<LimitUpStock> _stocks(dynamic value) {
+    final rows = (value as List?) ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(LimitUpStock.fromJson)
+        .toList();
+  }
+
+  static List<ReviewNews> _news(dynamic value) {
+    final rows = (value as List?) ?? const [];
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .map(ReviewNews.fromJson)
+        .toList();
   }
 }
 

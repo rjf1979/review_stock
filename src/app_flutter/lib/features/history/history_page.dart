@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/errors.dart';
 import '../../core/status_views.dart';
 import '../../data/models.dart';
+import '../review/review_page.dart';
 import '../../state/providers.dart';
 
 /// 历史报告：复盘日期列表 → 点开看详情。
@@ -66,34 +67,10 @@ class _ReviewDetail extends ConsumerWidget {
           message: friendlyErrorMessage(e),
           onRetry: () => ref.invalidate(reviewByDateProvider(date)),
         ),
-        data: (r) =>
-            r.isEmpty ? const Center(child: Text('该日期暂无复盘数据')) : _DetailBody(r),
+        data: (r) => r.date.isEmpty
+            ? const Center(child: Text('该日期暂无复盘数据'))
+            : ReviewBody(review: r),
       ),
-    );
-  }
-}
-
-class _DetailBody extends StatelessWidget {
-  const _DetailBody(this.r);
-  final Map<String, dynamic> r;
-
-  @override
-  Widget build(BuildContext context) {
-    final markdown = '${r['markdown'] ?? ''}';
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(markdown.isEmpty ? '暂无正文' : markdown,
-                style: const TextStyle(height: 1.7, fontSize: 13)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text('复盘为统计性描述，不代表未来走势，不构成买卖建议。',
-            style: TextStyle(fontSize: 11, color: Colors.grey)),
-      ],
     );
   }
 }

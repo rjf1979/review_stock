@@ -114,31 +114,31 @@ final reviewsProvider = FutureProvider<List<ReviewEntry>>((ref) async {
 });
 
 /// 最新复盘（无 date 参数时回退到列表首日）
-final reviewProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+final reviewProvider = FutureProvider<ReviewDetail>((ref) async {
   final api = ref.watch(marketApiProvider);
   try {
-    return await api.review(_today());
+    return ReviewDetail.fromJson(await api.review(_today()));
   } on DioException catch (e) {
     if (e.response?.statusCode != 404) rethrow;
   }
 
   final entries = await api.reviews();
-  if (entries.isEmpty) return const <String, dynamic>{};
+  if (entries.isEmpty) return const ReviewDetail();
   try {
-    return await api.review(entries.first.date);
+    return ReviewDetail.fromJson(await api.review(entries.first.date));
   } on DioException catch (e) {
-    if (e.response?.statusCode == 404) return const <String, dynamic>{};
+    if (e.response?.statusCode == 404) return const ReviewDetail();
     rethrow;
   }
 });
 
 /// 指定日期复盘（历史进入）
 final reviewByDateProvider =
-    FutureProvider.family<Map<String, dynamic>, String>((ref, date) async {
+    FutureProvider.family<ReviewDetail, String>((ref, date) async {
   try {
-    return await ref.watch(marketApiProvider).review(date);
+    return ReviewDetail.fromJson(await ref.watch(marketApiProvider).review(date));
   } on DioException catch (e) {
-    if (e.response?.statusCode == 404) return const <String, dynamic>{};
+    if (e.response?.statusCode == 404) return const ReviewDetail();
     rethrow;
   }
 });
