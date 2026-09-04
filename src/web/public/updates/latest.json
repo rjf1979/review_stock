@@ -1,20 +1,20 @@
 {
-  "version": "0.3.12",
-  "publishedAt": "2026-09-04T09:27:19.394Z",
+  "version": "0.3.13",
+  "publishedAt": "2026-09-04T09:58:30.210Z",
   "notes": [
-    "修复盘口异动面板第三行事件被底边裁切的问题，常规屏幕现在完整显示 3 行 × 3 列。",
-    "矮屏幕（高度不足 720px）下盘口异动改为整齐显示 2 行，不再出现裁半的事件行。"
+    "盘口异动最后一行的时间与涨跌幅显示完整，不再被面板底边裁切。",
+    "打开涨停/打开跌停的颜色改为按涨跌方向显示（红涨绿跌），与数值颜色一致。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.12-win-x64-setup.exe",
-      "size": 85188958,
-      "sha256": "687661ed65dadff16c1c7a1d601c2df0112384c972ae7e369faec00d85851a5d"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-x64-setup.exe",
+      "size": 85240258,
+      "sha256": "99df9618b158b8bad37156203da6e6a71619c0bb164fd0c795e829d963f8d9e2"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.12-win-ia32-setup.exe",
-      "size": 80484493,
-      "sha256": "8512fed6f37da62b0675ef79e312ae0239b21b5f7462f7e0bf35b54c2d2f8085"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-ia32-setup.exe",
+      "size": 80488532,
+      "sha256": "c676fd9240634bdb83d10549a8065a64e3148f595fa135a7abe4f74af265ba7a"
     }
   }
 }

@@ -237,8 +237,8 @@ const PANKOU_TYPES = [
   { key: 'strongPressure', label: '猛烈打压', type: '8204', tone: 'down', format: 'change' },
   { key: 'limitUp', label: '封板涨停', type: '4', tone: 'up', format: 'limit' },
   { key: 'limitDown', label: '封板跌停', type: '8', tone: 'down', format: 'limit' },
-  { key: 'openLimitUp', label: '打开涨停', type: '16', tone: 'down', format: 'open' },
-  { key: 'openLimitDown', label: '打开跌停', type: '32', tone: 'up', format: 'open' },
+  { key: 'openLimitUp', label: '打开涨停', type: '16', tone: 'up', format: 'open' },
+  { key: 'openLimitDown', label: '打开跌停', type: '32', tone: 'down', format: 'open' },
 ];
 // 大笔买卖仅保留单笔成交额 ≥ 1000 万元（0.1 亿）的事件，过滤东财源的小单噪音。
 const PANKOU_ORDER_MIN_AMOUNT_YI = 0.1;
