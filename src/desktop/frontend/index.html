@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>股市脉搏 v0.2.5</title>
+  <title>股市脉搏</title>
   <script src="/vendor/vue.global.prod.js"></script>
   <script src="/vendor/klinecharts.min.js"></script>
   <style>
@@ -377,7 +377,7 @@
   <script>try{if((localStorage.getItem('hq_theme')|| (localStorage.getItem('hq_dark')==='1'?'dark':'light'))==='dark')document.body.classList.add('dark')}catch{}</script>
   <div id="boot-screen" role="status" aria-live="polite">
     <div class="boot-shell">
-      <p class="boot-kicker">股市脉搏 · v0.2.5</p>
+      <p class="boot-kicker">股市脉搏 · 桌面版</p>
       <h1>正在打开行情工作台</h1>
       <p>首次启动会检查本地行情服务，并从公开行情源获取最新数据。</p>
       <div class="boot-preview" aria-hidden="true"><div><small>实时行情</small><strong>指数与板块</strong></div><div><small>每日复盘</small><strong>收盘自动整理</strong></div><div><small>自选观察</small><strong>本地保存</strong></div></div>
@@ -423,7 +423,7 @@
     </template>
     <template v-else>
     <header>
-      <div class="logo">股市脉搏<span>DESKTOP · v0.2.5</span></div>
+      <div class="logo">股市脉搏<span v-if="appVersion && appVersion !== '-'">DESKTOP · v{{ appVersion }}</span><span v-else>DESKTOP</span></div>
       <nav>
         <button :class="{active:view==='realtime'}" :aria-current="view==='realtime'?'page':null" @click="view='realtime';loadRealtime({silent:true,allowClosed:true})">实时行情</button>
         <button :class="{active:view==='watch'}" :aria-current="view==='watch'?'page':null" @click="view='watch';loadWatch()">自选股</button>
@@ -921,6 +921,9 @@
         },
         updateHeadline() { const s=this.updateState; if(s.status==='available') return `发现新版本 v${s.availableVersion}`; if(s.status==='downloaded') return `v${s.availableVersion} 已下载并校验`; if(s.status==='downloading') return `正在下载 v${s.availableVersion || ''}`; if(s.status==='installing') return '正在启动升级程序'; if(s.status==='current') return `当前已是最新版 v${s.currentVersion}`; if(s.status==='error') return '更新检查未完成'; return `当前版本 v${s.currentVersion || this.appVersion}`; },
         updateDetail() { const s=this.updateState; if(s.status==='checking') return '正在连接官网检查版本…'; if(s.status==='downloading') return s.progress?.percent != null ? `下载进度 ${s.progress.percent}%` : '正在下载安装文件…'; if(s.status==='downloaded') return '安装文件 SHA-256 校验通过，可以重启升级。'; if(s.status==='available') return '升级包来自行情日报官网，下载完成后会先校验完整性。'; if(s.status==='error') return s.error || '请检查网络后重试。'; if(s.checkedAt) return `最近检查 ${this.formatDataTime(s.checkedAt)}`; return '启动后自动检查，此后每 6 小时检查一次。'; }
+      },
+      watch: {
+        appVersion(value) { if (!isMonitorMode && value && value !== '-') document.title = `股市脉搏 v${value}`; }
       },
       methods: {
         minimizeWindow() { window.desktopBridge?.minimizeWindow(); },

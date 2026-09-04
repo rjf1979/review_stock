@@ -250,7 +250,7 @@ function createMonitorWindow() {
     hasShadow: false,
     focusable: true,
     show: false,
-    title: '股市脉搏 v0.2.5 · 行情监控',
+    title: `股市脉搏 v${app.getVersion()} · 行情监控`,
     icon: APP_ICON,
     webPreferences: {
       contextIsolation: true,
@@ -360,7 +360,7 @@ function createWindow() {
     height: workArea.height,
     frame: false,
     fullscreenable: false,
-    title: '股市脉搏 v0.2.5',
+    title: `股市脉搏 v${app.getVersion()}`,
     icon: APP_ICON,
     backgroundColor: '#f6f8f7',
     autoHideMenuBar: true,
@@ -387,7 +387,7 @@ function createWindow() {
 function createTray() {
   const icon = nativeImage.createFromPath(APP_ICON).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
-  tray.setToolTip('股市脉搏 v0.2.5');
+  tray.setToolTip(`股市脉搏 v${app.getVersion()}`);
   tray.on('double-click', showWindow);
   updateTrayMenu();
 }

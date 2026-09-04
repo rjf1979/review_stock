@@ -6,15 +6,15 @@ import dailyReviewImage from './assets/desktop-screens/daily-review.webp?no-inli
 import dragonTigerImage from './assets/desktop-screens/dragon-tiger.webp?no-inline'
 
 const downloads = {
-  assistant: 'https://oss.askcode.cn/files/hangqing-installer-0.3.10-win.exe',
-  assistantBackup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.10/hangqing-installer-0.3.10-win.exe',
-  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.10-win-x64-setup.exe',
-  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.10-win-ia32-setup.exe',
-  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.10/hangqing-desktop-0.3.10-win-x64-setup.exe',
-  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.10/hangqing-desktop-0.3.10-win-ia32-setup.exe',
-  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.10-win-x64-setup.exe',
-  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.10-win-ia32-setup.exe',
-  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.10'
+  assistant: 'https://oss.askcode.cn/files/hangqing-installer-0.3.11-win.exe',
+  assistantBackup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.11/hangqing-installer-0.3.11-win.exe',
+  x64: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-x64-setup.exe',
+  ia32: 'https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-ia32-setup.exe',
+  x64Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.11/hangqing-desktop-0.3.11-win-x64-setup.exe',
+  ia32Backup: 'https://github.com/rjf1979/review_stock/releases/download/v0.3.11/hangqing-desktop-0.3.11-win-ia32-setup.exe',
+  x64Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.11-win-x64-setup.exe',
+  ia32Backup2: 'https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.11-win-ia32-setup.exe',
+  release: 'https://github.com/rjf1979/review_stock/releases/tag/v0.3.11'
 }
 
 const activeImage = ref(null)
@@ -104,7 +104,7 @@ function openImage(src, alt) {
       </section>
 
       <section id="download" class="download-section">
-        <div><p class="kicker">DESKTOP RELEASE · V0.3.10</p><h2>把股市脉搏放在桌面上</h2><p>推荐使用统一安装应用：自动检查环境、匹配 x64 / x86、显示下载进度、校验文件后启动安装向导。也可按架构手动下载。macOS 暂未提供，安装包未签名，请核对发布页 SHA-256。</p></div>
+        <div><p class="kicker">DESKTOP RELEASE · V0.3.11</p><h2>把股市脉搏放在桌面上</h2><p>推荐使用统一安装应用：自动检查环境、匹配 x64 / x86、显示下载进度、校验文件后启动安装向导。也可按架构手动下载。macOS 暂未提供，安装包未签名，请核对发布页 SHA-256。</p></div>
         <div class="download-options">
           <a class="download-option assistant" :href="downloads.assistant"><span>推荐 · 统一安装应用</span><strong>自动安装</strong><small>自动匹配架构并启动向导</small></a>
           <a class="download-option" :href="downloads.x64"><span>Windows 64 位 (x64)</span><strong>下载安装包</strong><small>适用于绝大多数 Windows 10/11 电脑</small></a>

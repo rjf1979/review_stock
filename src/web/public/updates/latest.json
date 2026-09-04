@@ -1,21 +1,20 @@
 {
-  "version": "0.3.10",
-  "publishedAt": "2026-09-04T03:31:25.986Z",
+  "version": "0.3.11",
+  "publishedAt": "2026-09-04T09:10:20.270Z",
   "notes": [
-    "大笔买入/大笔卖出仅保留单笔成交额不低于 1000 万元的事件，过滤盘口异动里的小单噪音。",
-    "盘口异动事件流推送节奏从 0.9 秒放宽到 3 秒，列表不再高频跳动，更易读盘。",
-    "大笔买卖取数每类加大到 16 条后再过滤，保证过滤后仍有足够大单样本。"
+    "顶栏标题、启动页与窗口标题的版本号改为自动读取主程序实际版本，不再停留在过期的 v0.2.5。",
+    "升级后版本号随安装包自动同步，后续发布无需手动维护界面版本文案。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.10-win-x64-setup.exe",
-      "size": 85207095,
-      "sha256": "403249326b0697ecee82b336b08db877884f8eeb4e6b6a8b6e4c0bad94a0377d"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-x64-setup.exe",
+      "size": 85223928,
+      "sha256": "d645ced0fcec082e929340b69648d945790f9a8f7d361247d406f88667bcf143"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.10-win-ia32-setup.exe",
-      "size": 80481100,
-      "sha256": "963d6f453a85d575a1b45fc8c493745257c07e4c491f7fa66e1f48537ad9eaca"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-ia32-setup.exe",
+      "size": 80474613,
+      "sha256": "6f8ea2efaf10ff2a2e76cfabc33e60efe775a959fc11f7c19cafea86bac4786c"
     }
   }
 }
