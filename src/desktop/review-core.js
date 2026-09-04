@@ -231,8 +231,8 @@ async function fetchMarketBreadth() {
 
 // ── A++ 块 · 盘口异动（东方财富公开实时事件） ─────────
 const PANKOU_TYPES = [
-  { key: 'largeBuy', label: '大笔买入', type: '8193', tone: 'up', format: 'order' },
-  { key: 'largeSell', label: '大笔卖出', type: '8194', tone: 'down', format: 'order' },
+  { key: 'largeBuy', label: '大笔买入', type: '8193', tone: 'up', format: 'order', pageSize: 16 },
+  { key: 'largeSell', label: '大笔卖出', type: '8194', tone: 'down', format: 'order', pageSize: 16 },
   { key: 'rapidRise', label: '急速拉升', type: '8201', tone: 'up', format: 'change' },
   { key: 'strongPressure', label: '猛烈打压', type: '8204', tone: 'down', format: 'change' },
   { key: 'limitUp', label: '封板涨停', type: '4', tone: 'up', format: 'limit' },
@@ -240,6 +240,13 @@ const PANKOU_TYPES = [
   { key: 'openLimitUp', label: '打开涨停', type: '16', tone: 'down', format: 'open' },
   { key: 'openLimitDown', label: '打开跌停', type: '32', tone: 'up', format: 'open' },
 ];
+// 大笔买卖仅保留单笔成交额 ≥ 1000 万元（0.1 亿）的事件，过滤东财源的小单噪音。
+const PANKOU_ORDER_MIN_AMOUNT_YI = 0.1;
+function pankouEventVisible(definition, event) {
+  if (!event.code || !event.name || !event.time) return false;
+  if (definition.format !== 'order') return true;
+  return event.amountYi != null && event.amountYi >= PANKOU_ORDER_MIN_AMOUNT_YI;
+}
 const pankouCache = new Map();
 const lastGoodPankou = new Map();
 const PANKOU_TTL_MS = 8000;
@@ -288,10 +295,10 @@ async function fetchPankouCategory(definition) {
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const url = `https://push2ex.eastmoney.com/getAllStockChanges?type=${definition.type}&pageindex=0&pagesize=8&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges`;
+      const url = `https://push2ex.eastmoney.com/getAllStockChanges?type=${definition.type}&pageindex=0&pagesize=${definition.pageSize || 8}&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges`;
       const d = await emJson(url, PANKOU_TIMEOUT_MS);
       const rows = Array.isArray(d?.data?.allstock) ? d.data.allstock : [];
-      const value = { key: definition.key, label: definition.label, tone: definition.tone, status: d?.rc === 0 ? 'ready' : 'error', events: rows.map(row => parsePankouEvent(row, definition)).filter(event => event.code && event.name && event.time), capturedAt: new Date().toISOString() };
+      const value = { key: definition.key, label: definition.label, tone: definition.tone, status: d?.rc === 0 ? 'ready' : 'error', events: rows.map(row => parsePankouEvent(row, definition)).filter(event => pankouEventVisible(definition, event)), capturedAt: new Date().toISOString() };
       pankouCache.set(definition.key, { cachedAt: Date.now(), value });
       if (value.status === 'ready') lastGoodPankou.set(definition.key, { at: Date.now(), value });
       return value;
@@ -646,4 +653,4 @@ async function fetchStockQuotes(codes) {
   }).filter(Boolean);
 }
 
-module.exports = { runDailyReview, fetchMarketIndices, fetchMarketBreadth, fetchPankouChanges, fetchIndexFutures, fetchLimitUpPool, fetchLimitDownPool, fetchBrokenBoardPool, fetchDragonTiger, fetchGlobalIndices, fetchSectors, fetchConcepts, fetchSectorFundFlow, fetchSectorOutflow, fetchNews, fetchTechnicalSentiment, fetchTencentQuotes, fetchDailyKline, fetchStockQuotes, toTxSymbol, computeTemperature, WATCHLIST };
+module.exports = { runDailyReview, fetchMarketIndices, fetchMarketBreadth, fetchPankouChanges, fetchIndexFutures, fetchLimitUpPool, fetchLimitDownPool, fetchBrokenBoardPool, fetchDragonTiger, fetchGlobalIndices, fetchSectors, fetchConcepts, fetchSectorFundFlow, fetchSectorOutflow, fetchNews, fetchTechnicalSentiment, fetchTencentQuotes, fetchDailyKline, fetchStockQuotes, toTxSymbol, computeTemperature, WATCHLIST, pankouEventVisible, PANKOU_ORDER_MIN_AMOUNT_YI };
