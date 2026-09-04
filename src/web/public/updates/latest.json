@@ -1,20 +1,20 @@
 {
-  "version": "0.3.11",
-  "publishedAt": "2026-09-04T09:10:20.270Z",
+  "version": "0.3.12",
+  "publishedAt": "2026-09-04T09:27:19.394Z",
   "notes": [
-    "顶栏标题、启动页与窗口标题的版本号改为自动读取主程序实际版本，不再停留在过期的 v0.2.5。",
-    "升级后版本号随安装包自动同步，后续发布无需手动维护界面版本文案。"
+    "修复盘口异动面板第三行事件被底边裁切的问题，常规屏幕现在完整显示 3 行 × 3 列。",
+    "矮屏幕（高度不足 720px）下盘口异动改为整齐显示 2 行，不再出现裁半的事件行。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-x64-setup.exe",
-      "size": 85223928,
-      "sha256": "d645ced0fcec082e929340b69648d945790f9a8f7d361247d406f88667bcf143"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.12-win-x64-setup.exe",
+      "size": 85188958,
+      "sha256": "687661ed65dadff16c1c7a1d601c2df0112384c972ae7e369faec00d85851a5d"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.11-win-ia32-setup.exe",
-      "size": 80474613,
-      "sha256": "6f8ea2efaf10ff2a2e76cfabc33e60efe775a959fc11f7c19cafea86bac4786c"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.12-win-ia32-setup.exe",
+      "size": 80484493,
+      "sha256": "8512fed6f37da62b0675ef79e312ae0239b21b5f7462f7e0bf35b54c2d2f8085"
     }
   }
 }
