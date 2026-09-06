@@ -7,7 +7,7 @@ const { URL } = require('url');
 const { MARKETS, fetchMarketSnapshot, fetchKline, snapshotStatus, fetchQuotes, fetchLatestSnapshotQuotes, isCnStockTradingSession, resolveStockMeta, codeMarket, todayStr } = require('./data');
 const { listRules, scanByMarketContext, getMarketPrescan, PATTERNS, detectSinglePatterns } = require('./screener-core');
 const rulesStore = require('./rules-store');
-const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, reloadDbFromDisk, getStockRiskPlans } = require('./storage');
+const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, flushSync, getStockRiskPlans } = require('./storage');
 const prefetch = require('./prefetch');
 const watchlist = require('./watchlist');
 const candidatePool = require('./candidate-pool');
@@ -26,22 +26,12 @@ const FRONTEND = path.join(__dirname, 'frontend');
 const batchEventClients = new Set();
 let poolJudgmentsCache = { at: 0, key: '', value: null };
 let poolPatternsCache = { at: 0, key: '', value: null };
-let workerJudgmentSync = Promise.resolve();
-let workerJudgmentSyncTimer = null;
 const workerBatchProgress = new Map();
 
 function syncWorkerJudgments() {
+  // Worker 落库已统一转交主进程写入（worker-manager.applyDbWrite），主进程内存即最新状态；
+  // 这里只需要让候选池研判缓存失效，不再从磁盘重载数据库。
   poolJudgmentsCache = { at: 0, key: '', value: null };
-  if (workerJudgmentSyncTimer) return workerJudgmentSync;
-  workerJudgmentSync = workerJudgmentSync
-    .catch(() => {})
-    .then(() => new Promise((resolve) => {
-      workerJudgmentSyncTimer = setTimeout(() => {
-        workerJudgmentSyncTimer = null;
-        resolve(reloadDbFromDisk());
-      }, 250);
-    }));
-  return workerJudgmentSync;
 }
 
 judgmentWorker.onEvent((msg) => {
@@ -363,7 +353,6 @@ function createServer(port = DEFAULT_PORT) {
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'DELETE') return send(res, 200, watchRecommendation.stop());
       if (pathname === '/api/pool/judgments' && req.method === 'GET') {
-        await workerJudgmentSync;
         const fetchDays = Math.round(Number(settings.load().fetchDays) || 250);
         const calendar = await recentTradingDates(Math.max(500, fetchDays * 3));
         const items = candidatePool.getList();
@@ -568,6 +557,14 @@ if (require.main === module) {
   createServer(port).listen(port, '127.0.0.1', () => {
     console.log(`智诊盯盘本地后端运行于 http://127.0.0.1:${port}`);
   });
+  // 退出兜底：把仍在内存、未达自动落盘阈值的写入（预取 K 线等）同步导出到 kline.db。
+  process.on('exit', () => { try { flushSync(); } catch { /* 忽略退出期导出失败 */ } });
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      try { flushSync(); } catch { /* 同上 */ }
+      process.exit(0);
+    });
+  }
 }
 
 module.exports = { createServer, isWeekendDate };

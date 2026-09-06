@@ -8,8 +8,8 @@
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "check": "node --check server.js && node --check data.js && node --check market-regime.js && node --check market-prescan-store.js && node --check screener-core.js && node --check storage.js && node --check watchlist.js && node --check watch-recommendation.js && node --check prefetch.js && node --check electron-main.js && node --check preload.js && node --check ai-assist.js && node --check indicators.js && node --check judgment-core.js && node --check judgment-batch.js && node --check judgment-store.js && node --check price-levels.js && node --check candidate-pool.js && node --check pool-prefetch.js && node --check rules-store.js && node --check settings.js && node --check theme.js",
-    "test": "node test/market-regime.test.js && node test/market-prescan-store.test.js && node test/scan-preferences.test.js && node test/prompt-required.test.js && node test/market-sentiment-storage.test.js && node test/screener-core.test.js && node test/patterns.test.js && node test/storage-local.test.js && node test/prefetch.test.js && node test/prefetch-retry.test.js && node test/indicators.test.js && node test/price-levels.test.js && node test/judgment-store-sqlite.test.js && node test/judgment-core-flow.test.js && node test/ai-assist-response-format.test.js && node test/frontend-accessibility.test.js && node test/theme.test.js"
+    "check": "node --check server.js && node --check data.js && node --check market-regime.js && node --check market-prescan-store.js && node --check screener-core.js && node --check storage.js && node --check watchlist.js && node --check watch-recommendation.js && node --check prefetch.js && node --check electron-main.js && node --check preload.js && node --check ai-assist.js && node --check indicators.js && node --check judgment-core.js && node --check judgment-batch.js && node --check judgment-worker.js && node --check worker-manager.js && node --check judgment-store.js && node --check price-levels.js && node --check candidate-pool.js && node --check pool-prefetch.js && node --check rules-store.js && node --check settings.js && node --check theme.js",
+    "test": "node test/market-regime.test.js && node test/market-prescan-store.test.js && node test/scan-preferences.test.js && node test/prompt-required.test.js && node test/market-sentiment-storage.test.js && node test/screener-core.test.js && node test/patterns.test.js && node test/storage-local.test.js && node test/prefetch.test.js && node test/prefetch-retry.test.js && node test/indicators.test.js && node test/price-levels.test.js && node test/judgment-store-sqlite.test.js && node test/worker-write-delegation.test.js && node test/judgment-core-flow.test.js && node test/judgment-batch-closed.test.js && node test/ai-assist-response-format.test.js && node test/frontend-accessibility.test.js && node test/theme.test.js"
   },
   "devDependencies": {
     "electron": "^33.4.11",
@@ -41,6 +41,8 @@
       "indicators.js",
       "judgment-core.js",
       "judgment-batch.js",
+      "judgment-worker.js",
+      "worker-manager.js",
       "judgment-store.js",
       "price-levels.js",
       "candidate-pool.js",

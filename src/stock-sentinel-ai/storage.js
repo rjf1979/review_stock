@@ -340,6 +340,7 @@ async function writeMarketSnapshotBatch({ id, tradeDate, marketKey, source = 'li
 }
 
 async function saveStockRiskPlan({ code, tradingStyle, evidenceHash, entryTriggers, stopLoss, takeProfit, sourceLevelSetId = null } = {}) {
+  if (writeDelegate) return delegateWrite('saveStockRiskPlan', [{ code, tradingStyle, evidenceHash, entryTriggers, stopLoss, takeProfit, sourceLevelSetId }]);
   if (!/^\d{6}$/.test(String(code || ''))) return false;
   try {
     const d = await ensureDb();
@@ -557,6 +558,21 @@ async function flush() {
       dirtyWrites = 0;
     }
     return true;
+  } catch {
+    return false;
+  }
+}
+
+// 同步落盘：仅在内存库已加载且存在未落盘写入时导出。exit 事件回调里无法等待异步接口，
+// 信号量退出（SIGINT/SIGTERM）与 process.exit 前用它兜底，避免近期写入随进程丢失。
+function flushSync() {
+  try {
+    if (db && dirtyWrites > 0) {
+      persist();
+      dirtyWrites = 0;
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -910,8 +926,27 @@ function enqueueWrite(fn, record) {
   writeQueue = run.catch(() => {});
   return run;
 }
-function writeJudgmentRecord(record) { return enqueueWrite(writeJudgmentRecordUnsafe, record); }
-function writePriceLevelSet(record) { return enqueueWrite(writePriceLevelSetUnsafe, record); }
+
+// ── 写入委托（研判 Worker 模式）────────────────────────────────────
+// kline.db 是全量导出落盘的 sql.js 内存库，绝不允许两个进程同时持有写入权，
+// 否则后导出的一方会用自己陈旧的内存副本整体覆盖对方刚写入的数据（历史上丢过整批判量结果）。
+// 研判 Worker 进程必须通过 setWriteDelegate 把全部写操作经 IPC 转交主进程执行；
+// 主进程是唯一的文件写入者，Worker 自身内存库保持只读基线。
+let writeDelegate = null;
+function setWriteDelegate(fn) { writeDelegate = typeof fn === 'function' ? fn : null; }
+function delegateWrite(fnName, args) {
+  if (!writeDelegate) return null;
+  return writeDelegate(fnName, args);
+}
+
+function writeJudgmentRecord(record) {
+  if (writeDelegate) return delegateWrite('writeJudgmentRecord', [record]);
+  return enqueueWrite(writeJudgmentRecordUnsafe, record);
+}
+function writePriceLevelSet(record) {
+  if (writeDelegate) return delegateWrite('writePriceLevelSet', [record]);
+  return enqueueWrite(writePriceLevelSetUnsafe, record);
+}
 function writeMarketSentimentSnapshot(record) { return enqueueWrite(writeMarketSentimentSnapshotUnsafe, record); }
 
 async function saveWatchRecommendationBatch(batch) {
@@ -948,4 +983,5 @@ module.exports = {
   writeJudgmentRecord, getLastSuccessJudgment, listJudgmentAttempts,
   writePriceLevelSet, getPriceLevelSet, refreshDataStats, getDataStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences,
   saveWatchRecommendationBatch, saveWatchRecommendation, latestWatchRecommendations,
+  setWriteDelegate, flushSync,
 };
