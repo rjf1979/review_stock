@@ -103,7 +103,9 @@
     .close:focus-visible, .watch-remove:focus-visible, .mode-switch button:focus-visible,
     tr:focus-visible { outline: none; box-shadow: var(--focus-ring); }
     input[type="range"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-    .shell { max-width: 100%; margin: 0 auto; padding: clamp(var(--space-4), 2vw, var(--space-6)) clamp(var(--space-3), 3vw, var(--space-6)); }
+    /* 顶部内边距必须为 0：topbar 的自然位置若在视口顶之下，sticky 吸顶前会先跟随滚动，
+       表现为 header 小范围移动。顶距为 0 后 sticky 从头到尾零位移，视觉留白由 topbar 自身 padding 承担。 */
+    .shell { max-width: 100%; margin: 0 auto; padding: 0 clamp(var(--space-3), 3vw, var(--space-6)) clamp(var(--space-4), 2vw, var(--space-6)); }
     main:focus { outline: none; }
 
     .skip-link {
@@ -520,7 +522,7 @@
       .insight-panel { height: auto; max-height: none; overflow: visible; }
     }
     @media (max-width: 768px) {
-      .shell { padding: var(--space-4) var(--space-3); }
+      .shell { padding: 0 var(--space-3) var(--space-4); }
       header.topbar { flex-wrap: wrap; }
       .field-group > label { flex: 0 0 100%; }
       .pool-filter-group { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: start; gap: var(--space-2); }
@@ -779,7 +781,7 @@
             <button class="btn" :disabled="poolPrefetch.running || !pool.length" :aria-busy="poolPrefetch.running" @click="startPoolKline"><span v-if="poolPrefetch.running" class="loading-spinner" aria-hidden="true"></span><span v-else>补齐 250 日 K 线</span></button>
             <button class="btn primary" :disabled="recommendationBatch.running || !pool.length" :aria-busy="recommendationBatch.running" @click="startRecommendations"><span v-if="recommendationBatch.running" class="loading-spinner" aria-hidden="true"></span><span v-else>{{ Object.keys(poolRecommendations).length ? '重新评估盯盘价值' : '评估盯盘价值' }}</span></button>
             <button v-if="recommendationBatch.running" class="btn mini" @click="stopRecommendations">停止评估</button>
-            <button class="btn" :disabled="judgmentBatch.running || poolPrefetch.running || !pool.length" @click="openBatchConfirm(false)">批量 AI 研判</button>
+            <button class="btn" :disabled="judgmentBatch.running || poolPrefetch.running || !pool.length" :aria-busy="judgmentBatch.running" :title="judgmentBatch.running ? ('批量研判进行中：' + judgmentBatch.done + ' / ' + judgmentBatch.total) : '对候选池发起批量 AI 研判'" @click="openBatchConfirm(false)">{{ judgmentBatch.running ? '研判进行中 ' + judgmentBatch.done + '/' + judgmentBatch.total : '批量 AI 研判' }}</button>
             <button v-if="hasFailedJudgments" class="btn" :disabled="judgmentBatch.running || poolPrefetch.running || !pool.length" @click="openBatchConfirm(true)">重试失败项</button>
             <button class="btn primary" :disabled="poolBusy || !pool.length" @click="moveAllToWatch">批量转入自选</button>
             <button class="btn icon-btn" :disabled="poolBusy" @click="loadPool(true)" title="刷新候选池" aria-label="刷新候选池"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3L3 11m0 0V5m0 6h6M4 13a8 8 0 0 0 14.9 3L21 13m0 0v6m0-6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
