@@ -1,0 +1,10 @@
+node_modules/
+release/
+.runtime/
+data/*.db
+data/*.json
+data/*.jsonl
+data/snapshots/
+data/kline/
+*.log
+npm-debug.log*

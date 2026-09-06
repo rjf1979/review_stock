@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ECharts 价位叠加 Demo</title>
+  <script src="/vendor/echarts.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111318; color: #e8ebef; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 1180px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p { color: #a7b0ba; margin: 0 0 16px; }
+    #chart { height: 620px; width: 100%; background: #202020; border: 1px solid #3b414b; }
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: #c6ccd3; }
+    .legend span::before { content: ''; display: inline-block; width: 18px; height: 10px; margin-right: 6px; vertical-align: -1px; border-radius: 2px; }
+    .support::before { background: rgba(32,183,199,.38); border: 1px solid #20b7c7; }
+    .resistance::before { background: rgba(255,69,69,.34); border: 1px solid #ff4545; }
+    .entry::before { border-top: 2px dashed #f7d451; }
+    .exit::before { border-top: 2px dashed #ff8ab0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ECharts 支撑区 / 压力区叠加 Demo</h1>
+    <p>使用生产数据接口读取 600354 敦煌种业的 SQLite K 线与研判价位，复刻生产界面绘图配置。</p>
+    <div id="chart" role="img" aria-label="ECharts 价位叠加演示图"></div>
+    <div class="legend"><span class="support">支撑区</span><span class="resistance">压力区</span><span class="entry">入场观察</span><span class="exit">退出观察</span></div>
+  </main>
+  <script>
+    const chart = echarts.init(document.getElementById('chart'));
+    const fmt = (v) => Number(v).toFixed(2);
+    async function main() {
+      const [k, r] = await Promise.all([fetch('/api/kline?code=600354').then(x => x.json()), fetch('/api/ai/record?code=600354').then(x => x.json())]);
+      const rows = k.kline || [], levels = r.levels || {};
+      const dates = rows.map(x => x.date), candles = rows.map(x => [x.open, x.close, x.low, x.high]);
+      const ma = (n) => rows.map((_, i) => i < n - 1 ? null : rows.slice(i - n + 1, i + 1).reduce((s, x) => s + x.close, 0) / n);
+      const vol = rows.map(x => ({ value: x.volume, itemStyle: { color: x.close >= x.open ? '#20b7c7' : '#ff4545' } }));
+      const area = [], lines = [];
+      const addZones = (zs, color, label) => (zs || []).forEach(z => { const lo = Number(z.low), hi = Number(z.high); if (!Number.isFinite(lo) || !Number.isFinite(hi)) return; area.push([{ xAxis: dates[0], yAxis: lo, itemStyle: { color } }, { xAxis: dates[dates.length - 1], yAxis: hi }]); lines.push({ yAxis: lo, name: label + '下沿', lineStyle: { color, width: 2 } }, { yAxis: hi, name: label + '上沿', lineStyle: { color, width: 2 } }); });
+      addZones(levels.supportZones, 'rgba(32,183,199,.34)', '支撑区'); addZones(levels.resistanceZones, 'rgba(255,69,69,.32)', '压力区');
+      (levels.entryTriggers || []).forEach(x => lines.push({ yAxis: Number(x.confirmAbove || x.value), name: '入场观察', lineStyle: { color: '#f7d451', type: 'dashed', width: 2 } }));
+      (levels.exitWatchZones || []).forEach(x => lines.push({ yAxis: Number(x.value || x.low), name: '退出观察', lineStyle: { color: '#ff8ab0', type: 'dashed', width: 2 } }));
+    chart.setOption({
+      animation: false,
+      backgroundColor: '#202020',
+      tooltip: { trigger: 'axis' },
+      grid: { left: 58, right: 24, top: 36, bottom: 58 },
+      xAxis: { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#a7b0ba' } },
+      yAxis: { scale: true, splitLine: { lineStyle: { color: '#343a44' } }, axisLabel: { color: '#a7b0ba' } },
+      series: [{
+        name: '日K', type: 'candlestick', data: candles,
+        itemStyle: { color: '#20b7c7', color0: '#ff4545', borderColor: '#20b7c7', borderColor0: '#ff4545' },
+        markArea: { silent: true, data: area }, markLine: { symbol: ['none', 'none'], data: lines, label: { show: true, position: 'insideEndTop' } },
+      }],
+    });
+    window.addEventListener('resize', () => chart.resize());
+    }
+    main().catch(e => document.querySelector('p').textContent = '加载失败：' + e.message);
+  </script>
+</body>
+</html>
