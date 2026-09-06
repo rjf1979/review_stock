@@ -291,21 +291,39 @@ class ReviewEntry {
   const ReviewEntry(
       {required this.date,
       this.temperature,
+      this.temperatureLevel = '',
       this.reportMode,
       this.qualityStatus,
-      this.updatedAt});
+      this.updatedAt,
+      this.limitUpCount,
+      this.limitDownCount,
+      this.up,
+      this.flat,
+      this.down});
   final String date;
   final num? temperature;
+  final String temperatureLevel;
   final String? reportMode;
   final String? qualityStatus;
   final String? updatedAt;
+  final int? limitUpCount;
+  final int? limitDownCount;
+  final int? up;
+  final int? flat;
+  final int? down;
 
   factory ReviewEntry.fromJson(Map<String, dynamic> j) => ReviewEntry(
         date: '${j['date'] ?? ''}',
         temperature: _temperatureScore(j['temperature']),
+        temperatureLevel: '${j['temperatureLevel'] ?? ''}',
         reportMode: j['reportMode'] as String?,
         qualityStatus: j['qualityStatus'] as String?,
         updatedAt: j['updatedAt'] as String?,
+        limitUpCount: (j['limitUpCount'] as num?)?.toInt(),
+        limitDownCount: (j['limitDownCount'] as num?)?.toInt(),
+        up: (j['up'] as num?)?.toInt(),
+        flat: (j['flat'] as num?)?.toInt(),
+        down: (j['down'] as num?)?.toInt(),
       );
 
   static num? _temperatureScore(dynamic value) {

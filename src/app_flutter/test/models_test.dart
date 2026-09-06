@@ -169,5 +169,28 @@ void main() {
       expect(review.breadth.up, 100);
       expect(review.markdown, '## 正文');
     });
+
+    test('历史列表条目兼容PC端温度等级与涨跌宽度摘要', () {
+      final entry = ReviewEntry.fromJson(const {
+        'date': '2026-09-01',
+        'temperature': {'score': 62, 'level': '活跃'},
+        'temperatureLevel': '活跃',
+        'reportMode': 'close',
+        'qualityStatus': 'ok',
+        'limitUpCount': 65,
+        'limitDownCount': 1,
+        'up': 3308,
+        'flat': 80,
+        'down': 1819,
+      });
+
+      expect(entry.temperature, 62);
+      expect(entry.temperatureLevel, '活跃');
+      expect(entry.limitUpCount, 65);
+      expect(entry.limitDownCount, 1);
+      expect(entry.up, 3308);
+      expect(entry.flat, 80);
+      expect(entry.down, 1819);
+    });
   });
 }
