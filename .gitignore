@@ -22,6 +22,10 @@ src/desktop/upload-token.builtin.js
 # Local helper binaries
 .runtime-ssh-askpass.exe
 
+# Local agent tool state (worktree copies, task queues)
+.claude/
+.reasonix/
+
 # OS and editor files
 .DS_Store
 Thumbs.db
