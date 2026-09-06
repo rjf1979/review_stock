@@ -1,18 +1,16 @@
 # 项目记忆 · 行情日报
 
-## 架构
-- 桌面版在 `src/desktop/`，官网在 `src/web/`，唯一移动端为 `src/app_flutter/`；早期 uni-app 已移除。官网只承载产品展示和 Windows 下载，不放采集、后台或订阅。
-- 桌面数据存 Electron `userData` SQLite，本地优先；内部包名/AppUserModelId 保持 `hangqing-desktop` / `io.zhicha.dailystock`，对外程序名 `StockPulse.exe`。
-- 行情只使用公开接口和确定性计算；历史缺失要标注，不上引、不给买卖建议。
+## 架构与边界
+- 子项目独立开发、验证与发布：`src/desktop`、`src/web`、`src/app_flutter`、`src/mapi`、`src/stock-sentinel-ai` 均不得因默认改动而互相影响；跨项目共享契约或依赖须显式说明并单独验证。
+- 官网只展示 Windows Desktop 的定位、功能、下载和免责声明；不承载行情采集、后台或用户数据。桌面端本地优先，数据存 Electron `userData` SQLite。
+- 行情使用公开数据与确定性计算；历史缺失必须标注，不输出交易指令或收益承诺。
 
-## 当前状态（2026-09-01）
-- 桌面 v0.3.9 已发布 x64/ia32，实时盘口优化、OSS/GitHub/升级清单一致；默认分享云端行情且无云同步开关。
-- 官网和「统一安装应用」已上线：release `20260901-132042`，助手 OSS/GitHub 资产校验一致，升级清单为 0.3.9。
-- mapi 已上线 `api.dailystock.askcode.cn`，systemd 服务 `hangqing-mapi`，SSH 别名 `api-dailystock`，最新 release `20260901160108`；复盘温度已归一化为 number。
-- 官网 Node 只监听 `127.0.0.1:3002`，目录 `/var/www/dailystock`，升级清单 `/var/www/dailystock-updates/latest.json`，SSH 别名 `zhicha-vps`。
-- App 已完成桌面一致图标、线上行情契约、自选众包补数、龙虎榜回退、设置分区、5–60 秒刷新选择和午间快照保护；历史/复盘异常与自选持久化已修复，待真机复验。
-
-## 发布与风险
-- 发布必须先构建/上传/SHA 校验/公开回读，最后原子切换升级清单；未签名安装包可能触发系统提示。
-- GitHub 偶发不稳时可用项目 `.deploy/` hosts 脚本；凭据只放本地忽略文件，不写入源码和聊天。
+## 当前状态
+- 桌面、官网和 mapi 已有线上发布链路；发布前构建、上传与 SHA-256 校验，最后切换升级清单。凭据只保存在本地忽略配置。
+- Flutter App 已完成核心行情、历史、复盘和自选能力，仍需真机回归。
 - Flutter 使用国内镜像：`PUB_HOSTED_URL=https://pub.flutter-io.cn`，`FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`。
+
+## stock-sentinel-ai
+- 前端以 `frontend/index.html` 的语义 token、响应式断点、焦点环和红涨青跌体系为基线；`--down` 当前为青色。
+- 专业操盘 Prompt 唯一来源为运行时 SQLite `ai_prompt_configs(id=1)`；前端清空后读取 `/api/ai/prompt`，失败明确报错，不使用 fallback。
+- 全市扫描改造方案在 `docs/market-regime-scan-v1.md`，开发计划在 `docs/market-regime-scan-development-plan-v1.md`；均为待实施设计，不能提前写入生产文案。
