@@ -175,6 +175,29 @@ async function enrichReviewWithPreviousTurnover(payload, readPreviousReview) {
   return enriched;
 }
 
+// 复盘列表摘要：手机端历史卡片所需的最小字段集，从完整复盘 payload 中提取。
+function reviewListEntry(payload, fallbackDate) {
+  const p = payload;
+  const temperature = p?.temperature;
+  const breadth = p?.breadth;
+  return {
+    date: p?.date || fallbackDate,
+    temperature: typeof temperature === 'number'
+      ? temperature
+      : temperature?.score ?? null,
+    temperatureLevel: temperature?.level ?? temperature?.zone ?? null,
+    limitUpCount: p?.limitUpCount ?? breadth?.limitUp ?? null,
+    limitDownCount: p?.limitDownCount ?? breadth?.limitDown ?? null,
+    up: breadth?.up ?? null,
+    flat: breadth?.flat ?? null,
+    down: breadth?.down ?? null,
+    reportMode: p?.meta?.report_mode || 'snapshot',
+    qualityStatus: p?.quality?.status || null,
+    asOf: p?.meta?.as_of || p?.generatedAt || null,
+    updatedAt: p?.updatedAt || null,
+  };
+}
+
 // ── cloud 模式：写入 handler ──
 const collectReview = async (body, deviceId) => {
   const v = validate.validateReview(body);
@@ -363,18 +386,7 @@ async function handleRead(req, res, url) {
       for (const s of slots) {
         const obj = await readObjectByKey(s.object_key);
         if (!obj) continue;
-        const p = obj.data;
-        const temperature = p?.temperature;
-        entries.push({
-          date: p?.date || s.slot_key.split(':')[1] || null,
-          temperature: typeof temperature === 'number'
-            ? temperature
-            : temperature?.score ?? null,
-          reportMode: p?.meta?.report_mode || 'snapshot',
-          qualityStatus: p?.quality?.status || null,
-          asOf: p?.meta?.as_of || p?.generatedAt || null,
-          updatedAt: p?.updatedAt || null,
-        });
+        entries.push(reviewListEntry(obj.data, s.slot_key.split(':')[1] || null));
       }
       return send(res, 200, { entries });
     }
@@ -432,16 +444,7 @@ async function handleRead(req, res, url) {
     const entries = fs.existsSync(dir)
       ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => {
           const p = readJson(path.join(dir, f));
-          return {
-            date: p?.date || f.replace('.json', ''),
-            temperature: typeof p?.temperature === 'number'
-              ? p.temperature
-              : p?.temperature?.score ?? null,
-            reportMode: p?.meta?.report_mode || 'snapshot',
-            qualityStatus: p?.quality?.status || null,
-            asOf: p?.meta?.as_of || p?.generatedAt || null,
-            updatedAt: p?.updatedAt || null,
-          };
+          return reviewListEntry(p, f.replace('.json', ''));
         }).sort((a, b) => (b.date > a.date ? 1 : -1))
       : [];
     return send(res, 200, { entries });
@@ -527,4 +530,4 @@ async function start() {
 
 if (require.main === module) start();
 
-module.exports = { server, start, staleMark, enrichReviewWithPreviousTurnover };
+module.exports = { server, start, staleMark, enrichReviewWithPreviousTurnover, reviewListEntry };
