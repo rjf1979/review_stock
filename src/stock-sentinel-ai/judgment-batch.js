@@ -147,12 +147,25 @@ async function retryableFailure(code) {
   return last && (last.judgmentStatus === 'failed' || last.judgmentStatus === 'format_error');
 }
 
+// 闭市期间（收盘后/周末节假日）基础行情数据不可能变化：上次成功研判已覆盖同一份
+// 快照与 K 线数据时，研判只执行一次，直到数据日期推进到新交易日才再次研判。
+// 刻意不依赖证据哈希——哈希包含题材归属、市场状态等易变字段，同数据重跑会整批重复计费。
+function closedMarketAlreadyJudged(last, prepared, phase) {
+  if (!last || phase === 'trading') return false;
+  const dates = (last.evidence && last.evidence.evidenceDates) || {};
+  const klineDate = String((prepared.read && prepared.read.klineDate) || '');
+  const snapshotDate = String(prepared.snapshotDate || '');
+  if (!klineDate && !snapshotDate) return false;
+  return String(dates.klineDate || '') === klineDate && String(dates.snapshotDate || '') === snapshotDate;
+}
+
 async function classify(code, prepared, model, retryOnly) {
   if (prepared.dataStatus === 'not_ready') return { type: 'notReady' };
   const last = await getLastSuccessJudgment(code);
   if (last && Number(last.finishedAt) > 0 && Date.now() - Number(last.finishedAt) < 60 * 60 * 1000) return { type: 'noChange' };
-  if (last && judgmentCore.detectMarketPhase(prepared.snapshotDate, prepared.read && prepared.read.klineDate) === 'closed'
-      && String(last.tradeDate || '') === String(prepared.snapshotDate || '')) return { type: 'noChange' };
+  const phase = judgmentCore.detectMarketPhase(prepared.snapshotDate, prepared.read && prepared.read.klineDate);
+  if (last && phase === 'closed' && String(last.tradeDate || '') === String(prepared.snapshotDate || '')) return { type: 'noChange' };
+  if (closedMarketAlreadyJudged(last, prepared, phase)) return { type: 'noChange' };
   if (last && judgmentCore.sameEvidenceAsLast(prepared, last, model)) return { type: 'noChange' };
   if (last) return { type: 'evidenceUpdate' };
   if (await retryableFailure(code)) return { type: 'failedRetry' };
@@ -348,4 +361,4 @@ function stop() {
   return { stopped: wasRunning, ...getStatus() };
 }
 
-module.exports = { start, stop, getStatus, run, preview, DEFAULT_GAP_MS, setEventSink: (fn) => { eventSink = typeof fn === 'function' ? fn : null; } };
+module.exports = { start, stop, getStatus, run, preview, DEFAULT_GAP_MS, setEventSink: (fn) => { eventSink = typeof fn === 'function' ? fn : null; }, closedMarketAlreadyJudged };
