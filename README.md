@@ -12,13 +12,13 @@
 
 ## 下载
 
-当前 Windows 版本：`0.3.13`
+当前 Windows 版本：`0.3.14`
 
-- [统一安装应用（境内·OSS）](https://oss.askcode.cn/files/hangqing-installer-0.3.13-win.exe)：推荐入口。自动检查环境、匹配 x64/x86、显示下载进度、校验 SHA-256 后启动 Windows 安装向导。
-- [统一安装应用（海外·GitHub）](https://github.com/rjf1979/review_stock/releases/download/v0.3.13/hangqing-installer-0.3.13-win.exe)：助手备用下载入口。
-- [Windows 64 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑，经阿里云 OSS + CDN 加速。
-- [Windows 32 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-ia32-setup.exe)：仅用于 32 位 Windows。
-- [海外·GitHub x64](https://github.com/rjf1979/review_stock/releases/download/v0.3.13/hangqing-desktop-0.3.13-win-x64-setup.exe) · [海外·GitHub x86](https://github.com/rjf1979/review_stock/releases/download/v0.3.13/hangqing-desktop-0.3.13-win-ia32-setup.exe) · [OSS 备用镜像 x64](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.13-win-x64-setup.exe) · [OSS 备用镜像 x86](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.13-win-ia32-setup.exe) · [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
+- [统一安装应用（境内·OSS）](https://oss.askcode.cn/files/hangqing-installer-0.3.14-win.exe)：推荐入口。自动检查环境、匹配 x64/x86、显示下载进度、校验 SHA-256 后启动 Windows 安装向导。
+- [统一安装应用（海外·GitHub）](https://github.com/rjf1979/review_stock/releases/download/v0.3.14/hangqing-installer-0.3.14-win.exe)：助手备用下载入口。
+- [Windows 64 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.14-win-x64-setup.exe)：适用于绝大多数 Windows 10/11 电脑，经阿里云 OSS + CDN 加速。
+- [Windows 32 位安装包（境内·OSS）](https://oss.askcode.cn/files/hangqing-desktop-0.3.14-win-ia32-setup.exe)：仅用于 32 位 Windows。
+- [海外·GitHub x64](https://github.com/rjf1979/review_stock/releases/download/v0.3.14/hangqing-desktop-0.3.14-win-x64-setup.exe) · [海外·GitHub x86](https://github.com/rjf1979/review_stock/releases/download/v0.3.14/hangqing-desktop-0.3.14-win-ia32-setup.exe) · [OSS 备用镜像 x64](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.14-win-x64-setup.exe) · [OSS 备用镜像 x86](https://my-soft-2026.oss-cn-shanghai.aliyuncs.com/files/hangqing-desktop-0.3.14-win-ia32-setup.exe) · [GitHub Release 与全部版本](https://github.com/rjf1979/review_stock/releases)。
 
 境内主下载经阿里云 OSS + CDN（HTTPS），海外请走 GitHub Release 原站链接，官网服务器不再挂载安装包。安装包暂未进行代码签名，Windows 可能显示“未知发布者”提示，请下载后核对发布页或本文提供的 SHA-256。
 
@@ -145,7 +145,7 @@ npm start
 
 ## Windows 打包
 
-桌面版当前版本为 `0.3.13`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
+桌面版当前版本为 `0.3.14`。构建目录和安装包输出到 `src/desktop/release/`，该目录已被 Git 忽略。
 
 ```powershell
 cd src/desktop
@@ -186,11 +186,11 @@ hangqing-installer-<version>-win-x64.exe
 hangqing-installer-<version>-win-ia32.exe
 ```
 
-当前统一安装应用（`0.3.13`）：
+当前统一安装应用（`0.3.14`）：
 
-- 文件：`hangqing-installer-0.3.13-win.exe`
-- 大小：`150832855` 字节
-- SHA-256：`6DA8FC4D29D167442409BB920832FD3D9B9569B13ECB8A65C7F4417809BF2020`
+- 文件：`hangqing-installer-0.3.14-win.exe`
+- 大小：`150832221` 字节
+- SHA-256：`58281687F9DA4D7C14F826C6EB4C9B5FA422327D3345C0D9D4B129F3355A4A98`
 
 在线升级发布时，将最终 x64/ia32 安装包放入 `src/desktop/release/`，运行 `npm run updates:manifest` 自动生成官网升级清单。先上传两个安装包到官网 `/updates/files/`，验证 HTTPS 下载与 SHA-256 后，再替换 `/updates/latest.json`；清单必须最后发布，避免客户端提前看到尚未就绪的版本。
 

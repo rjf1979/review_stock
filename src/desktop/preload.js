@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld('desktopBridge', {
   closeWindow() {
     ipcRenderer.send('desktop:close-window');
   },
+  maximizeWindow() {
+    ipcRenderer.send('desktop:maximize-window');
+  },
+  onWindowMaximized(callback) {
+    const listener = (_event, maximized) => callback(Boolean(maximized));
+    ipcRenderer.on('desktop:window-maximized', listener);
+    return () => ipcRenderer.removeListener('desktop:window-maximized', listener);
+  },
   getUpdateState() {
     return ipcRenderer.invoke('desktop:update-state');
   },

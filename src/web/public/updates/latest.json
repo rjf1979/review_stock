@@ -1,20 +1,20 @@
 {
-  "version": "0.3.13",
-  "publishedAt": "2026-09-04T09:58:30.210Z",
+  "version": "0.3.14",
+  "publishedAt": "2026-09-08T12:14:46.298Z",
   "notes": [
-    "盘口异动最后一行的时间与涨跌幅显示完整，不再被面板底边裁切。",
-    "打开涨停/打开跌停的颜色改为按涨跌方向显示（红涨绿跌），与数值颜色一致。"
+    "标题栏在最小化与关闭之间新增最大化按钮，最大化后变为还原状态。",
+    "主窗口支持自由拖拽调整大小，双击标题栏可切换最大化。"
   ],
   "assets": {
     "x64": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-x64-setup.exe",
-      "size": 85240258,
-      "sha256": "99df9618b158b8bad37156203da6e6a71619c0bb164fd0c795e829d963f8d9e2"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.14-win-x64-setup.exe",
+      "size": 85229042,
+      "sha256": "e93c3f824bab74d0e7a13a216a5e27cb8a39de7db9ec161a90f889486709e2de"
     },
     "ia32": {
-      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.13-win-ia32-setup.exe",
-      "size": 80488532,
-      "sha256": "c676fd9240634bdb83d10549a8065a64e3148f595fa135a7abe4f74af265ba7a"
+      "url": "https://oss.askcode.cn/files/hangqing-desktop-0.3.14-win-ia32-setup.exe",
+      "size": 80519835,
+      "sha256": "30b1c59a9b0b1dec13576729b99982ffd7ef5b90820dd460f36669180a6c202f"
     }
   }
 }

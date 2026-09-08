@@ -443,6 +443,7 @@
       </div>
       <div class="window-controls" aria-label="窗口控制">
         <button class="window-control" type="button" title="最小化" aria-label="最小化窗口" @click="minimizeWindow">−</button>
+        <button class="window-control" type="button" :title="winMaximized ? '还原' : '最大化'" :aria-label="winMaximized ? '还原窗口' : '最大化窗口'" @click="maximizeWindow">{{ winMaximized ? '❐' : '□' }}</button>
         <button class="window-control close" type="button" title="关闭到托盘" aria-label="关闭到托盘" @click="closeWindow">×</button>
       </div>
     </header>
@@ -830,7 +831,7 @@
     }
     createApp({
       data() { return {
-        view: 'realtime', real: {}, review: {}, reviewCache: {}, dragon: {}, dragonWatchNotice: '', sponsorOpen: false, sponsorQrAvailable: true, confirmDialog: null, updatedTime: '-', marketStatus: getMarketStatus(),
+        view: 'realtime', real: {}, review: {}, reviewCache: {}, dragon: {}, dragonWatchNotice: '', sponsorOpen: false, sponsorQrAvailable: true, confirmDialog: null, updatedTime: '-', marketStatus: getMarketStatus(), winMaximized: false,
         status: { realtime: 'loading', watch: 'idle', review: 'idle', dragon: 'idle' },
         errors: { realtime: '', watch: '', review: '', dragon: '' }, formError: '',
         watch: JSON.parse(localStorage.getItem('hq_watch') || '[]').slice(0, WATCHLIST_LIMIT), addCode: '', watchQuotes: [], watchChartData: {}, watchCharts: {}, WATCHLIST_LIMIT,
@@ -928,6 +929,7 @@
       },
       methods: {
         minimizeWindow() { window.desktopBridge?.minimizeWindow(); },
+        maximizeWindow() { window.desktopBridge?.maximizeWindow(); },
         closeWindow() { window.desktopBridge?.closeWindow(); },
         async api(p, options = {}) { const r = await fetch(p, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), ...(options.headers || {}) } }); const d = await r.json(); if (!r.ok) throw new Error(d.error || `请求失败（${r.status}）`); return d; },
         async loadChangelog() { try { const data = await this.api('/changelog.json'); this.changelog = Array.isArray(data.releases) ? data.releases : []; if(this.appVersion==='-') this.appVersion = this.changelog[0]?.version || '-'; } catch (error) { console.warn('[桌面端] 更新日志读取失败：', error.message); } },
@@ -1275,12 +1277,13 @@
         this.loadUpdateState().catch(error => console.warn('[桌面端] 更新状态读取失败：', error.message));
         this._removeUpdateListener=window.desktopBridge?.onUpdateState?.(state => { this.updateState=state; this.appVersion=state.currentVersion || this.appVersion; });
         this._removeConfirmListener=window.desktopBridge?.onConfirm?.(payload => { this.confirmDialog={ requestId: payload.id, title: payload.title, message: payload.message, detail: payload.detail, okLabel: payload.okLabel, cancelLabel: payload.cancelLabel }; this.$nextTick(() => this.$refs.confirmDialog?.querySelector('.confirm-ok')?.focus()); });
+        this._removeMaximizedListener=window.desktopBridge?.onWindowMaximized?.(maximized => { this.winMaximized=maximized; });
         document.getElementById('boot-screen')?.classList.add('is-ready');
         window.desktopBridge?.setNotifyEnabled(this.notify);
          this.updateMarketStatus(); this.startMarketClock();
          this.loadLocalSettings().catch(error => console.warn('[桌面端] SQLite 设置读取失败：', error.message)).finally(() => { this.updateMarketStatus(); this.loadRealtime({ silent: true, allowClosed: true }); this.startAuto(); });
        },
-       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); if (this._monitorTimer) clearInterval(this._monitorTimer); this._removeUpdateListener?.(); this._removeConfirmListener?.(); this._removeMonitorListener?.(); }
+       unmounted() { if (this._timer) clearInterval(this._timer); if (this._marketTimer) clearInterval(this._marketTimer); if (this._pankouInsertTimer) clearTimeout(this._pankouInsertTimer); if (this._monitorTimer) clearInterval(this._monitorTimer); this._removeUpdateListener?.(); this._removeConfirmListener?.(); this._removeMonitorListener?.(); this._removeMaximizedListener?.(); }
     }).mount('#app');
   </script>
 </body>

@@ -180,9 +180,14 @@ function saveReviewMarkdown(date, markdown) {
 }
 
 function fitWindowToDisplay() {
-  if (!win || win.isDestroyed()) return;
+  if (!win || win.isDestroyed() || win.isMaximized()) return;
   const display = screen.getDisplayMatching(win.getBounds());
   win.setBounds(display.workArea, false);
+}
+
+function sendWindowMaximized() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('desktop:window-maximized', win.isMaximized());
 }
 
 const MONITOR_DEFAULT_WIDTH = 300;
@@ -378,9 +383,9 @@ function createWindow() {
     win.hide();
     if (monitorOnMainClose) setMonitorEnabled(true);
   });
-  win.setResizable(false);
-  win.setMaximizable(false);
   win.on('restore', () => setImmediate(fitWindowToDisplay));
+  win.on('maximize', sendWindowMaximized);
+  win.on('unmaximize', sendWindowMaximized);
   load();
 }
 
@@ -462,6 +467,11 @@ ipcMain.on('desktop:notify-setting', (_event, enabled) => {
 });
 
 ipcMain.on('desktop:minimize-window', () => win?.minimize());
+ipcMain.on('desktop:maximize-window', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+});
 ipcMain.on('desktop:close-window', () => win?.close());
 ipcMain.handle('desktop:update-state', () => updateState);
 ipcMain.handle('desktop:check-update', () => checkForUpdates());
