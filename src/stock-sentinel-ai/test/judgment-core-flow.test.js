@@ -80,7 +80,8 @@ themeModule.getAttribution = async (code) => ({
   assert.ok(firstPrompt.startsWith('【用户研究偏好】优先核查趋势、量价与关键价位。'), 'SQLite 用户 Prompt 应前置');
   assert.ok(firstPrompt.includes('【系统指令边界】'), '用户 Prompt 后应声明系统固定协议优先');
   assert.ok(firstPrompt.includes('【研判阶段】首次研判'), '首次研判应携带显式阶段');
-  assert.ok(firstPrompt.includes('verdict 只能为 new_evidence（存在足以建立基线的可用证据）或 insufficient'), '首次研判应限制结论枚举');
+  assert.ok(firstPrompt.includes('verdict 只能为 new_evidence 或 insufficient'), '首次研判应限制结论枚举');
+  assert.ok(firstPrompt.includes('不得使用 maintain 或 revise'), '首次研判应禁止维持/修正结论');
   assert.ok(firstPrompt.includes('【输出协议（优先级最高）】'), '固定输出协议必须后置');
   assert.strictEqual(res.ok, true, '研判应成功');
   assert.strictEqual(res.judgmentStatus, 'success');
@@ -109,7 +110,8 @@ themeModule.getAttribution = async (code) => ({
   assert.ok(secondPrompt.includes('【上次结论摘要】'), '二次研判应携带上次结论');
   assert.ok(secondPrompt.includes('【本次数据变化】'), '二次研判应携带证据变化');
   assert.ok(secondPrompt.includes('【二次复核决策规则】'), '二次研判应携带复核决策规则');
-  assert.ok(res3.record.promptVersion.startsWith('judgment-v2+custom-custom-test-v2-'), '记录应带固定协议与用户 Prompt 内容版本');
+  assert.ok(res3.record.promptVersion.startsWith(aiAssist.PROMPT_VERSION + '-'), '记录应带固定协议的 Prompt 版本前缀');
+  assert.notStrictEqual(res3.record.promptVersion, res.record.promptVersion, '用户 Prompt 内容变更后幂等版本应随之变化');
 
   console.log('judgment core flow ok', { id: res.record.id, priceLevelSetId: res.record.priceLevelSetId });
 })().catch((e) => { console.error(e); process.exit(1); });
