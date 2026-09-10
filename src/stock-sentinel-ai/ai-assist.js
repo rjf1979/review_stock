@@ -7,7 +7,7 @@ const { sma, ema, macd, rsi, limitPct } = require('./screener-core');
 const indicators = require('./indicators');
 const priceLevels = require('./price-levels');
 
-const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = 180000;
 const DEFAULT_RATE_LIMIT_RETRIES = 3;
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 1500;
 const RATE_LIMIT_STATUS = new Set([429, 503]);
@@ -164,10 +164,11 @@ async function chatCompletionsDetailed(cfg, messages, { maxRetries = DEFAULT_RAT
   let lastText = '';
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), cfg.timeoutMs || DEFAULT_TIMEOUT_MS);
+    const timeoutMs = Number(cfg.timeoutMs) || DEFAULT_TIMEOUT_MS;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` };
-      const maxTokens = cfg.maxTokens != null && Number.isFinite(Number(cfg.maxTokens)) ? Number(cfg.maxTokens) : 2048;
+      const maxTokens = cfg.maxTokens != null && Number.isFinite(Number(cfg.maxTokens)) ? Number(cfg.maxTokens) : 4096;
       const temperature = cfg.temperature != null && Number.isFinite(Number(cfg.temperature)) ? Number(cfg.temperature) : null;
       const body = {
         model: cfg.model,
@@ -176,7 +177,19 @@ async function chatCompletionsDetailed(cfg, messages, { maxRetries = DEFAULT_RAT
         response_format: { type: 'json_object' },
         ...(temperature != null ? { temperature } : {}),
       };
-      const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+      const payloadChars = JSON.stringify(body).length;
+      let response;
+      try {
+        response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+      } catch (e) {
+        // 超时中止：错误信息带上超时上限、本次输入字数与模型，便于定位是输入过大还是模型过慢。
+        if (e && e.name === 'AbortError') {
+          const err = new Error(`AI 请求超时（上限 ${Math.round(timeoutMs / 1000)}s · 本次输入 ${payloadChars} 字 · 模型 ${cfg.model}）`);
+          err.name = 'AbortError';
+          throw err;
+        }
+        throw e;
+      }
       lastStatus = response.status;
       const text = await response.text();
       lastText = text;
@@ -368,17 +381,16 @@ function buildStructuredPrompt(ev, { previous = null, changedItems = [] } = {}) 
     if (Array.isArray(changedItems) && changedItems.length) {
       lines.push('【本次数据变化】' + changedItems.join('；'));
     }
-    lines.push('【二次复核决策规则】先对照上次结论与本次变化；没有趋势、量价、关键价位或数据质量层面的实质变化时，优先 verdict=maintain。仅当新证据削弱或推翻上次核心依据时用 revise；存在独立且显著的新事实、但不足以推翻原结论时用 new_evidence；数据缺失、日期错配或无法有效比较时用 insufficient。不得为了给出新观点而强行修正。');
+    lines.push('【二次复核决策规则】对照上次结论与本次变化：无趋势、量价、关键价位或数据质量的实质变化优先 maintain；新证据削弱或推翻原核心依据用 revise；有独立显著新事实但不足以推翻原结论用 new_evidence；数据缺失、错配或无法比较用 insufficient。不得强行修正。');
   } else {
     lines.push('【研判阶段】首次研判');
-    lines.push('【首次研判决策规则】仅依据当前证据建立可复核的基线结论，不假定存在历史判断。verdict 只能为 new_evidence（存在足以建立基线的可用证据）或 insufficient（证据不足、缺失或冲突）；不得使用 maintain 或 revise。');
+    lines.push('【首次研判决策规则】仅依据当前证据建立可复核基线，不假定存在历史判断：verdict 只能为 new_evidence 或 insufficient；不得使用 maintain 或 revise。');
   }
   lines.push('');
-  lines.push('【输出协议（优先级最高）】必须严格按如下 JSON 结构返回：');
-  lines.push('{"verdict":"maintain|revise|new_evidence|insufficient","summary":"不超过 120 字的结论摘要","changes":["相对上次结论的变化"],"evidence":["支持本次判断的关键证据，最多 3 条"],"risks":["主要风险"],"watchPoints":["后续可验证的跟踪点"]}');
+  lines.push('【输出协议（优先级最高）】必须严格按如下 JSON 结构返回，所有文字字段精炼直接、不重复、不复述证据原文：');
+  lines.push('{"verdict":"maintain|revise|new_evidence|insufficient","summary":"不超过 80 字的结论摘要","changes":["相对上次的变化，最多 3 条、每条 ≤25 字"],"evidence":["关键证据，最多 3 条、每条 ≤25 字"],"risks":["主要风险，最多 2 条"],"watchPoints":["后续可验证的跟踪点，最多 3 条、每条 ≤20 字"]}');
   lines.push('');
-  lines.push('硬性要求：不得出现“买入 / 卖出 / 目标价 / 胜率 / 保证收益 / 智能荐股”等词；不得输出确定性收益或买卖指令；只用已提供证据，缺什么就如实说明，不要猜测补全。');
-  lines.push('对技术指标只做趋势、波动、相对强弱与量价确认的客观描述，不得解释为确定性信号，不得因指标数量多而重复增强结论。');
+  lines.push('硬性要求：不得出现“买入 / 卖出 / 目标价 / 胜率 / 保证收益 / 智能荐股”等词；不得输出确定性收益或买卖指令；只用已提供证据，缺什么如实说明；技术指标只做客观描述，不构成确定性信号。');
   return lines.join('\n');
 }
 

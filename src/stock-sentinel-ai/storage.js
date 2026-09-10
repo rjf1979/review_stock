@@ -396,22 +396,26 @@ async function getStockRiskPlans(codes = []) {
 // ── 单票K线落盘（SQLite：一票一日一行）─────────────────────────────
 // kline: [{date, open, high, low, close, volume, amount?}], date: 抓取日期。
 async function writeKline(code, kline, date) {
+  let dbStarted = false;
   try {
     const d = await ensureDb();
     d.run('BEGIN');
+    dbStarted = true;
     const stmt = d.prepare(
       'INSERT OR REPLACE INTO kline(code,date,open,high,low,close,volume,amount) VALUES(?,?,?,?,?,?,?,?)'
     );
-    for (const c of kline || []) {
-      if (!c || !c.date) continue;
-      stmt.run([String(code), String(c.date), num(c.open), num(c.high), num(c.low), num(c.close), num(c.volume), num(c.amount)]);
-    }
-    stmt.free();
+    try {
+      for (const c of kline || []) {
+        if (!c || !c.date) continue;
+        stmt.run([String(code), String(c.date), num(c.open), num(c.high), num(c.low), num(c.close), num(c.volume), num(c.amount)]);
+      }
+    } finally { stmt.free(); }
     d.run('INSERT OR REPLACE INTO kline_meta(code,date,savedAt) VALUES(?,?,?)', [String(code), String(date || ''), new Date().toISOString()]);
     const stat = d.exec('SELECT COUNT(*), MIN(date), MAX(date) FROM kline WHERE code = ?', [String(code)]);
     const sv = stat.length && stat[0].values.length ? stat[0].values[0] : [0, null, null];
     d.run('INSERT OR REPLACE INTO kline_stats(code,barCount,firstDate,latestDate,updatedAt) VALUES(?,?,?,?,?)', [String(code), Number(sv[0]) || 0, sv[1], sv[2], new Date().toISOString()]);
     d.run('COMMIT');
+    dbStarted = false;
     dirtyWrites += 1;
     if (dirtyWrites >= FLUSH_BATCH) {
       persist();
@@ -419,6 +423,7 @@ async function writeKline(code, kline, date) {
     }
     return true;
   } catch {
+    if (dbStarted && db) { try { db.run('ROLLBACK'); } catch { /* 忽略回滚失败 */ } }
     return false;
   }
 }
@@ -457,6 +462,30 @@ async function listKlineDates() {
     return res[0].values.map((r) => String(r[0]));
   } catch {
     return [];
+  }
+}
+
+// ── 一次性迁移标记（schema_migrations）────────────────────────────
+// 记录已执行的数据迁移，避免重启后重复执行（如量纲修复 kline_volume_unit_v1）。
+async function getMigration(name) {
+  try {
+    const d = await ensureDb();
+    const res = d.exec('SELECT appliedAt FROM schema_migrations WHERE name = ?', [String(name)]);
+    return res.length && res[0].values.length ? String(res[0].values[0][0] || '') : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setMigration(name) {
+  try {
+    const d = await ensureDb();
+    d.run('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, appliedAt TEXT NOT NULL)');
+    d.run('INSERT OR REPLACE INTO schema_migrations(name, appliedAt) VALUES(?, ?)', [String(name), new Date().toISOString()]);
+    persist();
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -980,6 +1009,7 @@ module.exports = {
   writeMarketSnapshotBatch, writeMarketSentimentSnapshot, readMarketSentimentSnapshot, saveStockRiskPlan, getStockRiskPlans,
   writeKline, readKline, readKlineStats, listKlineDates, clearKlines, clearJudgments, flush, reloadDbFromDisk, klineStats,
   readKlineDates, recentTradingDates, klineGaps,
+  getMigration, setMigration,
   writeJudgmentRecord, getLastSuccessJudgment, listJudgmentAttempts,
   writePriceLevelSet, getPriceLevelSet, refreshDataStats, getDataStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences,
   saveWatchRecommendationBatch, saveWatchRecommendation, latestWatchRecommendations,

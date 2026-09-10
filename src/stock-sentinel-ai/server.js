@@ -4,10 +4,12 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
-const { MARKETS, fetchMarketSnapshot, fetchKline, snapshotStatus, fetchQuotes, fetchLatestSnapshotQuotes, isCnStockTradingSession, resolveStockMeta, codeMarket, todayStr } = require('./data');
+const { MARKETS, fetchMarketSnapshot, fetchKline, snapshotStatus, fetchQuotes, isCnStockTradingSession, resolveStockMeta, codeMarket, todayStr } = require('./data');
 const { listRules, scanByMarketContext, getMarketPrescan, PATTERNS, detectSinglePatterns } = require('./screener-core');
 const rulesStore = require('./rules-store');
-const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, flushSync, getStockRiskPlans } = require('./storage');
+const crypto = require('crypto');
+const priceLevels = require('./price-levels');
+const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans } = require('./storage');
 const prefetch = require('./prefetch');
 const watchlist = require('./watchlist');
 const candidatePool = require('./candidate-pool');
@@ -19,10 +21,13 @@ const judgmentBatch = require('./judgment-batch');
 const judgmentStore = require('./judgment-store');
 const judgmentWorker = require('./worker-manager');
 const watchRecommendation = require('./watch-recommendation');
+const klineSync = require('./kline-sync');
+const { shanghaiClock, isAfterCnMarketClose } = require('./market-session');
 
 const DEFAULT_PORT = 3110;
 const MARKETS_DEFAULTS = ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'];
-const FRONTEND = path.join(__dirname, 'frontend');
+// 前端源码在 frontend/src（Vite 构建），服务只伺服构建产物 frontend/dist。
+const FRONTEND = path.join(__dirname, 'frontend', 'dist');
 const batchEventClients = new Set();
 let poolJudgmentsCache = { at: 0, key: '', value: null };
 let poolPatternsCache = { at: 0, key: '', value: null };
@@ -32,6 +37,42 @@ function syncWorkerJudgments() {
   // Worker 落库已统一转交主进程写入（worker-manager.applyDbWrite），主进程内存即最新状态；
   // 这里只需要让候选池研判缓存失效，不再从磁盘重载数据库。
   poolJudgmentsCache = { at: 0, key: '', value: null };
+}
+
+function invalidateKlineDerivedCaches() {
+  // 同日 K 线覆盖不会改变深度或最新日期，必须主动失效形态缓存。
+  poolJudgmentsCache = { at: 0, key: '', value: null };
+  poolPatternsCache = { at: 0, key: '', value: null };
+}
+
+async function settlePendingCustomReturnBaselines() {
+  const settled = [];
+  for (const item of watchlist.getList()) {
+    const baseline = item && item.customReturnBaseline;
+    if (!baseline || baseline.status !== 'pending_touch') continue;
+    const record = await readKline(item.code);
+    const fill = watchlist.findFirstSimulatedFill(record && record.kline, baseline.price, baseline.monitorStartDate);
+    if (!fill) continue;
+    const result = watchlist.markCustomReturnBaselineFilled(item.code, { expectedUpdatedAt: baseline.updatedAt, filledDate: fill.date });
+    if (result.ok && !result.unchanged) settled.push(item.code);
+  }
+  return settled;
+}
+
+async function settlePendingWatchBaselines(now = new Date()) {
+  // 加入日基准只能在闭市后由同日期最终日 K 的 close 冻结；绝不退回上一日或使用实时价。
+  if (!isAfterCnMarketClose(now)) return [];
+  const settled = [];
+  for (const item of watchlist.getList()) {
+    const baseline = item && item.returnBaseline;
+    if (!baseline || baseline.status !== 'pending_close' || !/^\d{4}-\d{2}-\d{2}$/.test(String(baseline.targetDate || ''))) continue;
+    const record = await readKline(item.code);
+    const bar = record && Array.isArray(record.kline) && record.kline.find((x) => String(x.date) === String(baseline.targetDate));
+    if (!bar || !Number.isFinite(Number(bar.close)) || Number(bar.close) <= 0) continue;
+    const result = watchlist.confirmReturnBaseline(item.code, { targetDate: baseline.targetDate, close: bar.close });
+    if (result.ok && !result.unchanged) settled.push(item.code);
+  }
+  return settled;
 }
 
 judgmentWorker.onEvent((msg) => {
@@ -291,6 +332,8 @@ function createServer(port = DEFAULT_PORT) {
       if (pathname === '/api/prefetch-status') return send(res, 200, prefetch.getStatus());
       if (pathname === '/api/prefetch-stop') return send(res, 200, prefetch.stopPrefetch());
       if (pathname === '/api/watchlist' && req.method === 'GET') {
+        await settlePendingWatchBaselines();
+        await settlePendingCustomReturnBaselines();
         return send(res, 200, { watchlist: watchlist.getList(), file: watchlist.WATCHLIST_FILE });
       }
       if (pathname === '/api/watchlist' && req.method === 'POST') {
@@ -307,9 +350,37 @@ function createServer(port = DEFAULT_PORT) {
           const qs = await fetchQuotes([code]).catch(() => []);
           if (qs[0]) name = qs[0].name;
         }
-        const r = watchlist.add(code, { name, market });
+        // source=manual 为手工添加（盯盘页置顶展示）；候选池转入等其余入口默认 pool。
+        const source = String(url.searchParams.get('source') || 'pool');
+        const clock = shanghaiClock();
+        const r = watchlist.add(code, { name, market, source, baselineTargetDate: clock.date });
         if (!r.ok) return send(res, 409, { ok: false, error: r.error });
-        return send(res, 200, { ok: true, code, name, market });
+        // 闭市加入时立即同步并尝试冻结加入日最终收盘价；盘中始终保持待收盘确认。
+        if (isAfterCnMarketClose()) {
+          const syncResult = await klineSync.sync([code], { gapMs: 0, lmt: 260 });
+          if (syncResult.changedCodes && syncResult.changedCodes.length) invalidateKlineDerivedCaches();
+          await settlePendingWatchBaselines();
+        }
+        return send(res, 200, { ok: true, code, name, market, watch: watchlist.get(code) });
+      }
+      if (pathname === '/api/watchlist' && req.method === 'PATCH') {
+        const code = String(url.searchParams.get('code') || '').trim();
+        if (!/^\d{6}$/.test(code)) return send(res, 400, { ok: false, error: 'code 必须为 6 位数字' });
+        const body = await readBody(req);
+        if (body && Object.prototype.hasOwnProperty.call(body, 'pinned')) {
+          const saved = watchlist.setPinned(code, body.pinned === true);
+          return send(res, saved.ok ? 200 : 404, { ...saved, watch: saved.item });
+        }
+        if (!body || !Object.prototype.hasOwnProperty.call(body, 'customReturnBaselinePrice')) return send(res, 400, { ok: false, error: '请提供模拟买入价' });
+        if (body.customReturnBaselinePrice === null) {
+          const cleared = watchlist.clearCustomReturnBaseline(code);
+          return send(res, cleared.ok ? 200 : 404, { ...cleared, cleared: cleared.ok && !cleared.unchanged, watch: cleared.item });
+        }
+        const clock = shanghaiClock();
+        const saved = watchlist.setCustomReturnBaseline(code, body.customReturnBaselinePrice, { monitorStartDate: body.customReturnBaselineMonitorStartDate, now: new Date().toISOString() });
+        if (!saved.ok) return send(res, saved.error === '不在自选中' ? 404 : 400, saved);
+        await settlePendingCustomReturnBaselines();
+        return send(res, 200, { ok: true, watch: watchlist.get(code), monitorDateDefault: clock.date });
       }
       if (pathname === '/api/watchlist' && req.method === 'DELETE') {
         const code = String(url.searchParams.get('code') || '').trim();
@@ -318,12 +389,8 @@ function createServer(port = DEFAULT_PORT) {
       }
       if (pathname === '/api/watchlist/quotes') {
         const codes = String(url.searchParams.get('codes') || '').split(',').map((s) => s.trim()).filter(Boolean);
-        const closedMarket = !isCnStockTradingSession();
-        const snapshotResult = closedMarket ? await fetchLatestSnapshotQuotes(codes) : null;
-        const liveQuotes = !closedMarket || !snapshotResult.quotes.length ? await fetchQuotes(codes) : null;
-        const quotes = snapshotResult ? (snapshotResult.quotes.length ? snapshotResult.quotes : liveQuotes) : liveQuotes;
-        const asOf = snapshotResult && snapshotResult.quotes.length ? snapshotResult.asOf : todayStr();
-        const source = snapshotResult && snapshotResult.quotes.length ? snapshotResult.source : 'live_quote';
+        // 报价统一走实时源（闭市/午休时返回最近交易日的数据）；K 线图表始终以本地 K 线库为准，不使用快照文件。
+        const quotes = await fetchQuotes(codes);
         const plans = await getStockRiskPlans(codes);
         const alerts = [];
         for (const quote of quotes) {
@@ -336,14 +403,35 @@ function createServer(port = DEFAULT_PORT) {
           else if (profits.some((x) => price >= x)) alerts.push({ code: quote.code, type: 'take_profit', label: '触及止盈价位', price, level: Math.min(...profits), tradingStyle: plan.tradingStyle });
           else if (entries.some((x) => Math.abs(price / x - 1) <= 0.01)) alerts.push({ code: quote.code, type: 'entry', label: '接近建仓价位', price, level: entries[0], tradingStyle: plan.tradingStyle });
         }
-        return send(res, 200, { quotes, alerts, asOf, source });
+        return send(res, 200, { quotes, alerts, asOf: todayStr(), source: 'live_quote' });
       }
       if (pathname === '/api/pool' && req.method === 'GET') {
-        return send(res, 200, { pool: candidatePool.getList(), file: candidatePool.POOL_FILE, klineState: poolPrefetch.getStatus() });
+        // 展示层的现价/涨跌幅以本地 K 线库尾 bar 为准（与个股详情同源同值）；
+        // 量能评分/形态等筛选基准保持入池时点不变。克隆返回，不污染候选池存储。
+        const items = await Promise.all(candidatePool.getList().map(async (item) => {
+          const out = { ...item };
+          try {
+            const rec = await readKline(String(item.code || ''));
+            const bars = rec && Array.isArray(rec.kline) ? rec.kline : [];
+            if (bars.length >= 2) {
+              const last = bars[bars.length - 1];
+              const prev = bars[bars.length - 2];
+              if (Number(prev.close) > 0) {
+                out.price = Number(last.close);
+                out.changePct = ((last.close - prev.close) / prev.close) * 100;
+              }
+            }
+          } catch { /* 无 K 线的代码保持入池数据 */ }
+          return out;
+        }));
+        return send(res, 200, { pool: items, file: candidatePool.POOL_FILE, klineState: poolPrefetch.getStatus() });
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'GET') {
-        const items = candidatePool.getList();
-        return send(res, 200, { recommendations: await watchRecommendation.latest(items.map((x) => x.code)), status: watchRecommendation.getStatus(), ruleVersion: watchRecommendation.RULE_VERSION });
+        // 候选池与自选盯盘的代码都纳入查询：转入盯盘后推荐结论与理由在盯盘页仍然可见。
+        const poolCodes = candidatePool.getList().map((x) => String((x && x.code) || ''));
+        const watchCodes = watchlist.getList().map((x) => String((x && x.code) || ''));
+        const codes = [...new Set([...poolCodes, ...watchCodes])].filter((c) => /^\d{6}$/.test(c));
+        return send(res, 200, { recommendations: await watchRecommendation.latest(codes), status: watchRecommendation.getStatus(), ruleVersion: watchRecommendation.RULE_VERSION });
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'POST') {
         const running = watchRecommendation.getStatus();
@@ -440,6 +528,63 @@ function createServer(port = DEFAULT_PORT) {
         const dataSource = pickDataSource(url.searchParams);
         const minDate = String(url.searchParams.get('minDate') || '');
         return send(res, 200, { code, dataSource, kline: await fetchKline(code, { dataSource, minDate }) });
+      }
+      if ((pathname === '/api/kline/sync' || pathname === '/api/kline/complete') && req.method === 'POST') {
+        const body = await readBody(req);
+        const scope = String(body && body.scope || 'managed');
+        if (!['managed', 'watch', 'explicit'].includes(scope)) return send(res, 400, { ok: false, error: { code: 'INVALID_SCOPE', message: '无效的 K 线同步范围', retryable: false } });
+        const result = await klineSync.sync(Array.isArray(body && body.codes) ? body.codes : [], {
+          scope,
+          gapMs: undefined,
+          lmt: Math.min(Math.max(Number(body && body.lmt) || 260, 20), 500),
+        });
+        if (result.ok === false && result.errorCode === 'KLINE_FLUSH_FAILED') {
+          return send(res, 503, { ok: false, error: { code: result.errorCode, message: result.error, retryable: true }, result });
+        }
+        const postSync = { settledBaselines: [], settledCustomBaselines: [], warnings: [] };
+        try { postSync.settledBaselines = await settlePendingWatchBaselines(); } catch (e) { postSync.warnings.push('收益基准结算失败：' + String(e.message || e)); }
+        try { postSync.settledCustomBaselines = await settlePendingCustomReturnBaselines(); } catch (e) { postSync.warnings.push('模拟基准结算失败：' + String(e.message || e)); }
+        if (result.changedCodes && result.changedCodes.length) {
+          invalidateKlineDerivedCaches();
+          const changed = new Set(result.changedCodes);
+          const affected = candidatePool.getList().filter((item) => changed.has(String(item.code || '')));
+          if (affected.length) watchRecommendation.start(affected).catch(() => {});
+        }
+        return send(res, result.ok === false ? 503 : 200, result.ok === false ? {
+          ok: false,
+          error: { code: result.errorCode || 'KLINE_SYNC_FAILED', message: result.error || 'K 线同步失败', retryable: result.retryable !== false },
+          result,
+          postSync,
+        } : { ...result, postSync });
+      }
+      if (pathname === '/api/kline/sync-status') return send(res, 200, klineSync.getStatus());
+      if (pathname === '/api/kline/levels' && req.method === 'POST') {
+        // 个股价位（建仓/止损/止盈）：优先读已落库价位集；按当前 K 线现算并持久化，保证每次打开详情都有。
+        const body = await readBody(req);
+        const code = String((body && body.code) || '').trim();
+        if (!/^\d{6}$/.test(code)) return send(res, 400, { error: 'code 必须为 6 位数字' });
+        const local = await readKline(code);
+        const bars = local && Array.isArray(local.kline) ? local.kline : [];
+        if (bars.length < 30) return send(res, 400, { ok: false, error: 'K 线样本不足，无法计算价位' });
+        const lastBar = bars[bars.length - 1];
+        const levels = priceLevels.computeLevels(bars, { code });
+        const evidenceHash = 'auto-' + crypto.createHash('sha256').update(bars.map((b) => b.date + ':' + b.close).join('|')).digest('hex').slice(0, 24);
+        await writePriceLevelSet({
+          code,
+          tradeDate: String(lastBar.date || ''),
+          evidenceHash,
+          algorithmVersion: 'levels-v1',
+          adjustmentType: 'qfq',
+          klineDate: String(lastBar.date || ''),
+          entryTriggers: levels.entryTriggers || [],
+          invalidationLevel: levels.invalidationLevel || null,
+          exitWatchZones: levels.exitWatchZones || [],
+          riskReward: levels.riskReward || null,
+          supportZones: levels.supportZones || [],
+          resistanceZones: levels.resistanceZones || [],
+        });
+        const stored = await getPriceLevelSet(code, evidenceHash, 'levels-v1');
+        return send(res, 200, { ok: true, code, levels: stored ? { ...stored, available: true } : null });
       }
       if (pathname === '/api/kline/patterns' && req.method === 'POST') {
         const body = await readBody(req);
@@ -557,6 +702,8 @@ if (require.main === module) {
   createServer(port).listen(port, '127.0.0.1', () => {
     console.log(`智诊盯盘本地后端运行于 http://127.0.0.1:${port}`);
   });
+  // 存量 K 线量纲迁移（手→股）：有标记即瞬时跳过；首次执行在后台跑，不阻塞服务。
+  require('./kline-volume-migration').maybeRun({ log: (...args) => console.log(...args) }).catch(() => {});
   // 退出兜底：把仍在内存、未达自动落盘阈值的写入（预取 K 线等）同步导出到 kline.db。
   process.on('exit', () => { try { flushSync(); } catch { /* 忽略退出期导出失败 */ } });
   for (const signal of ['SIGINT', 'SIGTERM']) {

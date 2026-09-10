@@ -3,7 +3,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isWeekendDate } = require('../server');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
+// 前端已拆分为 Vite + SFC 多文件结构：拼接全部源文件（壳 + 样式 + store + 组件）后做静态契约检查。
+function collectFrontendSources() {
+  const root = path.join(__dirname, '..', 'frontend');
+  const out = [];
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      if (name === 'dist' || name === 'node_modules') continue; // 只检查源码
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else out.push(full);
+    }
+  };
+  walk(root);
+  // js/css 文件内容包进 script 块，让标签平衡检查按原 index.html 的口径剥离脚本内容
+  return out.sort()
+    .map((f) => {
+      const c = fs.readFileSync(f, 'utf8');
+      return /\.js$|\.css$/.test(f) ? '<script>' + c + '</script>' : c;
+    })
+    .join('\n');
+}
+const html = collectFrontendSources();
 
 function assertStaticMarkupIsBalanced(source) {
   const markup = source.replace(/<script\b[\s\S]*?<\/script>/gi, '');
@@ -79,6 +100,37 @@ assert.match(html, /请前往设置预选市场/);
 assert.doesNotMatch(html, /@click="toggleMarket\(key\)"/);
 assert.match(html, /扫描股数/);
 assert.match(html, /id="scanLimit"/);
+assert.match(html, /id="klineSyncIntervalSec"/);
+assert.match(html, /交易时间内自动补全间隔（秒）/);
+assert.match(html, /function applyDetailQuoteTexts\(quote\)/);
+assert.match(html, /name: '成交量（股）'/);
+assert.match(html, /formatter: \(value\) => fmtVolume\(value\)/);
+assert.match(html, /累计收益按加入日最终收盘价计算/);
+assert.match(html, /累计收益待当日收盘确认/);
+assert.match(html, /历史自选未记录收益基准/);
+assert.match(html, /id="returnBaselineDialog"/);
+assert.match(html, /模拟买入待触达/);
+assert.match(html, /开始监控日期/);
+assert.match(html, /清除模拟价，恢复自动基准/);
+assert.match(html, /handleModalKeydown\(\$event, 'baseline'\)/);
+assert.match(html, /\/api\/kline\/sync/);
+assert.match(html, /force \? 'watch' : 'managed'/);
+assert.match(html, /已有 K 线同步任务正在运行，已加入等待队列/);
+assert.match(html, /watchSessionActive, watchCompleting \} = storeToRefs\(app\)/);
+assert.doesNotMatch(html, /v-else-if="watchAlerts\.length"/);
+assert.doesNotMatch(html, /levelsText/);
+assert.match(html, /const hasChart = computed\(\(\) => bars\.value\.length > 0\)/);
+assert.match(html, /if \(chart && chart\.getDom\(\) !== chartEl\.value\) disposeChart\(\)/);
+assert.match(html, /const entryTriggers = computed/);
+assert.match(html, /confirmAbove \|\| \(trigger\.zone && trigger\.zone\.high\) \|\| trigger\.value \|\| trigger\.price/);
+assert.match(html, /const entryStatus = computed/);
+assert.match(html, /已达成/);
+assert.match(html, /建仓 \$\{app\.fmtPrice\(item\.value\)\}/);
+assert.match(html, /class="watch-card-entry-status"/);
+assert.doesNotMatch(html, /markLine: \{ silent: true, symbol: \['none', 'none'\], data: entryLines \}/);
+assert.match(html, /watchKlines\.value = Object\.fromEntries\(Object\.entries\(watchKlines\.value\)\.filter/);
+assert.match(html, /await loadWatchKlines\(\);/);
+assert.match(html, /filter\(\(c\) => \/\^\\d\{6\}\$\/\.test\(c\)\)/);
 assert.match(html, /settings\.saveTradingSettings\(\)/);
 assert.match(html, /settings\.saveScanPreferences\(\)/);
 assert.match(html, /settings\.saveScanLimit\(\)/);

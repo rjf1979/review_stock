@@ -4,6 +4,7 @@
 // 复用 data.fetchKline（多源链 + 熔断），仅串行 + 间隔，避免轰接口。
 const { fetchKline } = require('./data');
 const { readKline, readKlineStats } = require('./storage');
+const { shanghaiClock, isAfterCnMarketClose } = require('./market-session');
 
 const DEFAULT_LMT = 250;
 const DEFAULT_GAP_MS = 350;      // 串行间隔，兼顾速度与东财/腾讯限流
@@ -71,10 +72,10 @@ async function run(codesInput, { lmt = DEFAULT_LMT, gapMs = DEFAULT_GAP_MS } = {
   try {
     const stats = await readKlineStats(codes);
     const statMap = new Map(stats.map((x) => [x.code, x]));
-    const shanghai = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-    const day = shanghai.getDay();
-    const closed = day >= 1 && day <= 5 && shanghai.getHours() >= 15;
-    const today = `${shanghai.getFullYear()}-${String(shanghai.getMonth() + 1).padStart(2, '0')}-${String(shanghai.getDate()).padStart(2, '0')}`;
+    const now = new Date();
+    const clock = shanghaiClock(now);
+    const closed = isAfterCnMarketClose(now);
+    const today = clock.date;
     for (const code of codes) {
       if (!state.running) break;
       state.current = code;

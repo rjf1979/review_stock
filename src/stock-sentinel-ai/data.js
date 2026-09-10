@@ -5,6 +5,7 @@
 // 注意：以上为东财 clist 常规语义，落地时务必用真实响应核对 f8/f10 是否符合预期。
 
 const { writeSnapshot, readSnapshot, readLatestSnapshot, writeMarketSnapshotBatch, writeMarketSentimentSnapshot, readMarketSentimentSnapshot, writeKline, readKline } = require('./storage');
+const { isCnStockTradingSession } = require('./market-session');
 const { TextDecoder } = require('util');
 
 const REQUEST_GAP_MS = 1100; // 东财串行限流（>=1s），与 desktop 保持一致。
@@ -393,6 +394,36 @@ async function fetchMarketSnapshot({ markets = [], pageSize = 100, limit = Infin
 // ── 单票日K ─────────────────────────────
 // 主用：腾讯 fqkline（前复权，不封IP），sh/sz/创业板/科创板正常；
 // 北交所 920 统一代码移动端接口暂未回填历史（仅当日一根），故缺历史时回退东财日K。
+function normalizeKlineVolume(rawVolume, source) {
+  const volume = Number(rawVolume);
+  if (!Number.isFinite(volume) || volume < 0) return 0;
+  // 本地库统一以“股”存储。腾讯 fqkline 与东财 f56 返回手，新浪日线直接返回股。
+  // 在源适配边界统一，防止故障转移后将手数直接混入股数序列。
+  return source === 'tencent' || source === 'em' ? volume * 100 : volume;
+}
+
+function normalizeKlineVolumeSeries(bars) {
+  const list = Array.isArray(bars) ? bars.map((bar) => ({ ...bar })) : [];
+  const vols = list.map((bar) => Number(bar.volume));
+  const usable = vols.filter((value) => Number.isFinite(value) && value > 0);
+  // 读侧兜底（docs/kline-data-standard.md §3）：仅当末尾连续 ≥2 根 ≥20× 历史中位时，
+  // 判定“历史为手、尾部为股”，把边界前的柱 ×100。单根暴量/真实缩量不触发，不回写存储。
+  if (usable.length < 16) return list;
+  const sorted = [...usable].sort((a, b) => a - b);
+  const medHist = sorted[Math.floor((sorted.length - 1) / 2)];
+  if (!(medHist > 0)) return list;
+  const threshold = medHist * 20;
+  let highRun = 0;
+  while (highRun < vols.length && Number.isFinite(vols[vols.length - 1 - highRun]) && vols[vols.length - 1 - highRun] >= threshold) highRun++;
+  // 高量簇过长说明是真实放量行情而非单位边界；边界前至少要留 8 根历史。
+  if (highRun < 2 || highRun > 10 || vols.length - highRun < 8) return list;
+  for (let i = 0; i < vols.length - highRun; i++) {
+    const bar = list[i];
+    if (Number.isFinite(Number(bar.volume)) && Number(bar.volume) > 0) bar.volume = Number(bar.volume) * 100;
+  }
+  return list;
+}
+
 async function fetchKlineTencent(code, lmt) {
   // 北交所代码推断：当前统一为 92 开头，遗留为 4/8 开头；勿把 920 误判为深市。
   const prefix =
@@ -416,7 +447,7 @@ async function fetchKlineTencent(code, lmt) {
       close: Number(k[2]),
       high: Number(k[3]),
       low: Number(k[4]),
-      volume: Number(k[5]) || 0,
+      volume: normalizeKlineVolume(k[5], 'tencent'),
     }));
 }
 
@@ -450,7 +481,7 @@ async function fetchKlineEastmoney(code, lmt) {
       close: Number(p[2]),
       high: Number(p[3]),
       low: Number(p[4]),
-      volume: Number(p[5]) || 0,
+      volume: normalizeKlineVolume(p[5], 'em'),
     };
   });
 }
@@ -479,7 +510,7 @@ async function fetchKlineSina(code, lmt) {
       close: Number(k.close),
       high: Number(k.high),
       low: Number(k.low),
-      volume: Number(k.volume) || 0,
+      volume: normalizeKlineVolume(k.volume, 'sina'),
     }));
 }
 
@@ -540,19 +571,30 @@ async function fetchKlineBySource(src, code, lmt) {
 async function fetchKlineRaw(code, { lmt = 250, prefer = '' } = {}) {
   let kline = [];
   let source = '';
+  const sourceAttempts = [];
   for (const src of klineSourceOrder(prefer)) {
+    // 冷却源仍排在最后尝试：健康源全不可用时保留最后的故障转移机会。
+    const cooling = srcHealth(src).cooldownUntil > Date.now();
     try {
       const rows = await fetchKlineBySource(src, code, lmt);
-      if (rows && rows.length) markKlineSourceSuccess(src);
+      if (rows && rows.length) {
+        markKlineSourceSuccess(src);
+        sourceAttempts.push({ source: src, outcome: 'success', cooling });
+      } else {
+        sourceAttempts.push({ source: src, outcome: 'empty', retryable: false, cooling });
+      }
       if (rows && rows.length && !source) source = src;
-      if (rows.length > kline.length) kline = rows;
+      if (rows && rows.length > kline.length) kline = rows;
       if (kline.length >= Math.min(lmt, 10)) break;
     } catch (e) {
       markKlineSourceFail(src);
+      const message = String(e && e.message || e).replace(/https?:\/\/\S+/g, '').slice(0, 120);
+      sourceAttempts.push({ source: src, outcome: 'error', reason: message || '请求失败', retryable: true });
     }
   }
+  kline = normalizeKlineVolumeSeries(kline);
   if (source) lastKlineSource = source;
-  return { code: String(code), kline, source };
+  return { code: String(code), kline, source, sourceAttempts };
 }
 
 async function fetchKline(code, { lmt = 250, dataSource = 'live', minDate = '', prefer = '' } = {}) {
@@ -604,14 +646,15 @@ function normalizeQuote(d) {
   if (closed) price = prevClose;
   // 无实时价也无昨收，但至少有名称时仍保留，避免休市/未开盘导致自选列表空白。
   if (price == null && !name) return null;
-  const num = (k) => (closed ? null : numOr(d[k]));
+  const num = (v) => (closed ? null : numOr(v));
   return {
     code,
     name,
     price: price != null ? price : 0,
     change: num(d.f4),
     changePct: num(d.f3),
-    volume: num(d.f5),
+    // 东财快照 f5 成交量为“手”，在源边界统一为“股”（docs/kline-data-standard.md §2）。
+    volume: numOr(d.f5) == null ? null : numOr(d.f5) * 100,
     amount: num(d.f6),
     turnover: num(d.f8),
     volumeRatio: num(d.f10),
@@ -648,53 +691,6 @@ async function fetchQuotes(codes, { timeoutMs = 12000 } = {}) {
   return out;
 }
 
-function shanghaiMarketMinutes(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-    .formatToParts(now).reduce((out, part) => { out[part.type] = part.value; return out; }, {});
-  return { weekday: parts.weekday, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
-}
-
-function isCnStockTradingSession(now = new Date()) {
-  const { weekday, minutes } = shanghaiMarketMinutes(now);
-  return weekday !== 'Sat' && weekday !== 'Sun' && minutes >= 9 * 60 + 15 && minutes <= 15 * 60;
-}
-
-// 闭市时盯盘列表必须使用本地已落盘的最后交易日快照，不能采用无交易日字段的报价接口结果。
-async function fetchLatestSnapshotQuotes(codes) {
-  const list = [...new Set((codes || []).map((c) => String(c).trim()).filter((c) => /^\d{6}$/.test(c)))];
-  const snapshots = new Map();
-  for (const code of list) {
-    const snapshot = readLatestSnapshot(codeMarket(code));
-    if (snapshot && Array.isArray(snapshot.records)) snapshots.set(code, snapshot);
-  }
-  const klineDates = new Map();
-  await Promise.all(list.map(async (code) => {
-    let record = await readKline(code);
-    let candles = record && Array.isArray(record.kline) ? record.kline : [];
-    if (!candles.length) candles = await fetchKline(code, { lmt: 2 }).catch(() => []);
-    const latest = candles[candles.length - 1];
-    if (latest && /^\d{4}-\d{2}-\d{2}$/.test(String(latest.date || ''))) klineDates.set(code, String(latest.date));
-  }));
-  const dates = [...klineDates.values()].sort();
-  const asOf = dates.length ? dates[0] : '';
-  const quotes = list.map((code) => {
-    const snapshot = snapshots.get(code);
-    if (!snapshot || klineDates.get(code) !== asOf) return null;
-    const row = snapshot.records.find((item) => String(item.code) === code);
-    if (!row) return null;
-    const changePct = Number(row.changePct);
-    const price = Number(row.price);
-    const prevClose = Number.isFinite(changePct) && Number.isFinite(price) && (100 + changePct) !== 0 ? price / (1 + changePct / 100) : null;
-    return {
-      code, name: String(row.name || ''), price: Number.isFinite(price) ? price : 0,
-      change: Number.isFinite(prevClose) ? price - prevClose : null,
-      changePct: Number.isFinite(changePct) ? changePct : null,
-      volume: null, amount: numOr(row.amount), turnover: numOr(row.turnover), volumeRatio: numOr(row.volumeRatio),
-      high: null, low: null, open: null, prevClose, closed: true, asOf, source: 'local_snapshot',
-    };
-  }).filter(Boolean);
-  return { quotes, asOf, source: 'local_snapshot' };
-}
 
 // 按代码前缀推断市场 key（与 MARKETS.secidPrefix 一致），供自选落库时标记市场。
 function codeMarket(code) {
@@ -724,9 +720,11 @@ module.exports = {
   fetchMarketSnapshot,
   fetchKline,
   fetchKlineRaw,
+  normalizeKlineVolume,
+  normalizeKlineVolumeSeries,
   getLastKlineSource,
   fetchQuotes,
-  fetchLatestSnapshotQuotes,
+  normalizeQuote,
   isCnStockTradingSession,
   codeMarket,
   resolveStockMeta,

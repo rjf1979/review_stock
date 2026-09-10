@@ -3,8 +3,9 @@ const crypto = require('crypto');
 const { readKline, saveWatchRecommendationBatch, saveWatchRecommendation, latestWatchRecommendations } = require('./storage');
 const { detectSinglePatterns } = require('./screener-core');
 const { riskFlagsForCandidate } = require('./market-regime');
-const RULE_VERSION = 'candidate-watch-v1';
+const RULE_VERSION = 'candidate-watch-v2';
 let active = null;
+let pendingItems = new Map();
 let lastStatus = { running: false };
 const hash = (value) => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 
@@ -17,8 +18,12 @@ async function evaluate(item) {
   const flags = [...(Array.isArray(item.riskFlags) ? item.riskFlags : []), ...riskFlagsForCandidate(item, { marketStatus: item.marketRegime && item.marketRegime.status })];
   const reasons = []; let classification;
   if (missing.length) classification = 'insufficient';
-  else if (item.marketRegime && item.marketRegime.status === 'weak') { classification = 'confirm'; reasons.push('弱势市场仅保留等待确认'); }
   else if (flags.some((x) => ['extended_gain', 'flow_divergence'].includes(x.key)) || !patterns.length) { classification = 'not_recommended'; reasons.push(!patterns.length ? '未发现已验证的日K形态' : '风险门槛未满足'); }
+  else if (item.marketRegime && item.marketRegime.status === 'weak') {
+    // 弱势市场不整体压制结论，改为从严择优：门槛更高（量比≥1.5 且评分≥80），仍给出可推荐盯盘的标的。
+    if (Number(item.volumeRatio) >= 1.5 && Number(item.score) >= 80) { classification = 'priority'; reasons.push('弱势市场择优：形态、量能与评分满足从严条件，建议控制仓位小步确认'); }
+    else { classification = 'confirm'; reasons.push('弱势市场从严筛选：量能或评分未达择优门槛'); }
+  }
   else if (Number(item.volumeRatio) >= 1 && Number(item.score) >= 60) { classification = 'priority'; reasons.push('形态、量能与流动性满足优先盯盘条件'); }
   else { classification = 'confirm'; reasons.push('已有形态依据，等待量能或收盘确认'); }
   const conditions = classification === 'priority' || classification === 'confirm'
@@ -28,13 +33,21 @@ async function evaluate(item) {
   return { code, classification, reasonCodes: reasons, evidence, conditions, missing, ruleVersion: RULE_VERSION, evidenceHash: hash({ item, evidence }), status: 'success', createdAt: Date.now() };
 }
 async function start(items) {
-  if (active) return { started: false, reason: 'running', ...active.status };
   const snapshot = (Array.isArray(items) ? items : []).filter((x) => /^\d{6}$/.test(String(x && x.code)));
+  if (active) {
+    snapshot.forEach((item) => pendingItems.set(String(item.code), item));
+    return { started: false, reason: 'queued', queued: pendingItems.size, ...active.status };
+  }
   const batchId = `rec-${Date.now()}`; const status = { batchId, running: true, status: 'running', total: snapshot.length, done: 0, succeeded: 0, failed: 0, startedAt: Date.now(), finishedAt: 0 };
   active = { status, cancelled: false }; lastStatus = status;
   await saveWatchRecommendationBatch({ ...status, snapshot });
   (async () => { for (const item of snapshot) { if (active.cancelled) break; try { const result = await evaluate(item); result.batchId = batchId; await saveWatchRecommendation(result); status.succeeded++; } catch { status.failed++; } status.done++; await saveWatchRecommendationBatch({ ...status, snapshot }); }
     status.running = false; status.status = active.cancelled ? 'cancelled' : 'completed'; status.finishedAt = Date.now(); await saveWatchRecommendationBatch({ ...status, snapshot }); lastStatus = { ...status }; active = null;
+    if (pendingItems.size) {
+      const queued = [...pendingItems.values()];
+      pendingItems = new Map();
+      start(queued).catch(() => {});
+    }
   })();
   return { started: true, ...status };
 }

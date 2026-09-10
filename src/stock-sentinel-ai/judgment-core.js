@@ -306,9 +306,10 @@ function sameEvidenceAsLast(prepared, last, model, promptVersion) {
 function normalizeError(e) {
   const name = (e && e.name) || '';
   const message = (e && e.message) || String(e);
+  // 超时消息由 ai-assist 带上上限/输入字数/模型等细节，这里原样保留。
   return {
     code: name === 'AbortError' ? 'timeout' : 'network',
-    message: name === 'AbortError' ? '请求超时' : message,
+    message: message || '请求超时',
   };
 }
 
@@ -360,6 +361,8 @@ async function judgePrepared(prepared, { force = false, batchId = '', attemptOve
       judgmentStatus: 'failed', errorCode: err.code, errorMessage: err.message, marketPhase,
     });
     await writeJudgmentRecord(rec);
+    // 失败日志：记录代码/轮次/错误码/耗时/输入字数/模型与原因，便于定位超时与输入规模问题。
+    console.warn(`[研判失败] ${prepared.code} attempt ${attempt} ${err.code} ${Date.now() - startedAt}ms 输入 ${prompt.length} 字 模型 ${model}: ${err.message}`);
     return { ok: false, code: err.code, message: err.message, judgmentStatus: 'failed', errorCode: err.code, dataStatus: prepared.dataStatus, record: rec };
   }
 

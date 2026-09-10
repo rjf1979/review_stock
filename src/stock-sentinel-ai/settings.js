@@ -12,6 +12,8 @@ const FILE = path.join(__dirname, 'data', 'settings.json');
 // 默认值：抓取任务 250 日；AI 研判配置为「OpenAI 兼容」模板，默认关闭且不接线。
 const DEFAULTS = {
   fetchDays: 250,
+  // 交易时间内统一日 K 自动补全周期（秒），候选池与自选共同使用。
+  klineSyncIntervalSec: 300,
   tradingStyle: '',
   ai: {
     enabled: false,
@@ -23,8 +25,10 @@ const DEFAULTS = {
     maxTokens: 8192,
     concurrency: 3,
     reasoningEffort: 'medium',
-    first: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium' },
-    second: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium' },
+    timeoutMs: 180000,
+    contextTokens: 1000000,
+    first: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 },
+    second: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 },
   },
 };
 
@@ -48,6 +52,7 @@ function merge(base, next) {
   const out = clone(base);
   const src = next && typeof next === 'object' ? next : {};
   out.fetchDays = Math.round(clampNum(src.fetchDays, 20, 500, base.fetchDays));
+  out.klineSyncIntervalSec = Math.round(clampNum(src.klineSyncIntervalSec, 30, 3600, base.klineSyncIntervalSec));
   out.tradingStyle = ['short', 'medium', 'long'].includes(src.tradingStyle) ? src.tradingStyle : '';
   if (src.ai && typeof src.ai === 'object') {
     const a = src.ai;
@@ -58,6 +63,8 @@ function merge(base, next) {
     out.ai.model = typeof a.model === 'string' ? a.model.trim() : base.ai.model;
     out.ai.temperature = clampNum(a.temperature, 0, 2, base.ai.temperature);
     out.ai.maxTokens = Math.round(clampNum(a.maxTokens, 64, 8192, base.ai.maxTokens));
+    out.ai.timeoutMs = Math.round(clampNum(a.timeoutMs, 5000, 900000, base.ai.timeoutMs));
+    out.ai.contextTokens = Math.round(clampNum(a.contextTokens, 10000, 10000000, base.ai.contextTokens));
     out.ai.concurrency = Math.round(clampNum(a.concurrency, 1, 5, base.ai.concurrency));
     out.ai.reasoningEffort = ['low', 'medium', 'high', 'xhigh'].includes(a.reasoningEffort) ? a.reasoningEffort : base.ai.reasoningEffort;
     for (const stage of ['first', 'second']) {
@@ -71,6 +78,8 @@ function merge(base, next) {
         // 兼容原全局参数：旧设置升级后，两个阶段沿用原有数值。
         temperature: clampNum(srcStage.temperature, 0, 2, clampNum(fallback.temperature, 0, 2, base.ai.temperature)),
         maxTokens: Math.round(clampNum(srcStage.maxTokens, 64, 8192, clampNum(fallback.maxTokens, 64, 8192, base.ai.maxTokens))),
+        timeoutMs: Math.round(clampNum(srcStage.timeoutMs, 5000, 900000, clampNum(fallback.timeoutMs, 5000, 900000, base.ai.timeoutMs))),
+        contextTokens: Math.round(clampNum(srcStage.contextTokens, 10000, 10000000, clampNum(fallback.contextTokens, 10000, 10000000, base.ai.contextTokens))),
         reasoningEffort: ['low', 'medium', 'high', 'xhigh'].includes(srcStage.reasoningEffort) ? srcStage.reasoningEffort : (fallback.reasoningEffort || base.ai.reasoningEffort),
       };
     }
