@@ -41,20 +41,16 @@ A 股**AI 辅助诊股与自选盯盘**桌面工具。本地取数，不经过�
   - `last`：**按市场**逐个用**最近一次**本地快照（跨日期），缺数据的市场实时补拉。K 线缓存需不早于该市场快照日期，否则临时联网补齐。**必须标注数据日期**，适合隔夜/盘中预览，严禁把旧数据当新数据。
 - 收益：全市场快照（约 50 页网络请求）只在首次或数据过期时拉取；同一天重复扫描、或切换到 `local`/`last` 后，快照与已缓存 K 线均从本地秒级返回。按市场分别落盘后，勾选单一市场（如上证主板）只读该市场文件、只扫该市场，针对性更强。
 
-## 全市场 250 日 K 线预取（可选，背景任务）
+## 本地 K 线库维护
 
-- 接口 `GET /api/prefetch-kline?markets=<marketKey,...>&lmt=250&fresh=0&gapMs=1100` 启动后台预取：把所选市场全部股票的前复权日 K 逐只写入本地 SQLite（`data/kline.db`，一票一日一行）。
-- **断点续传（深度感知）**：已有 K 线缓存且**根数达到目标天数**（`lmt`）才跳过；缓存不足（如此前仅 120 日）会被重新拉取补足到目标天数。`fresh=1` 则只跳过「今日已刷新」的，用于强制补最新一根。
-- `GET /api/prefetch-status` 查询进度（`total/done/fetched/skipped/errors/current`）；`GET /api/prefetch-stop` 安全停止。前端「本地仓库」卡片可一键启动并实时显示进度。
-- 说明：全量约 5500 只，**必须串行且限速**（默认 `gapMs=1100`，与东财 clist 一致），过快会触发腾讯/东财风控（`HTTP 501`/断连）。腾讯失败会自动回退东财日 K 补齐（含北交所 920 等历史不足的股票）。保守速率下一轮全量约需 1.5~2 小时，适合盘中/收盘后后台跑。
-- **熔断自适应退避**：连续 6 只拉取为空/抛错（对应限流 `HTTP 501`/断连）即自动进入冷却，暂停 60s 后恢复；若仍持续失败则冷却时长每次翻倍（上限 5 分钟），一旦有成功立即复位。状态字段含 `cooling/cooldownMs/consecutiveFails`，前端进度条会提示「接口限流，冷却中」。这样接口被风控时不会继续轰接口、拖长封禁。
-- **失败重试队列**：主循环遇到失败只把代码入队（不立即记错），主循环结束后对失败队列反复重试（单只最多重试 3 次后放弃并记错）；状态字段含 `queued`。配合断点续传，即使中途被风控中断，解封后也能自动补抓。另：`fetchKline` 只在拿到有效 K 线时才落盘，失败不写无效行，K 线库不会堆积脏数据。
-- **批量落盘**：SQLite 写库默认每累计 250 只后 `db.export()` 落盘一次，避免「每写一只就全量导出」的 O(n²) 开销；迁移/预取结束时调用 `flush()` 强制落盘。
+- K 线按需入库，不再有「全市场一键预取」：**候选池**（`POST /api/pool/kline`，`pool-prefetch.js`）与**盯盘自选**（`POST /api/kline/sync`，`kline-sync.js`）各自按需补齐自己范围内股票的前复权日 K，互不影响。
+- 说明：单次补齐**必须串行且限速**，过快会触发腾讯/东财风控（`HTTP 501`/断连）。腾讯失败会自动回退东财日 K 补齐（含北交所 920 等历史不足的股票）。`fetchKline` 只在拿到有效 K 线时才落盘，失败不写无效行，K 线库不会堆积脏数据。
+- **批量落盘**：SQLite 写库默认每累计 250 只后 `db.export()` 落盘一次，避免「每写一只就全量导出」的 O(n²) 开销；迁移/批量写入结束时调用 `flush()` 强制落盘。
 - **旧数据迁移**：此前用 JSON 文件存的 K 线（`data/kline/<code>.json`）可用 `node scripts/migrate-kline-to-sqlite.js [--delete]` 一次性导入 SQLite，`--delete` 在全部成功后删除旧目录。
 
 ## 设置页
 
-- 顶部「设置」标签提供：**抓取任务天数**（20～500 日，默认 250）、**启动/停止预取**按钮与实时进度条，以及 **AI 辅助研判配置**（接口类型 / Base URL / 模型 / API Key / Temperature / 最大输出 tokens / 启用开关）。
+- 顶部「设置」标签提供：**抓取天数**（20～500 日，默认 250）、**交易时间内自动补全间隔**（30～3600 秒，默认 300）、候选池 K 线日期索引核对，以及 **AI 辅助研判配置**（接口类型 / Base URL / 模型 / API Key / Temperature / 最大输出 tokens / 启用开关）。
 - 设置通过 `GET /api/settings` 读取、`POST /api/settings` 保存，持久化到 **源码 `data/settings.json`**（已 gitignore）。配置仅保存在本机，不离开本地。
 - **配置目录与大数据目录分离（开发模式约定）**：设置读写固定落在源码 `<项目>/data/settings.json`，`settings.js` 不再跟随 `VOLUME_INSIGHT_DATA_DIR`；K 线库 / 快照等仍随 `storage` 的该环境变量（如上所述可指到 `userData`）。注意：一旦把桌面版**打包成只读 asar 发布**，写死在源码 `data/` 将不可写，届时需把 `settings.js` 重新接回 `DATA_DIR`（或改用 `userData` 路径）并做配置迁移——当前按“先开发模式统一到 `data/`”落地，打包前需回归此点。
 - **AI 辅助研判（已接线）**：设置页保存接口类型 / Base URL / 模型 / API Key / Temperature / 最大输出 tokens，并默认关闭；在个股详情点「AI 辅助研判」后用本机行情 + 日 K + 均线/MACD/RSI + 命中形态证据组装 prompt，调用 OpenAI 兼容 `/chat/completions` 返回研判文本。API Key 仅用于瞬时请求头，不落日志、不进证据、不离开本机。用量/形态信号仍完全由 `screener-core` 本地计算；AI 输出仅作研究参考，不构成投资建议。新增后端模块 `ai-assist.js`（含 `configReady` / `buildEvidence` / `buildPrompt` / 超时与错误处理），`screener-core` 导出 `detectSinglePatterns` 供单票形态证据。
@@ -100,7 +96,7 @@ npx electron-builder --win --x64 --ia32
 
 打包清单（`package.json` 的 `build.files`）必须同步列出后端运行所需的全部源码模块，尤其是
 `server.js` 通过 `require` 依赖的 `data.js / screener-core.js / storage.js / watchlist.js /
-prefetch.js / settings.js`，以及 `node_modules/sql.js` 的纯 JS 版 `dist/sql-asm.js`（无需 wasm）。改动
+pool-prefetch.js / kline-sync.js / settings.js`，以及 `node_modules/sql.js` 的纯 JS 版 `dist/sql-asm.js`（无需 wasm）。改动
 后端模块后若打包报缺文件，先核对 `build.files`。
 
 字段含义核对请见 `data.js` 顶部；形态规则定义见 `screener-core.js`；形态明细见 `docs/xingtaidu-patterns.md`。

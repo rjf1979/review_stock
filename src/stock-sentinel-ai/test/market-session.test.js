@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { marketSession, isCnStockTradingSession, isAfterCnMarketClose } = require('../market-session');
+const { marketSession, marketSessionStatus, isCnStockTradingSession, isAfterCnMarketClose, isCnTradingDay } = require('../market-session');
 
 const at = (iso) => new Date(iso);
 assert.equal(marketSession(at('2026-09-07T01:14:00Z')), 'pre_open', '09:14 为盘前');
@@ -10,5 +10,13 @@ assert.equal(marketSession(at('2026-09-07T04:59:00Z')), 'midday_break', '12:59 �
 assert.equal(isCnStockTradingSession(at('2026-09-07T05:00:00Z')), true, '13:00 恢复同步');
 assert.equal(isCnStockTradingSession(at('2026-09-07T07:00:00Z')), false, '15:00 不再作为盘中');
 assert.equal(isAfterCnMarketClose(at('2026-09-07T07:00:00Z')), true, '15:00 进入盘后校验');
+assert.equal(isCnTradingDay(at('2026-09-25T02:00:00Z')), false, '中秋节不交易');
+assert.equal(marketSession(at('2026-09-25T02:00:00Z')), 'non_trading', '法定节假日不交易');
 assert.equal(marketSession(at('2026-09-05T02:00:00Z')), 'non_trading', '周末不交易');
+const morningStatus = marketSessionStatus(at('2026-09-07T02:00:00Z'));
+assert.equal(morningStatus.sessionLabel, '上午交易', '上午盘状态标签正确');
+assert.equal(morningStatus.countdownLabel, '距午间休市', '上午盘倒计时标签正确');
+assert.equal(new Date(morningStatus.nextTransitionAt).toISOString(), '2026-09-07T03:30:00.000Z', '上午盘倒计时终点正确');
+const weekendStatus = marketSessionStatus(at('2026-09-05T02:00:00Z'));
+assert.equal(new Date(weekendStatus.nextTransitionAt).toISOString(), '2026-09-07T01:15:00.000Z', '周末倒计时应指向周一开盘');
 console.log('market-session.test 通过');

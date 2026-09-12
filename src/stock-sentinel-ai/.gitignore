@@ -1,10 +1,23 @@
 node_modules/
 release/
 .runtime/
+.backups/
 data/*.db
 data/*.json
 data/*.jsonl
 data/snapshots/
 data/kline/
+data/kline-archive/
+data/market-prescan-archive/
+data/selection-archive/
+data/task-markers/
+data/*.backup*
 *.log
 npm-debug.log*
+
+# 本地代理运行态与临时文件
+.codex/
+.workbuddy/
+.tmp-*
+__chk_*.js
+*.bak

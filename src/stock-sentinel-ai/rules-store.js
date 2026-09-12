@@ -16,7 +16,7 @@ const DEFAULT_RULES = [
   { id: 'ma_golden_start', label: '均线金叉启动', kind: 'kline', patternId: 'ma_golden_start', enabled: true, params: {}, prefilter: { minChangePct: -1 } },
   { id: 'volume_breakout', label: '放量突破前高', kind: 'kline', patternId: 'volume_breakout', enabled: true, params: { window: 20, volFactor: 1.5 }, prefilter: { minChangePct: 2, minVolumeRatio: 1.2 } },
   { id: 'shrink_stabilize', label: '缩量企稳（下跌后）', kind: 'kline', patternId: 'shrink_stabilize', enabled: true, params: {}, prefilter: { minChangePct: -6, maxVolumeRatio: 1.5 } },
-  { id: 'dry_price_bottom', label: '地量地价', kind: 'kline', patternId: 'dry_price_bottom', enabled: true, params: {}, prefilter: { minChangePct: -8 } },
+  { id: 'dry_price_bottom', label: '地量地价', kind: 'kline', patternId: 'dry_price_bottom', enabled: true, params: {}, prefilter: { minChangePct: -8, maxChangePct: 3, maxVolumeRatio: 1.2 } },
   { id: 'consecutive_yang', label: '连阳启动', kind: 'kline', patternId: 'consecutive_yang', enabled: true, params: {}, prefilter: { minChangePct: 0, minVolumeRatio: 0.8 } },
   { id: 'strong_sideways', label: '强势横盘（突破）', kind: 'kline', patternId: 'strong_sideways', enabled: true, params: {}, prefilter: { minChangePct: 1, minVolumeRatio: 1.0 } },
   { id: 'limit_pullback', label: '涨停回踩（缩量）', kind: 'kline', patternId: 'limit_pullback', enabled: true, params: {}, prefilter: { minChangePct: -8, maxChangePct: 8 } },

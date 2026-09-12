@@ -360,6 +360,40 @@ function riskReward(zones, price, atrValue, invalidation) {
   return { value: round(value), state, available: true, referencePrice: round(entry) };
 }
 
+// 可执行风险收益：必须使用可追溯触发价、结构失效价和第一压力目标，并计入双边成本与滑点。
+function actionableRiskReward(levels, { costRate = 0.0015, slippageRate = 0.0015, minStopDistancePct = 0.015 } = {}) {
+  const triggers = Array.isArray(levels && levels.entryTriggers) ? levels.entryTriggers : [];
+  const trigger = triggers.find((item) => item.status === 'confirmed' || item.status === 'achieved') || triggers[0];
+  const entry = num(trigger && trigger.confirmAbove);
+  const invalidation = num(levels && levels.invalidationLevel && levels.invalidationLevel.value);
+  const resistance = Array.isArray(levels && levels.resistanceZones) ? levels.resistanceZones[0] : null;
+  const target = num(resistance && resistance.low);
+  if (!(invalidation > 0 && entry > invalidation && target > entry)) {
+    return { available: false, value: null, reason: '价位顺序不满足失效价 < 入场价 < 第一目标价', entry, invalidation, target };
+  }
+  const stopDistancePct = (entry - invalidation) / entry;
+  if (stopDistancePct < minStopDistancePct) {
+    return { available: false, value: null, reason: '止损距离过小', entry, invalidation, target, stopDistancePct };
+  }
+  const effectiveEntry = entry * (1 + costRate + slippageRate);
+  const effectiveTarget = target * (1 - costRate - slippageRate);
+  const effectiveInvalidation = invalidation * (1 - slippageRate);
+  const reward = effectiveTarget - effectiveEntry;
+  const risk = effectiveEntry - effectiveInvalidation;
+  if (!(reward > 0 && risk > 0)) return { available: false, value: null, reason: '计入成本滑点后收益或风险距离无效', entry, invalidation, target };
+  return {
+    available: true,
+    value: round(reward / risk),
+    entry,
+    invalidation,
+    target,
+    stopDistancePct,
+    costRate,
+    slippageRate,
+    triggerStatus: trigger.status || 'approaching',
+  };
+}
+
 /**
  * 计算一只股票某段 K 线的观察价位集合（纯函数）。
  * @param {Array} candles 前复权升序日 K。
@@ -449,4 +483,5 @@ module.exports = {
   gapBoundaries,
   platformBoundaries,
   riskReward,
+  actionableRiskReward,
 };

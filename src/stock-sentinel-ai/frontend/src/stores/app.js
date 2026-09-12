@@ -15,6 +15,8 @@ const snapshotDate = ref('');
 const statusInfo = ref({ snapshotDates: [], klineCount: 0 });
 const localStatus = ref({ today: '', okToday: 0, total: 0, allToday: false, lastDate: '', markets: [] });
 const rows = ref([]);
+const strongWatchRows = ref([]);
+const scanFunnel = ref(null);
 const scanContext = ref(null);
 const prescanMarketKey = ref('');
 const scanning = ref(false);
@@ -53,7 +55,6 @@ function repaintPriceLevels(levels) {
   (levels.exitWatchZones || []).forEach((x) => { const v = Number(x.value || x.price || (x.zone && x.zone.low)); if (Number.isFinite(v)) lineData.push({ yAxis: v, name: '止盈价位', lineStyle: { color: '#62d9d0', type: 'dashed' } }); });
   detailChart.setOption({ series: [{ type: 'candlestick', name: '日K', markArea: { silent: true, data: areaData }, markLine: { silent: true, symbol: ['none', 'none'], data: lineData, label: { show: true, position: 'insideEndTop' } } }] });
 }
-const prefetch = reactive({ running: false, done: 0, total: 0, fetched: 0, skipped: 0, errors: 0, written: 0, dbSaved: 0, processed: 0, needCount: 0, current: '', startedAt: 0, finishedAt: 0, today: '', markets: [], cooling: false, cooldownMs: 0, completeToday: false, source: '' });
 const integrity = reactive({ loading: false, needsData: false, firstRun: false, missing: [], snapshot: {}, kline: {} });
 const klineGaps = reactive({ loading: false, total: 0, complete: 0, incomplete: 0, missingRows: 0, windowSize: 0, examples: [], worst: [] });
 
@@ -66,6 +67,12 @@ const mode = ref((() => {
 })());
 const appReady = ref(false);
 const startupMessage = ref('正在连接本地数据服务…');
+const marketClock = reactive({ time: '--:--:--', sessionLabel: '校时中', countdownLabel: '', countdown: '--:--:--', synced: false });
+let marketClockOffsetMs = 0;
+let marketClockTargetAt = 0;
+let marketClockTimer = null;
+let marketClockSyncTimer = null;
+let marketClockTransitionTimer = null;
 const watchlist = ref([]);
 const pool = ref([]);
 const poolSort = ref('score');
@@ -75,7 +82,7 @@ const poolPatternFilter = ref('all');
 const poolPatterns = ref({});
 const poolKlineDepths = ref({});
 const poolKlineLatestDates = ref({});
-const poolPrefetch = reactive({ running: false, done: 0, total: 0, ok: 0, failed: 0, skipped: 0, current: '', startedAt: 0, finishedAt: 0, lmt: 250 });
+const poolPrefetch = reactive({ running: false, done: 0, total: 0, ok: 0, listingComplete: 0, strategyReady: 0, incomplete: 0, failed: 0, skipped: 0, current: '', startedAt: 0, finishedAt: 0, lmt: 250 });
 const poolBusy = ref(false);
 const poolItemBusy = ref({});
 const poolMsg = ref('');
@@ -83,6 +90,7 @@ const poolMsgError = ref(false);
 const poolJudgments = ref({});
 const poolRecommendations = ref({});
 const recommendationBatch = reactive({ running: false, done: 0, total: 0, succeeded: 0, failed: 0, finishedAt: 0 });
+const poolMigration = reactive({ running: false, mode: '', requested: 0, eligible: 0, moved: [], skipped: [], failed: [], warnings: [], startedAt: 0, finishedAt: 0 });
 const judgmentBatch = reactive({ running: false, batchId: '', done: 0, total: 0, success: 0, failed: 0, formatError: 0, skipped: 0, noChange: 0, notReady: 0, current: '', currentName: '', startedAt: 0, finishedAt: 0, retryOnly: false, phase: 'idle', prepareDone: 0, prepareTotal: 0 });
 const judgmentConfirm = reactive({ open: false, retryOnly: false, loading: false, error: '', categories: { first: 0, failedRetry: 0, evidenceUpdate: 0, noChange: 0, notReady: 0 }, total: 0, expectedCalls: 0 });
 const watchQuotes = ref([]);
@@ -117,7 +125,7 @@ function cnAfterMarketClose(now = new Date()) {
   return clock.weekday !== 'Sat' && clock.weekday !== 'Sun' && clock.minutes >= 15 * 60;
 }
 
-// 设置：抓取任务天数 + AI 配置（本地持久化于 /api/settings）
+// 设置：K 线天数 / 自动补全间隔 + AI 配置（本地持久化于 /api/settings）
  const settings = reactive({ fetchDays: 250, klineSyncIntervalSec: 300, scanMarkets: ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'], scanLimit: 500, ai: { enabled: false, provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, concurrency: 3, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000, first: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, second: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, prompt: '' } });
  // 先建立两组响应式对象，避免设置接口尚未返回时模板访问 undefined。
  settings.ai.first = settings.ai.first || { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 };
@@ -166,27 +174,16 @@ const dataHealth = computed(() => {
 });
 const missingTodayLabels = computed(() => localStatus.value.markets.filter((m) => !m.hasToday).map((m) => m.label).join('、'));
 const todayReadySummary = computed(() => localStatus.value.markets.filter((m) => m.hasToday).map((m) => `${m.label} ${m.todayCount} 只`).join(' · '));
-const prefetchPercent = computed(() => prefetch.total ? Math.round((prefetch.done / prefetch.total) * 100) : 0);
 const enabledRules = computed(() => rules.value.filter((r) => r.enabled !== false));
 const patternOptions = computed(() => {
   const fromPatterns = patterns.value.filter(Boolean);
   if (fromPatterns.length) return fromPatterns;
   return [...new Set(rules.value.filter((r) => r.kind === 'kline').map((r) => r.patternId).filter(Boolean))];
 });
-const prefetchSummary = computed(() => {
-  const days = settings.fetchDays || 250;
-  if (prefetch.running) return `正在预取 ${days} 日 K 线：${prefetch.done}/${prefetch.total}（${prefetchPercent.value}%）；判定缺日待补 ${prefetch.needCount}，已联网 ${prefetch.fetched}，落库 ${prefetch.dbSaved}/${prefetch.written}，跳过 ${prefetch.skipped}，失败 ${prefetch.errors}；当前 ${prefetch.current}${prefetch.cooling ? '；接口限流，冷却中，将自动继续' : ''}`;
-  if (prefetch.completeToday) return `今日 K 线已抓齐（${prefetch.skipped} 只），当天无需重复抓取；下次可点击「启动预取」续抓下一交易日。`;
-  if (prefetch.total > 0) {
-    const secs = prefetch.finishedAt ? Math.max(0, Math.round((prefetch.finishedAt - prefetch.startedAt) / 1000)) : 0;
-    return `预取${prefetch.source ? '（当前平台：' + prefetch.source + '）' : ''}：新增 ${prefetch.fetched}，落库 ${prefetch.dbSaved}，跳过 ${prefetch.skipped}，失败 ${prefetch.errors}，用时 ${Math.floor(secs / 60)}分${secs % 60}秒`;
-  }
-  return `本地仓库：按所选市场补全 ${days} 日 K 线（已缓存自动跳过，可断点续抓；单平台限流自动切换免费平台）`;
-});
 const klineGapsSummary = computed(() => {
   if (klineGaps.loading) return '正在核对候选池 K 线日期索引…';
   if (!klineGaps.total) return '候选池为空：先扫描全市并纳入候选池，再回来核对缺失日。';
-  return `候选池 ${klineGaps.total} 只中 ${klineGaps.complete} 只已齐（窗口 ${klineGaps.windowSize} 日），${klineGaps.incomplete} 只存在 ${klineGaps.missingRows} 个缺失日；预取只补这些缺失日，已齐不再重扫。`;
+  return `候选池 ${klineGaps.total} 只中 ${klineGaps.complete} 只已齐（窗口 ${klineGaps.windowSize} 日），${klineGaps.incomplete} 只存在 ${klineGaps.missingRows} 个缺失日；候选池自动补全只补这些缺失日，已齐不再重扫。`;
 });
 
 // 涨跌统计以本地 K 线库尾 bar 为准（与卡片价格同源）；无 K 线的代码不计入。
@@ -239,7 +236,11 @@ const poolStats = computed(() => {
 });
 const trackRecommendation = (r) => {
   const recommendation = poolRecommendations.value[r.code];
-  if (recommendation) return ({ priority: 'priority', confirm: 'observe', not_recommended: 'hold', insufficient: 'exclude' }[recommendation.classification] || 'exclude');
+  if (recommendation) {
+    if (recommendation.validity && recommendation.validity.current === false) return 'exclude';
+    if (recommendation.classification === 'passed') return recommendation.evidenceJson?.selected || recommendation.evidence?.selected ? 'priority' : 'observe';
+    return ({ pending_confirmation: 'observe', not_passed: 'hold', insufficient: 'exclude', priority: 'priority', confirm: 'observe', not_recommended: 'hold' }[recommendation.classification] || 'exclude');
+  }
   const st = poolJudgments.value[r.code];
   if (!st || st.dataStatus === 'not_ready' || st.judgmentStatus !== 'success') return 'exclude';
   const verdict = st.lastSuccess && st.lastSuccess.verdict;
@@ -271,10 +272,10 @@ const poolFilterStats = computed(() => {
 });
 const poolTrackFilterOptions = computed(() => [
   { value: 'all', label: '全部股票', count: pool.value.length },
-  { value: 'priority', label: '优先跟踪', count: poolFilterStats.value.priority },
-  { value: 'observe', label: '观察跟踪', count: poolFilterStats.value.observe },
-  { value: 'hold', label: '暂不跟踪', count: poolFilterStats.value.hold },
-  { value: 'exclude', label: '排除', count: poolFilterStats.value.exclude },
+  { value: 'priority', label: '本批精选', count: poolFilterStats.value.priority },
+  { value: 'observe', label: '通过未精选 / 待确认', count: poolFilterStats.value.observe },
+  { value: 'hold', label: '不通过', count: poolFilterStats.value.hold },
+  { value: 'exclude', label: '数据不足', count: poolFilterStats.value.exclude },
 ]);
 const poolPatternFilterOptions = computed(() => [
   { value: 'all', label: '全部形态', count: pool.value.length },
@@ -316,7 +317,10 @@ const candidateState = (r) => {
     }
     if (st.dataStatus === 'limited') return '待研判 · 样本有限';
   }
-  if (klineDone(r.code) >= (settings.fetchDays || 250)) return '待研判';
+  const quality = poolKlineLatest(r.code).quality;
+  if (quality?.complete) return quality.provisional ? '待确认 · 盘中K线暂定' : '待研判';
+  if (quality?.listingHistoryComplete) return `待研判 · 上市历史完整 ${quality.depth}/${quality.target}`;
+  if (quality?.strategyReady) return '待研判 · 策略可用但未补齐';
   return '待补 K 线';
 };
 const candidateStateClass = (r) => {
@@ -326,13 +330,28 @@ const candidateStateClass = (r) => {
   return 'ready';
 };
 const hasFailedJudgments = computed(() => Object.values(poolJudgments.value).some((s) => s && (s.judgmentStatus === 'failed' || s.judgmentStatus === 'format_error')));
-const recommendationLabel = (r) => ({ priority: '优先盯盘', confirm: '等待确认', not_recommended: '暂不推荐', insufficient: '数据不足' }[(poolRecommendations.value[r.code] || {}).classification] || '待评估');
-const recommendationClass = (r) => ({ priority: 'rec-priority', confirm: 'rec-confirm', not_recommended: 'rec-not', insufficient: 'rec-insufficient' }[(poolRecommendations.value[r.code] || {}).classification] || 'rec-none');
+const recommendationLabel = (r) => {
+  const recommendation = poolRecommendations.value[r.code] || {};
+  if (recommendation.status === 'failed') return '复核失败';
+  if (recommendation.validity && recommendation.validity.current === false) return '待重新复核';
+  const selected = recommendation.evidenceJson?.selected || recommendation.evidence?.selected;
+  if (recommendation.classification === 'passed') return selected ? '通过 · 本批精选' : '通过 · 未入精选';
+  return ({ pending_confirmation: '待确认', not_passed: '不通过', insufficient: '数据不足', priority: '优先盯盘', confirm: '等待确认', not_recommended: '暂不推荐' }[recommendation.classification] || '待复核');
+};
+const recommendationClass = (r) => {
+  const recommendation = poolRecommendations.value[r.code] || {};
+  if (recommendation.status === 'failed') return 'rec-error';
+  if (recommendation.validity && recommendation.validity.current === false) return 'rec-stale';
+  return ({ passed: 'rec-priority', pending_confirmation: 'rec-confirm', not_passed: 'rec-not', insufficient: 'rec-insufficient', priority: 'rec-priority', confirm: 'rec-confirm', not_recommended: 'rec-not' }[recommendation.classification] || 'rec-none');
+};
 const recommendationReason = (r) => {
   const x = poolRecommendations.value[r.code];
   // 存储层解析 JSON 后保留列名（reasonCodesJson/evidenceJson），做兼容读取。
   const reasons = x && (Array.isArray(x.reasonCodesJson) ? x.reasonCodesJson : x.reasonCodes);
-  if (!x || !Array.isArray(reasons) || !reasons[0]) return '';
+  if (!x) return '';
+  if (x.status === 'failed' && Array.isArray(reasons) && reasons[0]) return reasons[0];
+  if (x.validity && x.validity.current === false) return (x.validity.reasons || []).join('；');
+  if (!Array.isArray(reasons) || !reasons[0]) return '';
   const base = reasons[0];
   // 弱势市场的全局理由对所有票一致：补充该票自身的形态与量能依据，便于横向比较。
   if (base.startsWith('弱势市场')) {
@@ -345,6 +364,39 @@ const recommendationReason = (r) => {
   }
   return base;
 };
+const isSelectedRecommendation = (r) => {
+  const item = poolRecommendations.value[r.code] || {};
+  const selected = item.evidenceJson?.selected || item.evidence?.selected;
+  return item.status === 'success' && item.validity?.current === true && item.classification === 'passed' && selected === true;
+};
+const isObservationRecommendation = (r) => {
+  const item = poolRecommendations.value[r.code] || {};
+  return item.status === 'success' && item.validity?.current === true && item.classification === 'pending_confirmation';
+};
+const selectedTransferCount = computed(() => Math.min(5, pool.value.filter(isSelectedRecommendation).length));
+const hasFailedRecommendations = computed(() => Object.values(poolRecommendations.value).some((item) => item && item.status === 'failed'));
+const primaryThemeName = (item) => {
+  const evidence = item.selectionEvidence || item;
+  const ranks = Array.isArray(evidence.candidateThemeRanks) ? evidence.candidateThemeRanks : [];
+  const ranked = ranks.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
+  const themes = Array.isArray(evidence.themeEvidence) ? evidence.themeEvidence : (Array.isArray(item.themeEvidence) ? item.themeEvidence : []);
+  const fallback = themes.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
+  return String((ranked && (ranked.name || ranked.code)) || (fallback && (fallback.name || fallback.code)) || '');
+};
+const concentrationPreview = computed(() => {
+  const counts = new Map();
+  const items = [...watchlist.value, ...pool.value.filter(isSelectedRecommendation).slice(0, 5)];
+  for (const item of items) {
+    const name = primaryThemeName(item);
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts.entries()].filter(([, count]) => count > 2).map(([name, count]) => `${name}预计${count}只，超过同题材建议线2只`);
+});
+const watchSourceStats = computed(() => ({
+  selected: watchlist.value.filter((item) => item.source === 'pool_selected').length,
+  observation: watchlist.value.filter((item) => item.source === 'pool_observation').length,
+  manual: watchlist.value.filter((item) => !['pool_selected', 'pool_observation'].includes(item.source)).length,
+}));
 function togglePoolSort(key) {
   if (poolSort.value === key) poolSortDir.value *= -1;
   else { poolSort.value = key; poolSortDir.value = -1; }
@@ -489,6 +541,42 @@ async function fetchJson(url, opts) {
   throw new Error('响应不是有效 JSON');
 }
 
+const beijingTimeFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+function formatCountdown(ms) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [hours, minutes, seconds % 60].map((value) => String(value).padStart(2, '0')).join(':');
+}
+function updateMarketClock() {
+  const now = Date.now() + marketClockOffsetMs;
+  marketClock.time = beijingTimeFormatter.format(new Date(now));
+  marketClock.countdown = marketClockTargetAt ? formatCountdown(marketClockTargetAt - now) : '--:--:--';
+}
+async function syncMarketClock() {
+  const requestedAt = Date.now();
+  try {
+    const data = await fetchJson('/api/market-clock');
+    const receivedAt = Date.now();
+    const serverEpochMs = Number(data && data.serverEpochMs);
+    if (!Number.isFinite(serverEpochMs)) return;
+    marketClockOffsetMs = serverEpochMs - ((requestedAt + receivedAt) / 2);
+    marketClockTargetAt = Number(data.nextTransitionAt) || 0;
+    marketClock.sessionLabel = data.sessionLabel || '交易时段';
+    marketClock.countdownLabel = data.countdownLabel || '距下一时段';
+    marketClock.synced = true;
+    if (marketClockTransitionTimer) clearTimeout(marketClockTransitionTimer);
+    const untilTransition = marketClockTargetAt - (Date.now() + marketClockOffsetMs);
+    if (untilTransition > 0) marketClockTransitionTimer = setTimeout(syncMarketClock, untilTransition + 80);
+  } catch { /* 保留最近一次校时，避免短暂服务抖动导致计时跳变。 */ }
+  updateMarketClock();
+}
+function startMarketClock() {
+  if (!marketClockTimer) marketClockTimer = setInterval(updateMarketClock, 1000);
+  if (!marketClockSyncTimer) marketClockSyncTimer = setInterval(syncMarketClock, 5 * 60 * 1000);
+  return syncMarketClock();
+}
+
 async function loadLocalStatus() {
   try {
     const q = new URLSearchParams({ markets: selectedMarkets.value.join(',') });
@@ -506,7 +594,19 @@ function applyPrescan(prescan) {
     limitStructure: prescan.marketRegime && prescan.marketRegime.evidence && prescan.marketRegime.evidence.limitStructure || { available: false, reason: '数据不可用' },
     snapshotDate: prescan.snapshotDate || '', fetchedAt: prescan.fetchedAt || '',
     isFinal: Boolean(prescan.isFinal), reused: Boolean(prescan.reused),
+    validity: prescan.validity || { displayable: true, scanEligible: false, reason: 'unknown' },
   };
+}
+
+async function loadStoredPrescan() {
+  try {
+    const data = await fetchJson('/api/market-prescan/latest');
+    const prescan = data && data.prescan;
+    const marketKey = [...selectedMarkets.value].sort().join(',');
+    if (!prescan || !marketKey || String(prescan.marketKey || '') !== marketKey) return;
+    applyPrescan({ ...prescan, reused: true });
+    prescanMarketKey.value = marketKey;
+  } catch { /* 没有历史预扫描或服务刚启动时保持空状态。 */ }
 }
 
 async function preScan({ keepBusy = false, force = false } = {}) {
@@ -519,7 +619,13 @@ async function preScan({ keepBusy = false, force = false } = {}) {
     const prescan = await fetchJson('/api/market-prescan?' + q.toString());
     applyPrescan(prescan);
     prescanMarketKey.value = [...selectedMarkets.value].sort().join(',');
-    status.value = ''; statusText.value = prescan.reused ? '已复用最近闭市预扫描结果。' : '市场预扫描完成，结果已落地。';
+    if (prescan.validity?.scanEligible === true) {
+      status.value = '';
+      statusText.value = prescan.reused ? '已复用最近闭市预扫描结果。' : '市场预扫描完成，结果已落地。';
+    } else {
+      status.value = 'error';
+      statusText.value = `市场预扫描未形成可用题材范围：${prescan.scanScope?.reason || '数据完整性校验未通过'}`;
+    }
     return prescan;
   } catch (e) { status.value = 'error'; statusText.value = '预扫描失败：' + e.message; return null; }
   finally { if (!keepBusy) scanning.value = false; }
@@ -534,10 +640,11 @@ async function scan() {
     const q = new URLSearchParams({
       markets: selectedMarkets.value.join(','),
       limit: String(settings.scanLimit),
-      force: '1',
     });
     const data = await fetchJson('/api/scan?' + q.toString());
     rows.value = data.candidates || [];
+    strongWatchRows.value = data.strongWatch || [];
+    scanFunnel.value = data.funnel || null;
     scanContext.value = {
       ...scanContext.value,
       marketRegime: data.marketRegime || scanContext.value.marketRegime,
@@ -545,8 +652,10 @@ async function scan() {
       focusThemes: Array.isArray(data.focusThemes) ? data.focusThemes : scanContext.value.focusThemes,
       focusConcepts: Array.isArray(data.focusConcepts) ? data.focusConcepts : scanContext.value.focusConcepts,
       scanScope: data.scanScope || scanContext.value.scanScope,
-    snapshotDate: data.snapshotDate || scanContext.value.snapshotDate,
+      snapshotDate: data.snapshotDate || scanContext.value.snapshotDate,
       prefilter: data.prefilter || { matched: 0, confirmed: 0, klineMissing: 0 },
+      strongWatch: strongWatchRows.value,
+      funnel: scanFunnel.value,
     };
     usedSource.value = data.dataSource || 'live';
     snapshotDate.value = data.snapshotDate || '';
@@ -556,8 +665,8 @@ async function scan() {
     const hitTotal = data.autoPool && Number(data.autoPool.hitTotal) || 0;
     const eligible = data.autoPool && Number(data.autoPool.eligible) || 0;
     const prefilter = data.prefilter || {};
-    const gateText = `，可纳入候选池补 K 线 ${eligible} 只`;
-    const scopeText = data.scanScope && data.scanScope.mode === 'theme_and_concept_constituents' ? '重点行业与概念成分股' : '全市场回退';
+    const gateText = `，潜力候选 ${eligible} 只，强势观察 ${Number(data.funnel && data.funnel.strongWatch) || 0} 只，超配额 ${Number(data.funnel && data.funnel.overQuota) || 0} 只`;
+    const scopeText = '已预扫描题材成分股';
     summary.value = '来源 ' + sourceLabel(data.dataSource) + ' · ' + scopeText + '扫描 ' + data.totalScanned + ' 只' + marketNote + '，快照预筛命中 ' + hitTotal + ' 只' + gateText + '，展示 ' + rows.value.length + ' 只，耗时 ' + (data.ms / 1000).toFixed(1) + 's' + (byMarketText ? '；各市场：' + byMarketText : '');
     if (!rows.value.length) {
       status.value = 'empty';
@@ -667,7 +776,7 @@ detailChart.setOption({
 detailChart.resize();
   }
 
-  // 盘中实时刷新详情头部报价文本（现价/涨跌幅等）；K 线数据永远以本地 K 线库为准，不用报价改写。
+  // 盘中实时刷新详情头部报价文本，并将实时值合并到当日最后一根 K 线。
   // 首个周期必刷拿到最新报价，其后仅盘中轮询（午间休市与闭市暂停）。
   function applyDetailQuoteTexts(quote) {
     if (!detail.open || !quote || String(quote.code || '') !== detail.code) return;
@@ -680,6 +789,32 @@ detailChart.resize();
     if (Number.isFinite(Number(quote.amount))) detail.amountText = fmtAmount(quote.amount);
     if (Number.isFinite(Number(quote.turnover))) detail.turnoverText = fmtRatio(quote.turnover, '%');
     if (Number.isFinite(Number(quote.volumeRatio))) detail.volumeRatioText = fmtRatio(quote.volumeRatio);
+    if (dataSourceIsLiveSession(quote)) mergeLiveQuoteIntoDetailKline(quote);
+  }
+
+  function dataSourceIsLiveSession(quote) {
+    return quote && quote.closed === false && cnWatchSessionActive();
+  }
+
+  function mergeLiveQuoteIntoDetailKline(quote) {
+    const last = detail.kline[detail.kline.length - 1];
+    const price = Number(quote.price);
+    if (!last || last.date !== cnToday() || !Number.isFinite(price) || price <= 0) return;
+    const next = {
+      ...last,
+      open: Number.isFinite(Number(quote.open)) && Number(quote.open) > 0 ? Number(quote.open) : last.open,
+      high: Number.isFinite(Number(quote.high)) && Number(quote.high) > 0 ? Math.max(Number(quote.high), price) : Math.max(Number(last.high) || price, price),
+      low: Number.isFinite(Number(quote.low)) && Number(quote.low) > 0 ? Math.min(Number(quote.low), price) : Math.min(Number(last.low) || price, price),
+      close: price,
+      volume: Number.isFinite(Number(quote.volume)) && Number(quote.volume) >= 0 ? Number(quote.volume) : last.volume,
+      amount: Number.isFinite(Number(quote.amount)) && Number(quote.amount) >= 0 ? Number(quote.amount) : last.amount,
+    };
+    const changed = ['open', 'high', 'low', 'close', 'volume', 'amount'].some((key) => next[key] !== last[key]);
+    if (!changed) return;
+    detail.kline = [...detail.kline.slice(0, -1), next];
+    klineCache = detail.kline;
+    detail.klineDate = next.date;
+    renderDetailChart();
   }
 
   function ensureDetailLive() {
@@ -765,7 +900,7 @@ async function openDetail(r) {
 
   const lastK = kline[kline.length - 1];
   const prevK = kline.length > 1 ? kline[kline.length - 2] : null;
-  // 头部价格与涨跌幅以本地 K 线库为准（与图表同源同值），成交额优先用 K 线当日值。
+  // 首屏先以本地 K 线绘制；交易时段由详情实时轮询继续覆盖当日最后一根 K 线。
   detail.priceText = fmtPrice(lastK.close);
   detail.openText = fmtPrice(lastK.open);
   detail.highText = fmtPrice(lastK.high);
@@ -1052,6 +1187,37 @@ async function loadWatchKlines(force = false, onlyCodes = null) {
 function cnToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+
+function mergeLiveQuotesIntoWatchKlines(quotes, source) {
+  if (source !== 'live_quote' || !cnWatchSessionActive() || !Array.isArray(quotes) || !quotes.length) return;
+  const today = cnToday();
+  const next = { ...watchKlines.value };
+  let changed = false;
+  for (const quote of quotes) {
+    const code = String(quote && quote.code || '');
+    const state = next[code];
+    const bars = state && Array.isArray(state.bars) ? state.bars : [];
+    const last = bars[bars.length - 1];
+    const price = Number(quote && quote.price);
+    if (!/^\d{6}$/.test(code) || !last || last.date !== today || !Number.isFinite(price) || price <= 0) continue;
+    const open = Number(quote.open), high = Number(quote.high), low = Number(quote.low);
+    const nextBar = {
+      ...last,
+      close: price,
+      high: Number.isFinite(high) && high > 0 ? Math.max(high, price) : Math.max(Number(last.high) || price, price),
+      low: Number.isFinite(low) && low > 0 ? Math.min(low, price) : Math.min(Number(last.low) || price, price),
+    };
+    if (Number.isFinite(open) && open > 0) nextBar.open = open;
+    if (Number.isFinite(Number(quote.volume)) && Number(quote.volume) >= 0) nextBar.volume = Number(quote.volume);
+    if (Number.isFinite(Number(quote.amount)) && Number(quote.amount) >= 0) nextBar.amount = Number(quote.amount);
+    const keys = ['open', 'high', 'low', 'close', 'volume', 'amount'];
+    if (keys.some((key) => nextBar[key] !== last[key])) {
+      next[code] = { ...state, bars: [...bars.slice(0, -1), nextBar], updatedAt: Date.now() };
+      changed = true;
+    }
+  }
+  if (changed) watchKlines.value = next;
+}
 // 日 K 同步由应用全局协调：自选、候选池、扫描结果和已打开详情共用同一服务。
 const watchCompleting = ref(false);
 const klineSyncBusy = ref(false);
@@ -1197,6 +1363,7 @@ async function refreshWatch() {
     }
     watchDataDate.value = (data && data.asOf) || '';
     watchDataSource.value = (data && data.source) || '';
+    mergeLiveQuotesIntoWatchKlines(watchQuotes.value, watchDataSource.value);
     settings.watchDataLabel = watchDataLabel.value;
     watchAlerts.value = (data && data.alerts) || [];
     lastUpdate.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -1214,9 +1381,10 @@ async function addWatch() {
   try {
     const r = await fetchJson('/api/watchlist?code=' + encodeURIComponent(code) + '&source=manual', { method: 'POST' });
     if (r.ok === true) {
-      watchAddMsg.value = '已添加 ' + (r.name || code);
+      const themeText = r.themeStatus === 'ready' || r.themeStatus === 'provided' ? '题材已补齐' : (r.themeStatus === 'failed' ? '题材稍后补齐' : '暂无题材归属');
+      const klineText = r.klineStatus === 'ready' ? 'K 线已补齐' : (r.klineStatus === 'queued' ? 'K 线后台补齐中' : 'K 线稍后补齐');
+      watchAddMsg.value = '已添加 ' + (r.name || code) + '，' + themeText + '，' + klineText;
       watchInput.value = '';
-      watchCompleteAt = 0;
       await loadWatchlist();
       await refreshWatch();
     } else {
@@ -1283,6 +1451,7 @@ function poolSnapshot(r) {
     name: r.name,
     market: r.market,
     price: r.price,
+    prevClose: r.prevClose,
     changePct: r.changePct,
     turnover: r.turnover,
     volumeRatio: r.volumeRatio,
@@ -1296,11 +1465,29 @@ function poolSnapshot(r) {
     snapshotDate: r.snapshotDate || snapshotDate.value || (statusInfo.value.snapshotDates && statusInfo.value.snapshotDates[0]) || '',
     marketRegime: r.marketRegime || null,
     themeEvidence: Array.isArray(r.themeEvidence) ? r.themeEvidence : [],
+    themeLeaderRanks: Array.isArray(r.themeLeaderRanks) ? r.themeLeaderRanks : [],
+    boardLeaderRanks: Array.isArray(r.boardLeaderRanks) ? r.boardLeaderRanks : [],
+    candidateThemeRanks: Array.isArray(r.candidateThemeRanks) ? r.candidateThemeRanks : [],
+    isThemeLeader: Boolean(r.isThemeLeader),
+    isBoardLeader: Boolean(r.isBoardLeader),
+    isCandidateThemeLeader: Boolean(r.isCandidateThemeLeader),
     scanScope: r.scanScope || null,
     strategyRuleIds: Array.isArray(r.strategyRuleIds) ? r.strategyRuleIds : [],
     deprioritizedRuleIds: Array.isArray(r.deprioritizedRuleIds) ? r.deprioritizedRuleIds : [],
     riskFlags: Array.isArray(r.riskFlags) ? r.riskFlags : [],
     selectionTrace: Array.isArray(r.selectionTrace) ? r.selectionTrace : [],
+    admissionMode: r.admissionMode || '',
+    localKlineConfirmation: r.localKlineConfirmation || null,
+    initialAssessment: r.initialAssessment || null,
+    selectionPolicyVersion: r.selectionPolicyVersion || '',
+    selectionParameterStatus: r.selectionParameterStatus || '',
+    selectionPolicyParams: r.selectionPolicyParams || null,
+    selectionRuleEvidence: Array.isArray(r.selectionRuleEvidence) ? r.selectionRuleEvidence : [],
+    selectionRulesFingerprint: r.selectionRulesFingerprint || '',
+    selectionBatchId: r.selectionBatchId || '',
+    prescanBatchId: r.prescanBatchId || '',
+    selectionContractVersion: Number(r.selectionContractVersion) || 1,
+    quoteEvidence: r.quoteEvidence || null,
   };
 }
 
@@ -1320,6 +1507,9 @@ async function loadPool(force = false) {
     poolPrefetch.done = Number(st.done) || 0;
     poolPrefetch.total = Number(st.total) || 0;
     poolPrefetch.ok = Number(st.ok) || 0;
+    poolPrefetch.listingComplete = Number(st.listingComplete) || 0;
+    poolPrefetch.strategyReady = Number(st.strategyReady) || 0;
+    poolPrefetch.incomplete = Number(st.incomplete) || 0;
     poolPrefetch.skipped = Number(st.skipped) || 0;
     poolPrefetch.failed = Number(st.failed) || 0;
     poolPrefetch.current = st.current || '';
@@ -1336,7 +1526,13 @@ async function loadPool(force = false) {
       })).depths || [];
       const m = {};
       const latest = {};
-      for (const x of depthData) { m[x.code] = x.depth; latest[x.code] = { latestDate: x.latestDate || '', savedAt: x.savedAt || '' }; }
+      for (const x of depthData) {
+        m[x.code] = x.depth;
+        latest[x.code] = {
+          latestDate: x.latestDate || '', savedAt: x.savedAt || '', quality: x.quality || null,
+          listingDate: x.listingDate || '', listingSource: x.listingSource || '', listingFetchedAt: x.listingFetchedAt || '',
+        };
+      }
       poolKlineDepths.value = m;
       poolKlineLatestDates.value = latest;
     } else {
@@ -1482,6 +1678,9 @@ async function loadPoolKlineState() {
     poolPrefetch.done = Number(st.done) || 0;
     poolPrefetch.total = Number(st.total) || 0;
     poolPrefetch.ok = Number(st.ok) || 0;
+    poolPrefetch.listingComplete = Number(st.listingComplete) || 0;
+    poolPrefetch.strategyReady = Number(st.strategyReady) || 0;
+    poolPrefetch.incomplete = Number(st.incomplete) || 0;
     poolPrefetch.skipped = Number(st.skipped) || 0;
     poolPrefetch.failed = Number(st.failed) || 0;
     poolPrefetch.current = st.current || '';
@@ -1579,25 +1778,28 @@ function ensureRecommendationPolling() {
       clearInterval(recommendationTimer);
       recommendationTimer = null;
       // 完成提示给出分类分布；弱势市场下规则不产生优先盯盘，需明确告知而不是只报“已保存”。
-      const counts = { priority: 0, confirm: 0, not_recommended: 0, insufficient: 0 };
+      const counts = { passed: 0, selected: 0, pending_confirmation: 0, not_passed: 0, insufficient: 0 };
       for (const item of pool.value) {
         const x = poolRecommendations.value[item.code];
         if (x && counts[x.classification] != null) counts[x.classification] += 1;
+        if (x && x.classification === 'passed' && (x.evidenceJson?.selected || x.evidence?.selected)) counts.selected += 1;
       }
-      const regime = pool.value.length && pool.value[0].marketRegime ? pool.value[0].marketRegime : null;
-      const weakNote = regime && regime.status === 'weak' && counts.priority === 0 && counts.confirm > 0
-        ? `市场处于「${regime.label}」，规则不产生优先盯盘，全部保留等待确认；可按形态评分与量比择优人工复核。`
-        : '';
-      poolMsg.value = `盯盘价值评估完成：优先盯盘 ${counts.priority} · 等待确认 ${counts.confirm} · 暂不推荐 ${counts.not_recommended} · 数据不足 ${counts.insufficient}。${weakNote}`;
+      poolMsg.value = `严格复核完成：通过 ${counts.passed}（本批精选 ${counts.selected}）· 待确认 ${counts.pending_confirmation} · 不通过 ${counts.not_passed} · 数据不足 ${counts.insufficient}。`;
     }
   }, 800);
 }
-async function startRecommendations() {
+async function startRecommendations(retryOnly = false) {
+  retryOnly = retryOnly === true;
   poolMsg.value = ''; poolMsgError.value = false;
-  try { const result = await fetchJson('/api/pool/recommendations', { method: 'POST' }); Object.assign(recommendationBatch, result); poolMsg.value = '已启动候选池盯盘价值评估，结论仅供人工复核。'; ensureRecommendationPolling(); }
-  catch (e) { poolMsg.value = '启动评估失败：' + e.message; poolMsgError.value = true; }
+  try {
+    const result = await fetchJson('/api/pool/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ retryOnly }) });
+    Object.assign(recommendationBatch, result);
+    poolMsg.value = retryOnly ? '已启动失败项重试，历史结果会保留。' : '已启动候选池严格复核，结论仅供人工复核。';
+    ensureRecommendationPolling();
+  }
+  catch (e) { poolMsg.value = '启动复核失败：' + e.message; poolMsgError.value = true; }
 }
-async function stopRecommendations() { try { await fetchJson('/api/pool/recommendations', { method: 'DELETE' }); poolMsg.value = '正在停止评估，已完成结果会保留。'; } catch (e) { poolMsg.value = '停止评估失败：' + e.message; poolMsgError.value = true; } }
+async function stopRecommendations() { try { await fetchJson('/api/pool/recommendations', { method: 'DELETE' }); poolMsg.value = '正在停止复核，已完成结果会保留。'; } catch (e) { poolMsg.value = '停止复核失败：' + e.message; poolMsgError.value = true; } }
 
 async function deletePoolItem(code) {
   await fetchJson('/api/pool?code=' + encodeURIComponent(code), { method: 'DELETE' });
@@ -1643,56 +1845,42 @@ async function clearPool() {
   }
 }
 
-async function moveToWatch(r) {
+async function migratePoolItems(codes, mode) {
+  const startedAt = Date.now();
+  Object.assign(poolMigration, { running: true, mode, requested: codes.length, eligible: 0, moved: [], skipped: [], failed: [], warnings: [], startedAt, finishedAt: 0 });
+  try {
+    const result = await fetchJson('/api/pool/migrate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codes, mode, limit: mode === 'selected' ? 5 : undefined }),
+    });
+    Object.assign(poolMigration, result, { running: false, finishedAt: Date.now() });
+    await Promise.all([loadPool(true), loadWatchlist(), loadPoolRecommendations()]);
+    await refreshWatch();
+    const moved = result.moved?.length || 0;
+    const skipped = result.skipped?.length || 0;
+    const failed = result.failed?.length || 0;
+    const warning = result.warnings?.length ? `；集中风险：${result.warnings.join('；')}` : '';
+    poolMsg.value = `${mode === 'observation' ? '观察' : '精选'}转入完成：成功 ${moved} · 跳过 ${skipped} · 失败 ${failed} · 用时 ${fmtDuration(Date.now() - startedAt)}${warning}`;
+    poolMsgError.value = failed > 0;
+    return result;
+  } catch (e) {
+    Object.assign(poolMigration, { running: false, finishedAt: Date.now(), failed: [{ error: e.message }] });
+    poolMsg.value = '转入自选失败：' + e.message;
+    poolMsgError.value = true;
+    return null;
+  }
+}
+
+async function moveToWatch(r, mode = 'selected') {
   return withPoolItemBusy(r.code, 'move', async () => {
-    if (isWatched(r.code)) {
-      try {
-        await deletePoolItem(r.code);
-        poolMsg.value = (r.name || r.code) + ' 已在自选中，已移出候选池';
-        poolMsgError.value = false;
-      } catch (e) {
-        poolMsg.value = '移除失败：' + e.message;
-        poolMsgError.value = true;
-      }
-      return;
-    }
     poolMsg.value = ''; poolMsgError.value = false;
-    try {
-      const q = new URLSearchParams({ code: r.code, name: r.name || '', market: r.market || '' });
-      const res = await fetchJson('/api/watchlist?' + q.toString(), { method: 'POST' });
-      if (res && res.ok) {
-        await deletePoolItem(r.code);
-        await loadWatchlist();
-        await refreshWatch();
-        poolMsg.value = '已转入自选：' + (r.name || r.code);
-      } else {
-        poolMsg.value = (res && res.error) || '转入自选失败';
-        poolMsgError.value = true;
-      }
-    } catch (e) {
-      poolMsg.value = '转入自选失败：' + e.message;
-      poolMsgError.value = true;
-    }
+    return migratePoolItems([r.code], mode);
   });
 }
 
 async function moveAllToWatch() {
   poolBusy.value = true; poolMsg.value = ''; poolMsgError.value = false;
-  let done = 0; let skipped = 0;
   try {
-    for (const r of [...pool.value]) {
-      if (isWatched(r.code)) { skipped++; continue; }
-      const q = new URLSearchParams({ code: r.code, name: r.name || '', market: r.market || '' });
-      const res = await fetchJson('/api/watchlist?' + q.toString(), { method: 'POST' });
-      if (res && res.ok) done++; else skipped++;
-    }
-    await loadPool();
-    await loadWatchlist();
-    await refreshWatch();
-    poolMsg.value = `已转入自选 ${done} 只，跳过 ${skipped} 只；候选池剩余 ${pool.value.length} 只`;
-  } catch (e) {
-    poolMsg.value = '批量转入失败：' + e.message;
-    poolMsgError.value = true;
+    await migratePoolItems(pool.value.filter(isSelectedRecommendation).map((item) => item.code), 'selected');
   } finally {
     poolBusy.value = false;
   }
@@ -1786,47 +1974,8 @@ async function loadIntegrity() {
   } catch { /* 后端未就绪时保持默认 */ }
   finally { integrity.loading = false; }
 }
-function goPrefetch() {
-  switchMode('settings');
-  loadPrefetchStatus();
-}
 function openDataHealth() {
-  if (integrity.needsData) return goPrefetch();
   switchMode('settings');
-}
-
-let prefetchTimer = null;
-async function loadPrefetchStatus() {
-  try { Object.assign(prefetch, await fetchJson('/api/prefetch-status')); } catch { /* 后端未就绪忽略 */ }
-}
-function ensurePrefetchPolling() {
-  if (prefetchTimer || !prefetch.running) return;
-  prefetchTimer = setInterval(async () => {
-    await loadPrefetchStatus();
-    if (!prefetch.running) { clearInterval(prefetchTimer); prefetchTimer = null; }
-  }, 1500);
-}
-async function startPrefetch() {
-  const lmt = Math.min(Math.max(Math.round(Number(settings.fetchDays) || 250), 20), 500);
-  try {
-    const q = new URLSearchParams({ markets: selectedMarkets.value.join(','), lmt: String(lmt) });
-    const r = await fetchJson('/api/prefetch-kline?' + q.toString());
-    Object.assign(prefetch, r);
-    ensurePrefetchPolling();
-    settingsMsg.value = ''; settingsMsgError.value = false;
-  } catch (e) {
-    settingsMsg.value = '启动预取失败：' + e.message; settingsMsgError.value = true;
-  }
-}
-async function stopPrefetch() {
-  try {
-    const r = await fetchJson('/api/prefetch-stop');
-    Object.assign(prefetch, r);
-    if (prefetchTimer) { clearInterval(prefetchTimer); prefetchTimer = null; }
-    settingsMsg.value = '已停止预取。'; settingsMsgError.value = false;
-  } catch (e) {
-    settingsMsg.value = '停止失败：' + e.message; settingsMsgError.value = true;
-  }
 }
 
 // ── 设置：读取 / 保存（本地）──
@@ -1906,7 +2055,7 @@ async function saveSettings() {
       Object.assign(settings, normalizeSettings(data.settings || settings));
       selectedMarkets.value = settings.scanMarkets.slice();
       restartKlineSyncScheduler();
-      scanContext.value = null; prescanMarketKey.value = ''; rows.value = []; summary.value = '';
+      scanContext.value = null; prescanMarketKey.value = ''; rows.value = []; strongWatchRows.value = []; scanFunnel.value = null; summary.value = '';
       settings.ai.prompt = promptToSave;
       const promptResult = await fetchJson('/api/ai/prompt', {
         method: 'POST',
@@ -1930,7 +2079,7 @@ async function saveSettings() {
 
 function resetScanResults() {
   selectedMarkets.value = settings.scanMarkets.slice();
-  scanContext.value = null; prescanMarketKey.value = ''; rows.value = []; summary.value = '';
+  scanContext.value = null; prescanMarketKey.value = ''; rows.value = []; strongWatchRows.value = []; scanFunnel.value = null; summary.value = '';
 }
 async function saveTradingSettings() {
   savingTradingSettings.value = true; tradingSettingsMsg.value = ''; tradingSettingsMsgError.value = false;
@@ -2130,16 +2279,18 @@ async function saveRules() {
     savingRules.value = false;
   }
 }
-const hasValidPrescan = computed(() => Boolean(scanContext.value) && prescanMarketKey.value === [...selectedMarkets.value].sort().join(','));
+const hasValidPrescan = computed(() => Boolean(scanContext.value)
+  && prescanMarketKey.value === [...selectedMarkets.value].sort().join(',')
+  && scanContext.value.validity?.scanEligible === true);
 watch([() => selectedMarkets.value.join(','), dataSource], loadLocalStatus);
 
   async function bootstrap() {
 try {
   startupMessage.value = '正在加载本地配置与候选池…';
   markets.value = (await fetchJson('/api/markets')).markets || {};
-  await Promise.all([loadRules(), loadSettings(), loadWatchlist(), loadPool(), loadBatchStatus()]);
-  await Promise.all([loadLocalStatus(), loadPrefetchStatus(), loadIntegrity(), fetchJson('/api/status').then((x) => { statusInfo.value = x || { snapshotDates: [], klineCount: 0 }; })]);
-  ensurePrefetchPolling();
+  await Promise.all([startMarketClock(), loadRules(), loadSettings(), loadWatchlist(), loadPool(), loadBatchStatus()]);
+  await loadStoredPrescan();
+  await Promise.all([loadLocalStatus(), loadIntegrity(), fetchJson('/api/status').then((x) => { statusInfo.value = x || { snapshotDates: [], klineCount: 0 }; })]);
   ensureBatchPolling();
   startKlineSyncScheduler();
   if (cnWatchSessionActive() || cnAfterMarketClose()) requestKlineSync('bootstrap');
@@ -2151,11 +2302,12 @@ try {
 } catch { startupMessage.value = '本地服务正在准备，请稍候…'; setTimeout(() => location.reload(), 3000); }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
+    syncMarketClock();
     if (mode.value === 'watch') refreshWatch();
     if (cnWatchSessionActive() || cnAfterMarketClose()) requestKlineSync('visible');
   }
 });
   }
 
-  return { bootstrap, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, prefetch, prefetchPercent, prefetchSummary, klineGaps, klineGapsSummary, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, startPrefetch, stopPrefetch, loadPrefetchStatus, loadIntegrity, loadKlineGaps, goPrefetch, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, removeFromPool, clearPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
+  return { clearPool, removeFromPool, bootstrap, marketClock, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, klineGaps, klineGapsSummary, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, loadIntegrity, loadKlineGaps, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
 });

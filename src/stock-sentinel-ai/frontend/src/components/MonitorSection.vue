@@ -38,6 +38,9 @@
           <div class="stat"><span>下跌</span><strong class="neg">{{ boardStats.down }}</strong></div>
           <div class="stat"><span>平盘</span><strong>{{ boardStats.flat }}</strong></div>
           <div class="stat"><span>更新</span><strong class="time">{{ lastUpdate || '—' }}</strong></div>
+          <div class="stat"><span>精选转入</span><strong>{{ watchSourceStats.selected }}</strong></div>
+          <div class="stat"><span>待确认观察</span><strong>{{ watchSourceStats.observation }}</strong></div>
+          <div class="stat"><span>手工自选</span><strong>{{ watchSourceStats.manual }}</strong></div>
         </div>
 
         <div v-if="watchQuotesError" class="status error" role="status">{{ watchQuotesError }}</div>
@@ -46,17 +49,25 @@
         <div v-else-if="!watchQuotes.length" class="status empty" role="status">暂未取得行情，请点击“立即刷新”。</div>
 
         <div class="watch-grid" v-if="watchQuotes.length">
-          <WatchKlineCard v-for="q in watchQuotes" :key="q.code" :quote="q" :kline-state="watchKlines[q.code]" :return-info="watchReturnByCode[q.code]" :recommendation="poolRecommendations[q.code]" :levels="watchLevels[q.code]" :pinned="isWatchPinned(q.code)" @open="openDetail(q)" @remove="removeWatch(q.code)" @toggle-pin="toggleWatchPin(q.code)" />
+          <WatchKlineCard v-for="q in watchQuotes" :key="q.code" :quote="q" :watch-item="watchItemsByCode[q.code]" :kline-state="watchKlines[q.code]" :return-info="watchReturnByCode[q.code]" :recommendation="poolRecommendations[q.code]" :levels="watchLevels[q.code]" :themes="watchThemesByCode[q.code]" :pinned="isWatchPinned(q.code)" @open="openDetail(q)" @remove="removeWatch(q.code)" @toggle-pin="toggleWatchPin(q.code)" />
         </div>
       </section>
     </template>
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 import WatchKlineCard from './WatchKlineCard.vue';
 const app = useAppStore();
 const { mode, summary, settings, watchIntervalMs, watchAuto, watchRefreshing, watchInput, watchAddMsgError, status, watchAddMsg, watchQuotes, boardStats, lastUpdate, watchQuotesError, watchAlerts, watchlist, watchReturnByCode, poolRecommendations, watchKlines, watchLevels, watchSessionActive, watchCompleting } = storeToRefs(app);
 const { restartWatchPolling, refreshWatch, addWatch, openDetail, fmtNum, removeWatch, toggleWatchPin, isWatchPinned, recommendationClass, recommendationLabel, recommendationReason, completeWatchKlines } = app;
+const watchThemesByCode = computed(() => Object.fromEntries(watchlist.value.map((item) => [item.code, Array.isArray(item.themeEvidence) ? item.themeEvidence : []])));
+const watchItemsByCode = computed(() => Object.fromEntries(watchlist.value.map((item) => [item.code, item])));
+const watchSourceStats = computed(() => ({
+  selected: watchlist.value.filter((item) => item.source === 'pool_selected').length,
+  observation: watchlist.value.filter((item) => item.source === 'pool_observation').length,
+  manual: watchlist.value.filter((item) => !['pool_selected', 'pool_observation'].includes(item.source)).length,
+}));
 </script>

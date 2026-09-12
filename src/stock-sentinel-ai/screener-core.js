@@ -4,11 +4,15 @@
 // 形态规则基于用户提供《量价形态选股示意图》（5 大类）逐字落地。
 // 其余形态说明与量化方案见 docs/xingtaidu-patterns.md。
 
-const { MARKETS, fetchMarketSnapshot, fetchKline, isStOrSuspended, fetchMajorIndicesTencent, fetchIndustryBoards, fetchConceptBoards, fetchBoardConstituents, fetchMarketSentiment } = require('./data');
+const { MARKETS, fetchMarketSnapshot, fetchKline, fetchQuotesDetailed, isStOrSuspended, fetchMajorIndicesTencent, fetchIndustryBoards, fetchConceptBoards, fetchBoardConstituents, fetchMarketSentiment } = require('./data');
 const { readKline, recentTradingDates } = require('./storage');
 const rulesStore = require('./rules-store');
 const { summarizeSnapshot, classifyMarketRegime, strategyForRegime, riskFlagsForCandidate } = require('./market-regime');
-const { isClosedMarketTime, canReuseClosedPrescan, readPrescan, writePrescan } = require('./market-prescan-store');
+const { isClosedMarketTime, canReuseClosedPrescan, assessPrescanValidity, readPrescan, writePrescan, archivePrescan } = require('./market-prescan-store');
+const { SELECTION_CONTRACT_VERSION, EVIDENCE_STATUS, EXCLUSION_REASONS, createBatchId } = require('./selection-contract');
+const { buildInitialSelection } = require('./selection-policy');
+const { rulesFingerprint } = require('./recommendation-validity');
+const { isAdjustmentCorroborated } = require('./kline-source-contract');
 
 let runtimePrescan = null;
 
@@ -16,9 +20,16 @@ let runtimePrescan = null;
 // 55 分适合观察池，不适合作为全市场自动入池门槛；70 分用于压缩
 // 候选规模，后续仍可通过形态复筛和 AI 综合评分继续收敛。
 const AUTO_POOL_MIN_SCORE = 70;
+const LOCAL_KLINE_CONFIRM_MIN_BARS = 60;
 
 function clamp(value, lo, hi) {
   return Math.min(hi, Math.max(lo, value));
+}
+
+function shanghaiDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(date);
 }
 
 function last(candles) {
@@ -53,6 +64,7 @@ function volumeProfile(item) {
     name: item.name,
     market: item.market || '',
     price: item.price,
+    prevClose: Number(item.prevClose) || null,
     changePct: item.changePct,
     turnover: item.turnover,
     volumeRatio: item.volumeRatio,
@@ -68,6 +80,41 @@ function volumeProfile(item) {
 function meetsAutoPoolGate(profile, minScore = AUTO_POOL_MIN_SCORE) {
   const score = Number(profile && profile.score);
   return Number.isFinite(score) && score >= minScore;
+}
+
+// 同一股票可属于多个行业或概念。题材内的龙头名次只比较同题材成分股，依次看
+// 涨停状态、涨跌幅、主力净流入和量能分，避免把不同题材的绝对成交额直接混排。
+function compareThemeLeader(left, right) {
+  return Number(right.profile.isLimitUp) - Number(left.profile.isLimitUp)
+    || Number(right.profile.changePct) - Number(left.profile.changePct)
+    || Number(right.profile.mainNetYi) - Number(left.profile.mainNetYi)
+    || Number(right.profile.score) - Number(left.profile.score)
+    || String(left.profile.code).localeCompare(String(right.profile.code));
+}
+
+function rankThemeLeaders(entries, themes, themeCodes, rankField = 'themeLeaderRanks') {
+  const groups = new Map();
+  for (const entry of entries) {
+    entry.matchingThemes = themes.filter((theme) => (themeCodes.get(theme.code) || new Set()).has(entry.profile.code));
+    entry[rankField] = [];
+    for (const theme of entry.matchingThemes) {
+      if (!groups.has(theme.code)) groups.set(theme.code, []);
+      groups.get(theme.code).push(entry);
+    }
+  }
+  for (const [code, members] of groups) {
+    members.sort(compareThemeLeader).forEach((entry, index) => {
+      const theme = entry.matchingThemes.find((item) => item.code === code);
+      entry[rankField].push({ name: theme.name, code, kind: theme.kind, rank: index + 1, coverage: theme.coverage || 'partial' });
+    });
+  }
+  for (const entry of entries) {
+    entry[rankField].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    entry.bestThemeRank = entry[rankField].length ? entry[rankField][0].rank : Number.MAX_SAFE_INTEGER;
+    entry.isThemeLeader = entry.bestThemeRank === 1;
+  }
+  entries.sort((a, b) => a.bestThemeRank - b.bestThemeRank || compareThemeLeader(a, b));
+  return entries;
 }
 
 // ───────────────────────── 技术指标层 ─────────────────────────
@@ -586,6 +633,79 @@ function matchPrefilter(rule, p) {
   return true;
 }
 
+// 快照预筛后只读取少量命中股票的本地 K 线。证据完整时立即确认原策略；
+// 缺数据或口径不可核对时保留待补齐，不能把“无法判断”误作形态失败。
+function assessLocalKlinePrefilter(entry, cached, snapshotDate) {
+  const hitRules = Array.isArray(entry && entry.hitRules) ? entry.hitRules : [];
+  const klineRules = hitRules.filter((rule) => rule.kind === 'kline');
+  const scanRules = hitRules.filter((rule) => rule.kind !== 'kline');
+  if (!klineRules.length) {
+    return { status: 'confirmed', entry: { ...entry, hitRules: scanRules }, confirmedRuleIds: scanRules.map((rule) => rule.id) };
+  }
+
+  const candles = cached && Array.isArray(cached.kline) ? cached.kline : [];
+  const tailDate = candles.length ? String(candles.at(-1).date || '') : '';
+  let pendingReason = '';
+  if (!cached || !candles.length) pendingReason = '本地K线缺失';
+  else if (String(cached.source || '') !== 'tencent' || !isAdjustmentCorroborated(cached.source, cached.adjustmentType) || cached.adjustmentType !== 'qfq') pendingReason = 'K线来源或前复权口径未验证';
+  else if (candles.length < LOCAL_KLINE_CONFIRM_MIN_BARS) pendingReason = `K线不足${LOCAL_KLINE_CONFIRM_MIN_BARS}根`;
+  else if (tailDate !== snapshotDate || String(cached.sourceLatestDate || '') !== snapshotDate) pendingReason = 'K线尾日与扫描交易日不一致';
+  else if (cached.tailStatus !== 'confirmed') pendingReason = 'K线尾日尚未确认';
+
+  if (pendingReason) {
+    return {
+      status: 'pending_kline',
+      reason: pendingReason,
+      entry: {
+        ...entry,
+        localKlineConfirmation: { status: 'pending_kline', reason: pendingReason, source: String(cached && cached.source || ''), adjustmentType: String(cached && cached.adjustmentType || ''), depth: candles.length, tailDate },
+      },
+    };
+  }
+
+  const matched = [];
+  for (const rule of klineRules) {
+    const result = matchKlinePattern(rule.patternId, candles, { ...rule.params, code: entry.profile && entry.profile.code });
+    if (result.matched) matched.push({ rule, result });
+  }
+  const confirmedRules = [...scanRules, ...matched.map((item) => item.rule)];
+  if (!confirmedRules.length) {
+    return { status: 'rejected', reason: '入池预筛命中的原策略未通过本地K线形态确认' };
+  }
+  const best = matched.sort((left, right) => Number(right.result.score || 0) - Number(left.result.score || 0))[0] || null;
+  return {
+    status: 'confirmed',
+    confirmedRuleIds: confirmedRules.map((rule) => rule.id),
+    entry: {
+      ...entry,
+      hitRules: confirmedRules,
+      pattern: best ? best.result.reason : '',
+      patternScore: best ? Number(best.result.score || 0) : 0,
+      patternId: best ? best.rule.patternId : '',
+      localKlineConfirmation: { status: 'confirmed', source: cached.source, adjustmentType: cached.adjustmentType, depth: candles.length, tailDate, ruleIds: confirmedRules.map((rule) => rule.id) },
+    },
+  };
+}
+
+async function confirmPrefilterEntriesWithLocalKline(entries, snapshotDate) {
+  const retained = [];
+  const exclusions = [];
+  let confirmed = 0;
+  let pending = 0;
+  for (const entry of entries || []) {
+    const cached = await readKline(entry.profile.code);
+    const assessment = assessLocalKlinePrefilter(entry, cached, snapshotDate);
+    if (assessment.status === 'rejected') {
+      exclusions.push({ code: entry.profile.code, reason: EXCLUSION_REASONS.KLINE_PATTERN_NOT_CONFIRMED, detail: assessment.reason });
+      continue;
+    }
+    retained.push(assessment.entry);
+    if (assessment.status === 'confirmed') confirmed += 1;
+    else pending += 1;
+  }
+  return { retained, exclusions, confirmed, pending };
+}
+
 // ───────────────────────── 第一段：快照初筛 → 候选池 ─────────────────────────
 // dataSource：'live' 实时拉取并落盘；'local' 仅用当日本地快照；'last' 用最近一次本地快照。
 // ruleId：空 → 全部启用规则（并集，快照预筛命中才进入候选）；指定 → 仅用该规则。
@@ -665,14 +785,26 @@ async function buildMarketPrescan({ markets = [], dataSource = 'live', force = f
   if (!force && canReuseClosedPrescan(stored) && stored.marketKey === marketKey) return { ...stored, reused: true };
   let indices = [];
   let indexDate = '';
-  try { const indexResult = await fetchMajorIndicesTencent(); indices = indexResult.indices; indexDate = indexResult.asOf || ''; } catch { /* 指数缺失使置信度降级，不中断扫描 */ }
+  const sourceRaw = {};
+  const sourceEvidence = {};
+  const summarizeRaw = (raw) => raw ? Object.fromEntries(Object.entries(raw).filter(([key]) => !['rawText', 'rawBase64'].includes(key))) : null;
+  try {
+    const indexResult = await fetchMajorIndicesTencent(); indices = indexResult.indices; indexDate = indexResult.asOf || '';
+    sourceRaw.indices = indexResult.rawResponse;
+    sourceEvidence.indices = summarizeRaw(indexResult.rawResponse);
+  } catch { /* 指数缺失使置信度降级，不中断扫描 */ }
   if (!indexDate) {
     const localDates = await recentTradingDates(1);
     indexDate = localDates[0] || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
   }
   const snapshot = await fetchMarketSnapshot({ markets, limit: Number.POSITIVE_INFINITY, dataSource, tradeDate: indexDate });
   const breadth = summarizeSnapshot(snapshot.records);
-  const limitStructure = await fetchMarketSentiment(indexDate, { dataSource, validationRecords: snapshot.records });
+  const sentimentResult = await fetchMarketSentiment(indexDate, { dataSource, validationRecords: snapshot.records });
+  const { sourceEvidence: sentimentEvidence, ...limitStructure } = sentimentResult || {};
+  sourceEvidence.sentimentPools = sentimentEvidence || {
+    tradeDate: indexDate, source: 'eastmoney', available: false, rawBytes: 0, sha256: '',
+    quality: { complete: false, requestedDate: indexDate, conflicts: ['情绪池原始证据摘要缺失'] },
+  };
   const marketRegime = classifyMarketRegime({ breadth, indices, asOf: indexDate, limitStructure });
   const enabled = listEnabledRules();
   const strategy = strategyForRegime(marketRegime.status, enabled);
@@ -682,24 +814,30 @@ async function buildMarketPrescan({ markets = [], dataSource = 'live', force = f
   let focusConcepts = [];
   let scopeCodes = null;
   const themeCodes = new Map();
-  let scanScope = { mode: 'all_market_fallback', stockCount: snapshot.records.length, reason: '行业与概念板块数据尚未获取' };
+  let scanScope = { mode: 'theme_data_unavailable', stockCount: 0, reason: '行业与概念板块数据尚未获取，不能执行题材内股票扫描' };
   const selectedCount = marketRegime.status === 'weak' ? 3 : 6;
   const codes = new Set();
   const collectBoards = async (kind, getBoards, limitUpsByIndustry) => {
     try {
       const result = await getBoards({ tradeDate: indexDate });
+      sourceRaw[`${kind}Boards`] = result.rawResponse;
+      sourceEvidence[`${kind}Boards`] = summarizeRaw(result.rawResponse);
       const ranked = result.boards.map((board) => ({ ...board, limitUpCount: kind === 'industry' ? (limitUpsByIndustry.get(board.name) || 0) : 0 }))
-        .filter((board) => Number.isFinite(board.mainNet) && Number.isFinite(board.changePct))
+        .filter((board) => Number.isFinite(board.mainNet) && Number.isFinite(board.changePct) && require('./market-prescan-store').isQuoteFresh(board.sourceAt, indexDate))
         .sort((a, b) => (b.limitUpCount - a.limitUpCount) || (b.mainNet - a.mainNet) || (b.changePct - a.changePct))
         .slice(0, selectedCount);
       const constituents = await Promise.all(ranked.map((board) => fetchBoardConstituents(board.code)));
+      sourceRaw[`${kind}Constituents`] = Object.fromEntries(constituents.map((rows) => [rows.boardCode, rows.rawPages || []]));
+      sourceEvidence[`${kind}Constituents`] = Object.fromEntries(constituents.map((rows) => [rows.boardCode, {
+        records: rows.records.length, expectedCount: rows.expectedCount, pages: (rows.rawPages || []).map(summarizeRaw),
+      }]));
       return ranked.map((board, i) => {
         const rows = constituents[i];
         const boardCodes = new Set(rows.records.map((item) => item.code));
         themeCodes.set(board.code, boardCodes);
         for (const code of boardCodes) codes.add(code);
         const totalMoves = Math.max(0, Number(board.advanceCount) || 0) + Math.max(0, Number(board.declineCount) || 0);
-        return { ...board, kind, rank: i + 1, asOf: indexDate, advanceRatio: totalMoves ? Number(board.advanceCount) / totalMoves : null, constituentCount: rows.records.length, coverage: rows.records.length >= rows.expectedCount ? 'complete' : 'partial' };
+        return { ...board, kind, rank: i + 1, asOf: shanghaiDate(board.sourceAt), advanceRatio: totalMoves ? Number(board.advanceCount) / totalMoves : null, constituentCount: rows.records.length, coverage: rows.records.length >= rows.expectedCount ? 'complete' : 'partial' };
       });
     } catch {
       return [];
@@ -712,23 +850,24 @@ async function buildMarketPrescan({ markets = [], dataSource = 'live', force = f
     scopeCodes = codes;
     scanScope = { mode: 'theme_and_concept_constituents', stockCount: codes.size, industryCount: focusThemes.length, conceptCount: focusConcepts.length, source: 'eastmoney' };
   } else {
-    scanScope.reason = '行业与概念板块成分股范围不足，已按全市场回退';
+    scanScope.reason = '行业与概念板块成分股范围不足，不能执行题材内股票扫描';
   }
 
   const fetchedAt = new Date().toISOString();
   const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
   const isFinal = indexDate < localDate || (indexDate === localDate && isClosedMarketTime());
   const themeMembership = Object.fromEntries([...themeCodes.entries()].map(([code, codes]) => [code, [...codes]]));
-  const persisted = { marketRegime, focusThemes, focusConcepts, scanScope, strategy, snapshotDate: indexDate, asOf: indexDate, fetchedAt, isFinal, dataSource: snapshot.dataSource, marketKey, scopeCodes: scopeCodes ? [...scopeCodes] : null, themeMembership };
+  const persisted = { batchId: createBatchId('prescan'), contractVersion: SELECTION_CONTRACT_VERSION, marketRegime, focusThemes, focusConcepts, scanScope, strategy, snapshotDate: indexDate, asOf: indexDate, fetchedAt, session: isFinal ? 'closed' : 'intraday', isFinal, dataSource: snapshot.dataSource, marketKey, scopeCodes: scopeCodes ? [...scopeCodes] : null, themeMembership, sourceEvidence };
   writePrescan(persisted);
+  const archive = archivePrescan(persisted, snapshot, sourceRaw);
   runtimePrescan = { ...persisted, snapshot, scopeCodes, themeCodes, limitStructure };
-  return { ...persisted, reused: false };
+  return { ...persisted, archive, reused: false };
 }
 
 async function getMarketPrescan(options = {}) {
   const result = await buildMarketPrescan(options);
   const { scopeCodes, themeMembership, marketKey, ...publicResult } = result;
-  return publicResult;
+  return { ...publicResult, validity: assessPrescanValidity(result, { marketKey }) };
 }
 
 async function scanByMarketContext({ markets = [], limit = 100, accountSt = false, dataSource = 'live', autoPoolMinScore = AUTO_POOL_MIN_SCORE, forcePrescan = false } = {}) {
@@ -747,43 +886,124 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
         limitStructure: stored.marketRegime && stored.marketRegime.evidence && stored.marketRegime.evidence.limitStructure,
       };
     } else {
-      await buildMarketPrescan({ markets, dataSource, force: true });
+      throw new Error('市场预扫描结果不可用，请先扫描市场以确定强势题材。');
     }
   }
   const context = runtimePrescan;
+  const validity = assessPrescanValidity(context, { marketKey: requestedMarketKey });
+  if (!validity.scanEligible) throw new Error(validity.reason === 'trading_date_changed' ? '市场扫描结果已跨交易日，请重新扫描市场。' : '市场扫描结果已失效，请重新扫描市场。');
   const { marketRegime, focusThemes, focusConcepts = [], scanScope, strategy, snapshot, scopeCodes, themeCodes, limitStructure, snapshotDate: indexDate } = context;
+  if (!scopeCodes || !scopeCodes.size) throw new Error(scanScope.reason || '未取得题材成分股范围，无法执行题材内龙头扫描。');
   const enabled = listEnabledRules();
   const strategyRules = enabled.filter((r) => strategy.enabledRuleIds.includes(r.id));
 
-  const entries = [];
-  for (const row of snapshot.records) {
-    if (scopeCodes && !scopeCodes.has(row.code)) continue;
-    if (!accountSt && isStOrSuspended(row)) continue;
-    const profile = volumeProfile(row);
-    const hitRules = strategyRules.filter((rule) => rule.kind === 'kline' ? matchPrefilter(rule, profile) : matchScanRule(rule, profile));
-    if (hitRules.length && meetsAutoPoolGate(profile, autoPoolMinScore)) entries.push({ profile, hitRules });
+  const scopedRows = snapshot.records.filter((row) => scopeCodes.has(row.code));
+  const oldByCode = new Map(scopedRows.map((row) => [row.code, row]));
+  const effectiveScopeCodes = [...scopeCodes].filter((code) => oldByCode.has(code));
+  const quoteStartedAt = Date.now();
+  const quoteBatch = await fetchQuotesDetailed(effectiveScopeCodes);
+  const quoteByCode = new Map(quoteBatch.quotes.map((quote) => [quote.code, quote]));
+  const allRankable = [];
+  const exclusions = [];
+  for (const code of effectiveScopeCodes) {
+    const old = oldByCode.get(code) || { code, market: '' };
+    const quote = quoteByCode.get(code);
+    if (!quote) { exclusions.push({ code, reason: EXCLUSION_REASONS.QUOTE_MISSING }); continue; }
+    const quoteDate = shanghaiDate(quote.sourceAt);
+    if (!quoteDate || !require('./market-prescan-store').isQuoteFresh(quote.sourceAt, indexDate)) { exclusions.push({ code, reason: EXCLUSION_REASONS.QUOTE_STALE }); continue; }
+    const row = { ...old, ...quote, amount: quote.amount };
+    if (!accountSt && isStOrSuspended(row)) { exclusions.push({ code, reason: EXCLUSION_REASONS.ST_OR_SUSPENDED }); continue; }
+    if (quote.closed || !Number.isFinite(quote.price) || !Number.isFinite(quote.changePct)
+      || !Number.isFinite(quote.turnover) || !Number.isFinite(quote.volumeRatio) || !Number.isFinite(quote.amount)
+      || !Number.isFinite(quote.mainNet) || !Number.isFinite(quote.floatMcap)) {
+      exclusions.push({ code, reason: EXCLUSION_REASONS.QUOTE_INCOMPLETE });
+      continue;
+    }
+    const profile = { ...volumeProfile(row), isLimitUp: Number(row.changePct) >= limitPct(row.code) * 100 * 0.98 };
+    allRankable.push({ profile });
   }
-  entries.sort((a, b) => b.profile.score - a.profile.score);
-  // 扫描当日只依据快照预筛。K 线在候选池入池后再补齐并复筛，不能反过来把当天命中的股票过滤掉。
-  const candidates = entries.slice(0, Math.max(1, Number(limit) || 1)).map(({ profile, hitRules }) => {
-    const matchingThemes = [...focusThemes, ...focusConcepts].filter((theme) => (themeCodes.get(theme.code) || new Set()).has(profile.code)).map((theme) => ({ name: theme.name, code: theme.code, kind: theme.kind, rank: theme.rank, asOf: theme.asOf, changePct: theme.changePct, mainNet: theme.mainNet, limitUpCount: theme.limitUpCount, advanceRatio: theme.advanceRatio }));
+  rankThemeLeaders(allRankable, [...focusThemes, ...focusConcepts], themeCodes, 'boardLeaderRanks');
+  const boardRanksByCode = new Map(allRankable.map((entry) => [entry.profile.code, entry.boardLeaderRanks]));
+  const entries = [];
+  for (const ranked of allRankable) {
+    const profile = ranked.profile;
+    const hitRules = strategyRules.filter((rule) => rule.kind === 'kline' ? matchPrefilter(rule, profile) : matchScanRule(rule, profile));
+    if (!hitRules.length) { exclusions.push({ code: profile.code, reason: EXCLUSION_REASONS.RULE_NOT_MATCHED }); continue; }
+    if (!meetsAutoPoolGate(profile, autoPoolMinScore)) { exclusions.push({ code: profile.code, reason: EXCLUSION_REASONS.SCORE_TOO_LOW }); continue; }
+    entries.push({ profile, hitRules, boardLeaderRanks: boardRanksByCode.get(profile.code) || [] });
+  }
+  const prefilterMatched = entries.length;
+  const localConfirmation = await confirmPrefilterEntriesWithLocalKline(entries, indexDate);
+  exclusions.push(...localConfirmation.exclusions);
+  const refinedEntries = localConfirmation.retained;
+  rankThemeLeaders(refinedEntries, [...focusThemes, ...focusConcepts], themeCodes, 'candidateThemeRanks');
+  const initialSelection = buildInitialSelection(refinedEntries, { limit });
+  const selectionBatchId = createBatchId('selection');
+  const staleQuoteCount = quoteBatch.quotes.filter((quote) => {
+    return !require('./market-prescan-store').isQuoteFresh(quote.sourceAt, indexDate);
+  }).length;
+  const quoteEvidence = {
+    status: quoteBatch.missingCodes.length || quoteBatch.errors.length || staleQuoteCount ? EVIDENCE_STATUS.PARTIAL : EVIDENCE_STATUS.COMPLETE,
+    source: quoteBatch.source,
+    sourceAt: quoteBatch.quotes.map((quote) => quote.sourceAt).filter(Boolean).sort().at(-1) || '',
+    fetchedAt: quoteBatch.fetchedAt,
+    requested: quoteBatch.requested,
+    received: quoteBatch.received,
+    missingCodes: quoteBatch.missingCodes,
+    reasons: [...quoteBatch.errors.map((item) => item.error), ...(staleQuoteCount ? [`${staleQuoteCount}只行情源时间缺失或非本交易日`] : [])],
+  };
+  const toPublicCandidate = ({ profile, hitRules, matchingThemes, boardLeaderRanks, candidateThemeRanks, isThemeLeader, initialAssessment, pattern, patternScore, patternId, localKlineConfirmation }, admissionMode, autoPool, extra = {}) => {
+    const themeEvidence = matchingThemes.map((theme) => ({ name: theme.name, code: theme.code, kind: theme.kind, rank: theme.rank, asOf: theme.asOf, changePct: theme.changePct, mainNet: theme.mainNet, limitUpCount: theme.limitUpCount, advanceRatio: theme.advanceRatio }));
     const flags = riskFlagsForCandidate(profile, { marketStatus: marketRegime.status, limitStructure });
     return {
       ...profile,
+      isLimitUp: initialAssessment ? initialAssessment.isLimitUp : profile.isLimitUp,
+      selectionBatchId,
+      prescanBatchId: String(context.batchId || ''),
+      selectionContractVersion: SELECTION_CONTRACT_VERSION,
+      quoteEvidence: { ...quoteEvidence, sourceAt: quoteByCode.get(profile.code)?.sourceAt || '' },
       snapshotDate: indexDate,
       ruleLabel: hitRules.map((r) => r.label).join(' / '),
       ruleIds: hitRules.map((r) => r.id),
-      pattern: '', patternScore: 0, autoPool: true,
-      admissionMode: 'pending_kline',
+      pattern: pattern || '', patternScore: Number(patternScore) || 0, patternId: patternId || '', autoPool,
+      admissionMode,
+      localKlineConfirmation: localKlineConfirmation || null,
+      initialAssessment: initialAssessment || null,
+      selectionPolicyVersion: initialSelection.policyVersion,
+      selectionParameterStatus: initialSelection.parameterStatus,
+      selectionPolicyParams: { ...initialSelection.params },
+      selectionRuleEvidence: hitRules.map((rule) => JSON.parse(JSON.stringify(rule))),
+      selectionRulesFingerprint: rulesFingerprint(hitRules),
       marketRegime: { status: marketRegime.status, label: marketRegime.label, confidence: marketRegime.confidence },
-      themeEvidence: matchingThemes,
+      themeEvidence,
+      boardLeaderRanks,
+      candidateThemeRanks,
+      themeLeaderRanks: candidateThemeRanks,
+      isBoardLeader: boardLeaderRanks.some((item) => item.rank === 1),
+      isCandidateThemeLeader: isThemeLeader,
+      isThemeLeader,
       scanScope,
       strategyRuleIds: strategy.enabledRuleIds,
       deprioritizedRuleIds: strategy.deprioritizedRuleIds,
       riskFlags: flags,
-      selectionTrace: [`市场环境：${marketRegime.label}`, limitStructure.available ? `情绪结构：涨停 ${limitStructure.limitUpCount} / 跌停 ${limitStructure.limitDownCount} / 炸板 ${limitStructure.brokenCount}` : '情绪结构：不可用', `策略：${strategy.label}`, scanScope.mode === 'theme_constituents' ? '范围：重点行业成分股' : `范围回退：${scanScope.reason}`, `快照预筛：${hitRules.map((r) => r.label).join('、')}`, '下一步：入候选池补齐 K 线后复筛形态'],
+      selectionTrace: [`市场环境：${marketRegime.label}`, limitStructure.available ? `情绪结构：涨停 ${limitStructure.limitUpCount} / 跌停 ${limitStructure.limitDownCount} / 炸板 ${limitStructure.brokenCount}` : '情绪结构：不可用', `策略：${strategy.label}`, scanScope.mode === 'theme_and_concept_constituents' ? '范围：重点行业与概念成分股' : `范围回退：${scanScope.reason}`, `快照预筛：${hitRules.map((r) => r.label).join('、')}`, localKlineConfirmation && localKlineConfirmation.status === 'confirmed' ? `本地K线确认：${hitRules.map((r) => r.label).join('、')}` : (admissionMode === 'strong_watch' ? `防追高分流：${(initialAssessment && initialAssessment.reasons || []).join('、')}` : '下一步：入候选池补齐 K 线后复筛原策略')],
+      ...extra,
     };
-  });
+  };
+  const candidates = initialSelection.selected.map((entry) => toPublicCandidate(entry, entry.localKlineConfirmation && entry.localKlineConfirmation.status === 'confirmed' ? 'kline_confirmed' : 'pending_kline', true));
+  const strongWatch = initialSelection.strongWatch.map((entry) => toPublicCandidate(entry, 'strong_watch', false));
+  const overQuota = initialSelection.overQuota.map((entry) => toPublicCandidate(entry, 'over_quota', false, { quotaReason: entry.quotaReason }));
+  const dataInsufficientCount = exclusions.filter((item) => [EXCLUSION_REASONS.QUOTE_MISSING, EXCLUSION_REASONS.QUOTE_INCOMPLETE, EXCLUSION_REASONS.QUOTE_STALE].includes(item.reason)).length + initialSelection.dataInsufficient.length;
+  const funnel = {
+    scope: quoteBatch.requested,
+    validQuotes: allRankable.length,
+    excluded: exclusions.length + initialSelection.dataInsufficient.length,
+    prefilterMatched,
+    potential: initialSelection.selected.length,
+    strongWatch: strongWatch.length,
+    overQuota: overQuota.length,
+    dataInsufficient: dataInsufficientCount,
+  };
   return {
     marketRegime,
     focusThemes,
@@ -791,15 +1011,23 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
     scanScope,
     strategy,
     candidates,
-    totalScanned: scopeCodes ? snapshot.records.filter((x) => scopeCodes.has(x.code)).length : snapshot.records.length,
-    ms: snapshot.ms,
-    dataSource: snapshot.dataSource,
+    strongWatch,
+    overQuota,
+    funnel,
+    selectionPolicy: { version: initialSelection.policyVersion, parameterStatus: initialSelection.parameterStatus, params: initialSelection.params },
+    selectionBatchId,
+    selectionContractVersion: SELECTION_CONTRACT_VERSION,
+    quoteEvidence,
+    exclusions,
+    totalScanned: quoteBatch.requested,
+    ms: Date.now() - quoteStartedAt,
+    dataSource: 'live_quote',
     snapshotDate: indexDate,
     byMarket: snapshot.byMarket || [],
-    refineStage: 'snapshot',
+    refineStage: 'local_kline',
     prescan: { fetchedAt: context.fetchedAt, isFinal: context.isFinal },
-    prefilter: { matched: entries.length, klineMissing: 0, confirmed: 0 },
-    autoPool: { minScore: autoPoolMinScore, hitTotal: entries.length, eligible: candidates.length, observationOnly: false },
+    prefilter: { matched: prefilterMatched, klineMissing: localConfirmation.pending, confirmed: localConfirmation.confirmed },
+    autoPool: { minScore: autoPoolMinScore, hitTotal: prefilterMatched, eligible: candidates.length, observationOnly: false },
   };
 }
 
@@ -848,8 +1076,8 @@ async function refineWithKline(entries, enabledRules, dataSource, snapshotDate) 
 // ───────────────────────── 个股级证据：对单只票跑全部启用形态规则 ─────────────────────────
 // 供 AI 研判组装证据使用：返回命中形态明细（含 label/reason/score/detail 与 ruleLabel），
 // 单个维度命中由外部决定如何呈现。非候选进入详情也仍可用本地 K 线直接判断。
-function detectSinglePatterns(candles, { code = '', accountSt = false } = {}) {
-  const rules = listEnabledRules().filter((r) => r.kind === 'kline');
+function detectSinglePatterns(candles, { code = '', accountSt = false, rules: ruleSnapshot = null } = {}) {
+  const rules = (ruleSnapshot || listEnabledRules()).filter((r) => r.enabled !== false && r.kind !== 'scan');
   const hits = [];
   if (!Array.isArray(candles) || candles.length < 2) return { hits, rules };
   // detail 字段由各形态 detector 的 ok() 返回；此处收集 label 与证据。
@@ -858,6 +1086,7 @@ function detectSinglePatterns(candles, { code = '', accountSt = false } = {}) {
       const res = matchKlinePattern(rule.patternId, candles, { ...rule.params, code });
       if (res && res.matched) {
         hits.push({
+          ruleId: rule.id,
           patternId: rule.patternId,
           label: rule.label,
           ruleLabel: rule.label,
@@ -877,12 +1106,15 @@ module.exports = {
   PATTERNS,
   AUTO_POOL_MIN_SCORE,
   meetsAutoPoolGate,
+  shanghaiDate,
   listRules,
   listEnabledRules,
   matchScanRule,
   matchPrefilter,
+  assessLocalKlinePrefilter,
   scoreVolume,
   volumeProfile,
+  rankThemeLeaders,
   scanByMarkets,
   scanByMarketContext,
   getMarketPrescan,

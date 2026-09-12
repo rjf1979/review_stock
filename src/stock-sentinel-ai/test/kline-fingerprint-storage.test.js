@@ -1,0 +1,20 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+process.env.VOLUME_INSIGHT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-hash-'));
+const storage = require('../storage');
+const { klineFingerprint } = require('../recommendation-validity');
+(async () => {
+  const bars = [{ date: '2026-09-11', open: 10, high: 11, low: 9, close: 10, volume: 100 }];
+  await storage.writeKline('600001', bars, '2026-09-11', { source: 'tencent', adjustmentType: 'qfq' });
+  assert.equal((await storage.readKline('600001')).source, 'tencent');
+  assert.equal((await storage.readKline('600001')).adjustmentType, 'qfq');
+  const [before] = await storage.readKlineStats(['600001'], { includeFingerprint: true });
+  assert.equal(before.klineHash, klineFingerprint((await storage.readKline('600001')).kline));
+  await storage.writeKline('600001', [{ ...bars[0], close: 10.5 }], '2026-09-11');
+  const [after] = await storage.readKlineStats(['600001'], { includeFingerprint: true });
+  assert.equal(before.latestDate, after.latestDate);
+  assert.notEqual(before.klineHash, after.klineHash, '同日更新必须改变存储证据指纹');
+  console.log('kline-fingerprint-storage.test 通过');
+})().catch((error) => { console.error(error); process.exitCode = 1; });

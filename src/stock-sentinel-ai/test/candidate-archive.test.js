@@ -1,0 +1,17 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+process.env.VOLUME_INSIGHT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-archive-'));
+const pool = require('../candidate-pool');
+const item = { code: '600001', name: '归档样例', selectionBatchId: 'selection-archive-1', selectionContractVersion: 3, snapshotDate: '2026-09-12', price: 10 };
+const result = pool.addMany([item]);
+assert.equal(result.ok, true);
+assert.equal(result.archive.archived[0].skipped, false);
+const file = path.join(pool.ARCHIVE_DIR, 'selection-archive-1.json');
+assert.equal(fs.existsSync(file), true);
+const first = fs.readFileSync(file, 'utf8');
+assert.equal(pool.addMany([{ ...item, price: 11 }]).archive.archived[0].skipped, true);
+assert.equal(fs.readFileSync(file, 'utf8'), first, '同一批次归档不可被覆盖');
+assert.equal(pool.archiveBatch([{ code: '600002', selectionBatchId: 'manual' }]).archived.length, 0, '缺少契约版本不进入归档');
+console.log('candidate-archive.test 通过');

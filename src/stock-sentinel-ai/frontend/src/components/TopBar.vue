@@ -14,6 +14,11 @@
           <p>量能初筛 · 形态复核 · AI 辅助研判</p>
         </div>
       </div>
+      <div class="market-clock" :title="marketClock.synced ? '由本地服务校时，每 5 分钟自动纠正' : '正在等待本地服务校时'" :aria-label="`北京时间 ${marketClock.time}，${marketClock.sessionLabel}，${marketClock.countdownLabel} ${marketClock.countdown}`">
+        <span class="market-clock-time">{{ marketClock.time }}</span>
+        <span class="market-clock-status">{{ marketClock.sessionLabel }}</span>
+        <span class="market-clock-countdown">{{ marketClock.countdownLabel }} <b>{{ marketClock.countdown }}</b></span>
+      </div>
       <div class="topbar-actions">
         <nav class="mode-switch" role="tablist" aria-label="工作模式">
           <button type="button" role="tab" id="tab-pool" :aria-selected="mode==='pool'" @click="switchMode('pool')">候选池 <span class="num">{{ pool.length }}</span></button>
@@ -34,6 +39,6 @@
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, pool, watchlist, settings, dataHealth, detail } = storeToRefs(app);
+const { mode, pool, watchlist, settings, dataHealth, detail, marketClock } = storeToRefs(app);
 const { switchMode, scan, openDataHealth } = app;
 </script>

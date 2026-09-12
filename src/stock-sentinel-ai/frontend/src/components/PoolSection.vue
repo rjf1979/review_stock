@@ -9,17 +9,23 @@
           </div>
           <div class="watch-controls">
             <button class="btn" :disabled="poolPrefetch.running || !pool.length" :aria-busy="poolPrefetch.running" @click="startPoolKline"><span v-if="poolPrefetch.running" class="loading-spinner" aria-hidden="true"></span><span v-else>补齐 250 日 K 线</span></button>
-            <button class="btn primary" :disabled="recommendationBatch.running || !pool.length" :aria-busy="recommendationBatch.running" @click="startRecommendations"><span v-if="recommendationBatch.running" class="loading-spinner" aria-hidden="true"></span><span v-else>{{ Object.keys(poolRecommendations).length ? '重新评估盯盘价值' : '评估盯盘价值' }}</span></button>
-            <button v-if="recommendationBatch.running" class="btn mini" @click="stopRecommendations">停止评估</button>
+            <button class="btn primary" :disabled="recommendationBatch.running || !pool.length" :aria-busy="recommendationBatch.running" @click="startRecommendations(false)"><span v-if="recommendationBatch.running" class="loading-spinner" aria-hidden="true"></span><span v-else>{{ Object.keys(poolRecommendations).length ? '重新严格复核' : '严格复核' }}</span></button>
+            <button v-if="recommendationBatch.running" class="btn mini" @click="stopRecommendations">停止复核</button>
             <button class="btn" :disabled="judgmentBatch.running || poolPrefetch.running || !pool.length" :aria-busy="judgmentBatch.running" :title="judgmentBatch.running ? ('批量研判进行中：' + judgmentBatch.done + ' / ' + judgmentBatch.total) : '对候选池发起批量 AI 研判'" @click="openBatchConfirm(false)">{{ judgmentBatch.running ? '研判进行中 ' + judgmentBatch.done + '/' + judgmentBatch.total : '批量 AI 研判' }}</button>
             <button v-if="hasFailedJudgments" class="btn" :disabled="judgmentBatch.running || poolPrefetch.running || !pool.length" @click="openBatchConfirm(true)">重试失败项</button>
-            <button class="btn primary" :disabled="poolBusy || !pool.length" @click="moveAllToWatch">批量转入自选</button>
+            <button v-if="hasFailedRecommendations" class="btn" :disabled="recommendationBatch.running" @click="startRecommendations(true)">重试复核失败项</button>
+            <button class="btn primary" :disabled="poolBusy || !selectedTransferCount" :aria-busy="poolBusy" @click="moveAllToWatch">转入精选 {{ selectedTransferCount }}/5</button>
             <button class="btn icon-btn" :disabled="poolBusy" @click="loadPool(true)" title="刷新候选池" aria-label="刷新候选池"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3L3 11m0 0V5m0 6h6M4 13a8 8 0 0 0 14.9 3L21 13m0 0v6m0-6h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button class="btn" :disabled="poolBusy || !pool.length" :aria-busy="poolBusy" @click="clearPool"><span v-if="poolBusy" class="loading-spinner" aria-hidden="true"></span><span v-else>清空候选池</span></button>
           </div>
         </div>
 
-        <div class="summary" :class="{ err: poolMsgError }" role="status">{{ poolMsg }}</div>
+        <div class="summary" :class="{ err: poolMsgError }" role="status" aria-live="polite">{{ poolMsg }}</div>
+        <div v-if="recommendationBatch.running || recommendationBatch.finishedAt" class="status" :class="{ error: !recommendationBatch.running && recommendationBatch.failed }" role="status" aria-live="polite">
+          <template v-if="recommendationBatch.running">严格复核中：{{ recommendationBatch.done }} / {{ recommendationBatch.total }} · 成功 {{ recommendationBatch.succeeded }} · 失败 {{ recommendationBatch.failed }} · 已用时 {{ fmtDuration(Date.now() - recommendationBatch.startedAt) }}</template>
+          <template v-else>严格复核已结束：成功 {{ recommendationBatch.succeeded }} · 失败 {{ recommendationBatch.failed }} · 用时 {{ fmtDuration(recommendationBatch.finishedAt - recommendationBatch.startedAt) }}。失败记录已保留，可单独重试。</template>
+        </div>
+        <div v-if="concentrationPreview.length" class="status concentration-warning" role="status" aria-live="polite">题材集中风险：{{ concentrationPreview.join('；') }}</div>
         <div class="toolbar pool-filters" aria-label="候选池筛选">
           <div class="pool-filter-group">
             <span class="pool-filter-label" id="poolTrackFilterLabel">跟踪建议</span>
@@ -51,7 +57,7 @@
         </div>
 
         <div v-if="poolPrefetch.running || poolPrefetch.finishedAt" class="summary" role="status">
-          补齐 K 线：{{ poolPrefetch.done }} / {{ poolPrefetch.total }}（成功 {{ poolPrefetch.ok }}，跳过 {{ poolPrefetch.skipped }}，失败 {{ poolPrefetch.failed }}）· 当前 {{ poolPrefetch.current || '—' }}
+          补齐 K 线：{{ poolPrefetch.done }} / {{ poolPrefetch.total }}（250日完整 {{ poolPrefetch.ok }}，上市历史完整 {{ poolPrefetch.listingComplete }}，策略可用但不足 {{ poolPrefetch.strategyReady }}，待补齐 {{ poolPrefetch.incomplete }}，跳过 {{ poolPrefetch.skipped }}，失败 {{ poolPrefetch.failed }}）· 当前 {{ poolPrefetch.current || '—' }}
           <button v-if="poolPrefetch.running" class="btn mini" @click="stopPoolKline">停止</button>
         </div>
 
@@ -60,7 +66,7 @@
           <div class="stat"><span>上涨</span><strong class="pos">{{ poolStats.up }}</strong></div>
           <div class="stat"><span>下跌</span><strong class="neg">{{ poolStats.down }}</strong></div>
           <div class="stat"><span>平盘</span><strong>{{ poolStats.flat }}</strong></div>
-          <div class="stat"><span>优先跟踪</span><strong class="pos">{{ poolFilterStats.priority }}</strong></div>
+          <div class="stat"><span>本批精选</span><strong class="pos">{{ poolFilterStats.priority }}</strong></div>
           <div class="stat"><span>形态命中</span><strong class="pos">{{ poolFilterStats.hit }}</strong></div>
         </div>
 
@@ -79,7 +85,7 @@
               <tr v-for="r in sortedPool" :key="r.code" tabindex="0" @click="openDetail(r)" @keydown.enter="openDetail(r)">
                 <td class="num">{{ r.code }}</td>
                 <td>{{ r.name }}</td>
-                <td><span class="workbench-state" :class="recommendationClass(r)">{{ recommendationLabel(r) }}</span></td>
+                <td><span class="workbench-state" :class="recommendationClass(r)" :title="recommendationReason(r)">{{ recommendationLabel(r) }}</span></td>
                 <td><span class="workbench-state" :class="candidateStateClass(r)">{{ candidateState(r) }}</span></td>
                 <td class="hide-mobile">{{ marketLabel(r.market) }}</td>
                 <td class="num" :class="r.changePct >= 0 ? 'pos' : 'neg'">{{ fmtNum(r.price) }}</td>
@@ -90,12 +96,14 @@
                 <td class="num hide-mobile" :class="r.mainNetYi >= 0 ? 'pos' : 'neg'">{{ fmtNum(r.mainNetYi) }}</td>
                 <td class="num hide-mobile"><strong>{{ r.score }}</strong></td>
                 <td class="num pat">{{ poolPatternLabel(r) }}</td>
-                 <td class="num hide-mobile">{{ klineDone(r.code) ? klineDone(r.code) + ' 日' : '—' }}</td>
+                 <td class="num hide-mobile" :title="klineQualityText(r.code)">{{ klineDone(r.code) ? klineDone(r.code) + ' 日' : '—' }}<small v-if="poolKlineLatest(r.code).quality">{{ klineQualityLabel(r.code) }}</small></td>
                  <td class="num hide-mobile pool-date-cell" :title="poolKlineLatest(r.code).savedAt || ''"><b>{{ poolKlineLatest(r.code).latestDate || '—' }}</b><small v-if="poolKlineLatest(r.code).savedAt">落盘 {{ fmtClock(poolKlineLatest(r.code).savedAt) }}</small></td>
                 <td class="num hide-mobile pool-date-cell" :title="r.addedAt || ''"><b>{{ fmtDateTime(r.addedAt) }}</b></td>
                 <td>
                   <div class="pool-row-actions">
-                    <button class="watch-remove" :disabled="poolBusy || isPoolItemBusy(r.code)" :aria-busy="isPoolItemBusy(r.code, 'move')" @click.stop="moveToWatch(r)" :aria-label="'转入自选 ' + r.name"><span v-if="isPoolItemBusy(r.code, 'move')" class="loading-spinner" aria-hidden="true"></span><span v-else>＋自选</span></button>
+                    <button v-if="isSelectedRecommendation(r)" class="watch-remove" :disabled="poolBusy || isPoolItemBusy(r.code)" :aria-busy="isPoolItemBusy(r.code, 'move')" @click.stop="moveToWatch(r, 'selected')" :aria-label="'转入精选盯盘 ' + r.name"><span v-if="isPoolItemBusy(r.code, 'move')" class="loading-spinner" aria-hidden="true"></span><span v-else>转精选</span></button>
+                    <button v-else-if="isObservationRecommendation(r)" class="watch-remove" :disabled="poolBusy || isPoolItemBusy(r.code)" :aria-busy="isPoolItemBusy(r.code, 'move')" @click.stop="moveToWatch(r, 'observation')" :aria-label="'加入待确认观察 ' + r.name"><span v-if="isPoolItemBusy(r.code, 'move')" class="loading-spinner" aria-hidden="true"></span><span v-else>加入观察</span></button>
+                    <button v-else class="watch-remove" disabled :title="recommendationReason(r) || '严格复核通过并进入本批精选后方可转入'">不可转入</button>
                     <button class="watch-remove" :disabled="poolBusy || isPoolItemBusy(r.code)" :aria-busy="isPoolItemBusy(r.code, 'remove')" @click.stop="removeFromPool(r.code)" :aria-label="'移除 ' + r.name"><span v-if="isPoolItemBusy(r.code, 'remove')" class="loading-spinner" aria-hidden="true"></span><span v-else>移除</span></button>
                   </div>
                 </td>
@@ -108,9 +116,48 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, pool, summary, poolPrefetch, recommendationBatch, poolRecommendations, judgmentBatch, hasFailedJudgments, poolBusy, poolMsgError, status, poolMsg, poolTrackFilterOptions, poolTrackFilter, poolPatternFilterOptions, poolPatternFilter, poolStats, poolFilterStats, poolSortDir, poolSort, sortedPool } = storeToRefs(app);
+const { mode, pool, watchlist, summary, poolPrefetch, recommendationBatch, poolRecommendations, judgmentBatch, hasFailedJudgments, poolBusy, poolMsgError, status, poolMsg, poolTrackFilterOptions, poolTrackFilter, poolPatternFilterOptions, poolPatternFilter, poolStats, poolFilterStats, poolSortDir, poolSort, sortedPool } = storeToRefs(app);
 const { startPoolKline, startRecommendations, stopRecommendations, openBatchConfirm, moveAllToWatch, loadPool, clearPool, fmtDuration, stopBatch, stopPoolKline, togglePoolSort, openDetail, recommendationClass, recommendationLabel, recommendationReason, candidateStateClass, candidateState, marketLabel, fmtNum, poolPatternLabel, klineDone, poolKlineLatest, fmtClock, fmtDateTime, isPoolItemBusy, moveToWatch, removeFromPool } = app;
+const klineQualityLabel = (code) => {
+  const quality = poolKlineLatest(code).quality;
+  if (quality?.listingHistoryComplete) return `上市历史完整 ${quality.depth}/${quality.target}`;
+  return ({ complete: '250日完整', strategy_ready: '策略可用', incomplete: '待补齐', failed: '失败' }[quality?.status] || '');
+};
+const klineQualityText = (code) => {
+  const latest = poolKlineLatest(code);
+  const quality = latest.quality;
+  const parts = quality?.listingHistoryComplete
+    ? [`上市日 ${quality.listingDate}（${latest.listingSource || '来源未标记'}）`, `上市历史完整 ${quality.depth}/${quality.target}`]
+    : [];
+  return parts.concat(quality?.reasons || []).join('；');
+};
+const recommendationFor = (row) => poolRecommendations.value[row.code] || {};
+const isCurrentRecommendation = (row) => recommendationFor(row).validity?.current === true;
+const isSelectedRecommendation = (row) => recommendationFor(row).status === 'success' && isCurrentRecommendation(row) && recommendationFor(row).classification === 'passed' && recommendationFor(row).evidenceJson?.selected === true;
+const isObservationRecommendation = (row) => recommendationFor(row).status === 'success' && isCurrentRecommendation(row) && recommendationFor(row).classification === 'pending_confirmation';
+const selectedTransferCount = computed(() => Math.min(5, pool.value.filter(isSelectedRecommendation).length));
+const hasFailedRecommendations = computed(() => Object.values(poolRecommendations.value).some((item) => item && item.status === 'failed'));
+const primaryThemeName = (item) => {
+  const evidence = item.selectionEvidence || item;
+  const ranks = Array.isArray(evidence.candidateThemeRanks) ? evidence.candidateThemeRanks : [];
+  const rank = ranks.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
+  const themes = Array.isArray(evidence.themeEvidence) ? evidence.themeEvidence : (item.themeEvidence || []);
+  const theme = themes.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
+  return String((rank && (rank.name || rank.code)) || (theme && (theme.name || theme.code)) || '');
+};
+const concentrationPreview = computed(() => {
+  const counts = new Map();
+  for (const item of [...watchlist.value, ...pool.value.filter(isSelectedRecommendation).slice(0, 5)]) {
+    const evidence = item.selectionEvidence || item;
+    const names = new Set((Array.isArray(evidence.themeEvidence) ? evidence.themeEvidence : (item.themeEvidence || [])).map((theme) => String(theme.name || theme.code || '')).filter(Boolean));
+    const primary = primaryThemeName(item);
+    if (primary) names.add(primary);
+    for (const name of names) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts.entries()].filter(([, count]) => count > 2).map(([name, count]) => `${name}预计${count}只，超过建议线2只`);
+});
 </script>

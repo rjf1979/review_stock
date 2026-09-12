@@ -12,6 +12,24 @@ const pending = watchlist.get('600001');
 assert.equal(pending.returnBaseline.status, 'pending_close', '新加入必须等待当日收盘确认');
 assert.equal(pending.returnBaseline.close, null, '盘中/未确认时不得写入基准价');
 
+const themed = watchlist.add('600002', { name: '题材股', market: 'sh_main', source: 'pool', themeEvidence: [{ name: '电力', kind: 'industry', code: 'BK0428' }, { name: '绿色电力', kind: 'concept', code: 'BK1024' }, { name: '绿色电力', kind: 'concept', code: 'BK1024' }] });
+assert.equal(themed.ok, true, '应建立带题材证据的自选记录');
+assert.deepEqual(watchlist.get('600002').themeEvidence, [{ name: '电力', kind: 'industry', code: 'BK0428' }, { name: '绿色电力', kind: 'concept', code: 'BK1024' }], '题材证据应去重并持久化');
+
+const migrated = watchlist.upsertFromPool({
+  code: '600003', name: '精选股', market: 'sh_main', snapshotDate: '2026-09-11', selectionBatchId: 'selection-1',
+  selectionPolicyVersion: 'selection-policy-v1', selectionContractVersion: 2, ruleIds: ['platform_breakout'],
+  themeEvidence: [{ name: '元件', kind: 'industry', code: 'BK0459', rank: 1, changePct: 3.03 }],
+  boardLeaderRanks: [{ code: 'BK0459', name: '元件', rank: 2 }], candidateThemeRanks: [{ code: 'BK0459', name: '元件', rank: 1 }],
+}, { mode: 'selected', recommendation: { classification: 'passed', selected: true, conditions: { trigger: '站稳12.00' } } }, { baselineTargetDate: '2026-09-11' });
+assert.equal(migrated.ok, true);
+const migratedItem = watchlist.get('600003');
+assert.equal(migratedItem.source, 'pool_selected');
+assert.equal(migratedItem.selectionEvidence.selectionBatchId, 'selection-1');
+assert.equal(migratedItem.selectionEvidence.themeEvidence[0].changePct, 3.03);
+assert.equal(migratedItem.selectionEvidence.boardLeaderRanks[0].rank, 2);
+assert.equal(migratedItem.selectionEvidence.recommendation.conditions.trigger, '站稳12.00');
+
 const frozen = watchlist.confirmReturnBaseline('600001', { targetDate: '2026-09-08', close: 12.34, confirmedAt: '2026-09-08T08:00:00.000Z' });
 assert.equal(frozen.ok, true, '精确目标日收盘价可以冻结');
 assert.equal(watchlist.get('600001').returnBaseline.close, 12.34);

@@ -1,0 +1,30 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const zlib = require('node:zlib');
+process.env.VOLUME_INSIGHT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-prescan-archive-'));
+const store = require('../market-prescan-store');
+const record = { batchId: 'prescan-1', snapshotDate: '2026-09-12', asOf: '2026-09-12', focusThemes: [{ code: 'BK1' }], scopeCodes: ['600001'] };
+const snapshot = { snapshotDate: '2026-09-12', dataSource: 'live', byMarket: [{ key: 'sh_main', count: 1 }], records: [{ code: '600001', price: 10 }], rawPagesByMarket: {
+  sh_main: [{ page: 1, fetchedAt: '2026-09-12T02:00:00Z', wireExact: true, sha256: 'page-hash', rawText: '{"data":{"total":1,"diff":[{"f12":"600001"}]}}' }],
+} };
+const first = store.archivePrescan(record, snapshot, { indices: { wireExact: true, rawBase64: Buffer.from('index').toString('base64') }, industryBoards: { rawText: '{"data":{}}' } });
+assert.equal(first.ok, true);
+assert.equal(first.skipped, false);
+const file = path.join(store.ARCHIVE_DIR, 'prescan-1.json');
+assert.equal(fs.existsSync(file), true);
+assert.equal(fs.existsSync(first.rawFile), true);
+const archived = JSON.parse(fs.readFileSync(file, 'utf8'));
+const rawBytes = zlib.gunzipSync(fs.readFileSync(first.rawFile));
+assert.equal(crypto.createHash('sha256').update(rawBytes).digest('hex'), archived.rawEvidence.sha256);
+assert.equal(JSON.parse(JSON.parse(rawBytes).markets.sh_main[0].rawText).data.total, 1);
+assert.equal(Buffer.from(JSON.parse(rawBytes).sources.indices.rawBase64, 'base64').toString(), 'index');
+assert.deepEqual(archived.rawEvidence.sources, ['indices', 'industryBoards']);
+assert.equal(archived.snapshot.rawPagesByMarket, undefined, '主归档不重复内嵌原始正文');
+const bytes = fs.readFileSync(file, 'utf8');
+assert.equal(store.archivePrescan(record, { ...snapshot, records: [{ code: '600002' }] }).skipped, true);
+assert.equal(fs.readFileSync(file, 'utf8'), bytes, '同一预扫描批次不可覆盖');
+assert.equal(store.archivePrescan({ ...record, batchId: '' }).ok, false);
+console.log('market-prescan-archive.test 通过');

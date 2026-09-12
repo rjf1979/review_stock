@@ -5,7 +5,7 @@
         <div class="panel-head">
           <div>
             <h2>设置</h2>
-            <span class="summary">全市场 K 线抓取任务的天数与动作，以及 AI 辅助研判配置；配置仅保存在本机，不会上传。</span>
+            <span class="summary">本地数据维护、K 线完整性与 AI 辅助研判配置；配置仅保存在本机，不会上传。</span>
           </div>
         </div>
 
@@ -63,35 +63,20 @@
           </div>
         </details>
 
-        <details class="settings-section" :open="integrity.needsData || prefetch.running">
+        <details class="settings-section" :open="integrity.needsData">
           <summary>数据维护与 K 线完整性</summary>
           <div class="settings-section-body">
-        <div class="toolbar" aria-label="抓取任务">
+        <div class="toolbar" aria-label="数据维护">
           <div class="field-group">
             <label for="fetchDays">抓取天数</label>
             <input id="fetchDays" type="number" v-model.number="settings.fetchDays" min="20" max="500" step="10" />
-            <span class="summary">每次预取/断点续传按此天数补齐所选市场的前复权日 K（20～500 日，默认 250）</span>
+            <span class="summary">候选池补齐与 AI 研判按此天数取用前复权日 K（20～500 日，默认 250）</span>
           </div>
           <div class="field-group">
             <label for="klineSyncIntervalSec">交易时间内自动补全间隔（秒）</label>
             <input id="klineSyncIntervalSec" type="number" v-model.number="settings.klineSyncIntervalSec" min="30" max="3600" step="30" />
-            <span class="summary">自选与候选池统一检查并补齐日 K；午休暂停，闭市后首次打开会校验最后有效日 K（30～3600 秒，默认 300）。</span>
+            <span class="summary">自选与候选池按各自逻辑检查并补齐日 K；午休暂停，闭市后首次打开会校验最后有效日 K（30～3600 秒，默认 300）。</span>
           </div>
-          <div class="actions">
-            <button class="btn primary" :disabled="prefetch.running || scanning || prefetch.completeToday" @click="startPrefetch">{{ prefetch.completeToday ? '今日已抓齐' : '启动 / 续抓预取' }}</button>
-            <button class="btn" :disabled="!prefetch.running" @click="stopPrefetch">停止预取</button>
-            <span class="summary" role="status">{{ prefetchSummary }}</span>
-          </div>
-          <div v-if="prefetch.running">
-            <div class="progress-bar-wrap" role="progressbar" :aria-valuemin="0" :aria-valuemax="prefetch.total || 1" :aria-valuenow="prefetch.done">
-              <div class="progress-bar" :style="{ width: prefetchPercent + '%' }"></div>
-            </div>
-          <div class="progress-label">
-            {{ prefetch.done }} / {{ prefetch.total }} · {{ prefetchPercent }}% · 当前 {{ prefetch.current }}
-            <span v-if="prefetch.cooling" class="c-warn">· 接口限流，冷却中 {{ Math.ceil((prefetch.cooldownMs || 0) / 1000) }}s</span>
-          </div>
-        </div>
-          <div class="summary" :class="{ err: settingsMsgError }" role="status">{{ settingsMsg }}</div>
         </div>
 
         <div class="toolbar" aria-label="候选池 K线缺失核对">
@@ -221,6 +206,6 @@
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, summary, settings, status, markets, integrity, prefetch, scanning, prefetchSummary, prefetchPercent, settingsMsgError, settingsMsg, klineGapsSummary, klineGaps, showFirstApiKey, showSecondApiKey, rows, savingSettings, enabledRules, rules, savingRules, rulesMsgError, rulesMsg } = storeToRefs(app);
-const { scan, startPrefetch, stopPrefetch, loadKlineGaps, saveSettings, addRule, resetRules, openRuleEditor, removeRule, saveRules } = app;
+const { mode, summary, settings, status, markets, integrity, scanning, settingsMsgError, settingsMsg, klineGapsSummary, klineGaps, showFirstApiKey, showSecondApiKey, rows, savingSettings, enabledRules, rules, savingRules, rulesMsgError, rulesMsg } = storeToRefs(app);
+const { scan, loadKlineGaps, saveSettings, addRule, resetRules, openRuleEditor, removeRule, saveRules } = app;
 </script>

@@ -4,13 +4,12 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
-const { MARKETS, fetchMarketSnapshot, fetchKline, snapshotStatus, fetchQuotes, isCnStockTradingSession, resolveStockMeta, codeMarket, todayStr } = require('./data');
+const { MARKETS, fetchMarketSnapshot, fetchKline, snapshotStatus, fetchQuotes, fetchStockThemeEvidence, isCnStockTradingSession, resolveStockMeta, codeMarket, todayStr } = require('./data');
 const { listRules, scanByMarketContext, getMarketPrescan, PATTERNS, detectSinglePatterns } = require('./screener-core');
 const rulesStore = require('./rules-store');
 const crypto = require('crypto');
 const priceLevels = require('./price-levels');
 const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans } = require('./storage');
-const prefetch = require('./prefetch');
 const watchlist = require('./watchlist');
 const candidatePool = require('./candidate-pool');
 const poolPrefetch = require('./pool-prefetch');
@@ -21,8 +20,15 @@ const judgmentBatch = require('./judgment-batch');
 const judgmentStore = require('./judgment-store');
 const judgmentWorker = require('./worker-manager');
 const watchRecommendation = require('./watch-recommendation');
+const poolWatchMigration = require('./pool-watch-migration');
+const { assessRecommendation } = require('./recommendation-validity');
 const klineSync = require('./kline-sync');
-const { shanghaiClock, isAfterCnMarketClose } = require('./market-session');
+const { shanghaiClock, isAfterCnMarketClose, marketSession, marketSessionStatus } = require('./market-session');
+const { readPrescan, assessPrescanValidity } = require('./market-prescan-store');
+const { assessKlineCoverage } = require('./kline-quality');
+const { evaluateTailStatus, effectiveTailStatus } = require('./kline-tail-status');
+const taskRecovery = require('./task-recovery');
+const selectionObservation = require('./selection-observation');
 
 const DEFAULT_PORT = 3110;
 const MARKETS_DEFAULTS = ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'];
@@ -209,9 +215,8 @@ async function handleScan(query) {
   const prefs = await getScanPreferences();
   const markets = prefs && prefs.markets.length ? prefs.markets : MARKETS_DEFAULTS;
   const limit = prefs ? prefs.scanLimit : 500;
-  // 业务调整：固定实时拉取全市场快照 + 全部启用规则并集全识别；
-  // 扫描阶段只做快照粗筛（不联网复筛 K 线）：量能分不低于自动入池门槛才算命中；
-  // 命中进候选池后再拉完整 250 日 K 线并复筛形态。
+  // 复用最近一次有效市场扫描，在重点题材范围内更新实时行情并做快照预筛；
+  // 仅对预筛小集合读取本地可信 K 线快速确认，不在扫描阶段联网批量抓 K 线。
   const forcePrescan = ['1', 'true', 'yes'].includes(String(query.get('force') || '').toLowerCase());
   return scanByMarketContext({ markets, limit, dataSource: 'live', forcePrescan });
 }
@@ -223,13 +228,42 @@ async function handleMarketPrescan(query) {
   return getMarketPrescan({ markets, dataSource: 'live', force });
 }
 
+async function recommendationView() {
+  const poolItems = candidatePool.getList();
+  const watchItems = watchlist.getList();
+  const poolByCode = new Map(poolItems.map((item) => [String(item.code || ''), item]));
+  const watchByCode = new Map(watchItems.map((item) => [String(item.code || ''), item]));
+  const codes = [...new Set([...poolByCode.keys(), ...watchByCode.keys()])].filter((code) => /^\d{6}$/.test(code));
+  const [records, stats] = await Promise.all([watchRecommendation.latest(codes), readKlineStats(codes, { includeFingerprint: true })]);
+  const statsByCode = new Map(stats.map((item) => [String(item.code), item]));
+  const currentRules = rulesStore.load();
+  for (const [code, record] of Object.entries(records)) {
+    const watchItem = watchByCode.get(code) || {};
+    const candidate = poolByCode.get(code) || { code, ...(watchItem.selectionEvidence || {}) };
+    const stat = statsByCode.get(code) || {};
+    const tailStatus = effectiveTailStatus({ storedTailStatus: stat.tailStatus, barDate: stat.latestDate, now: new Date() });
+    record.validity = assessRecommendation(record, {
+      candidate, currentRules, klineDate: String(statsByCode.get(code)?.latestDate || ''), klineHash: statsByCode.get(code)?.klineHash || '', expectedRuleVersion: watchRecommendation.RULE_VERSION,
+      tailStatus, tailConfirmedAt: stat.tailConfirmedAt || '', klineSource: stat.source || '', adjustmentType: stat.adjustmentType || '',
+    });
+  }
+  return { records, poolItems, watchItems };
+}
+
 function createServer(port = DEFAULT_PORT) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://127.0.0.1:${port}`);
     const pathname = url.pathname;
     try {
       if (pathname === '/api/health') return send(res, 200, { ok: true, service: 'stock-sentinel-ai' });
+      if (pathname === '/api/market-clock') return send(res, 200, marketSessionStatus());
       if (pathname === '/api/markets') return send(res, 200, { markets: MARKETS });
+      if (pathname === '/api/market-prescan/latest') {
+        const stored = readPrescan();
+        if (!stored) return send(res, 200, { ok: true, prescan: null });
+        const { scopeCodes, themeMembership, ...prescan } = stored;
+        return send(res, 200, { ok: true, prescan: { ...prescan, validity: assessPrescanValidity(stored, { marketKey: stored.marketKey }) } });
+      }
       if (pathname === '/api/market-prescan') return send(res, 200, await handleMarketPrescan(url.searchParams));
       if (pathname === '/api/rules' && req.method === 'GET') return send(res, 200, { rules: listRules() });
       if (pathname === '/api/rules' && req.method === 'POST') {
@@ -322,15 +356,6 @@ function createServer(port = DEFAULT_PORT) {
         });
       }
       if (pathname === '/api/scan') return send(res, 200, await handleScan(url.searchParams));
-      if (pathname === '/api/prefetch-kline') {
-        const markets = String(url.searchParams.get('markets') || '').split(',').map((s) => s.trim()).filter(Boolean);
-        const lmt = Math.min(Math.max(Number(url.searchParams.get('lmt')) || prefetch.DEFAULT_LMT, 20), 500);
-        const fresh = ['1', 'true', 'yes'].includes(String(url.searchParams.get('fresh') || '').toLowerCase());
-        const gapMs = Math.max(Number(url.searchParams.get('gapMs')) || prefetch.DEFAULT_GAP_MS, 100);
-        return send(res, 200, prefetch.startPrefetch({ markets, lmt, fresh, gapMs }));
-      }
-      if (pathname === '/api/prefetch-status') return send(res, 200, prefetch.getStatus());
-      if (pathname === '/api/prefetch-stop') return send(res, 200, prefetch.stopPrefetch());
       if (pathname === '/api/watchlist' && req.method === 'GET') {
         await settlePendingWatchBaselines();
         await settlePendingCustomReturnBaselines();
@@ -352,16 +377,49 @@ function createServer(port = DEFAULT_PORT) {
         }
         // source=manual 为手工添加（盯盘页置顶展示）；候选池转入等其余入口默认 pool。
         const source = String(url.searchParams.get('source') || 'pool');
+        let themeEvidence = [];
+        try {
+          const parsed = JSON.parse(String(url.searchParams.get('themeEvidence') || '[]'));
+          themeEvidence = Array.isArray(parsed) ? parsed : [];
+        } catch { /* 非法题材参数按空数组处理 */ }
+        let themeStatus = themeEvidence.length ? 'provided' : 'pending';
+        // 手工添加没有候选池题材证据时，立即补齐个股行业/概念；单股请求串行执行。
+        if (!themeEvidence.length) {
+          try {
+            themeEvidence = await fetchStockThemeEvidence(code);
+            themeStatus = themeEvidence.length ? 'ready' : 'empty';
+          } catch { themeStatus = 'failed'; }
+        }
         const clock = shanghaiClock();
-        const r = watchlist.add(code, { name, market, source, baselineTargetDate: clock.date });
+        const r = watchlist.add(code, { name, market, source, themeEvidence, baselineTargetDate: clock.date });
         if (!r.ok) return send(res, 409, { ok: false, error: r.error });
-        // 闭市加入时立即同步并尝试冻结加入日最终收盘价；盘中始终保持待收盘确认。
-        if (isAfterCnMarketClose()) {
-          const syncResult = await klineSync.sync([code], { gapMs: 0, lmt: 260 });
+        // 新增自选只同步该股的日 K，盘中/盘后均可补齐；盘后再结算加入日收盘基准。
+        let klineStatus = 'pending';
+        try {
+          const syncResult = await klineSync.sync([code], { scope: 'explicit', gapMs: 0, lmt: 260 });
+          if (syncResult.queued) klineStatus = 'queued';
+          else {
+            const item = Array.isArray(syncResult.results) ? syncResult.results.find((x) => x.code === code) : null;
+            klineStatus = item && item.ok ? 'ready' : 'failed';
+          }
           if (syncResult.changedCodes && syncResult.changedCodes.length) invalidateKlineDerivedCaches();
+        } catch { klineStatus = 'failed'; }
+        if (isAfterCnMarketClose()) {
           await settlePendingWatchBaselines();
         }
-        return send(res, 200, { ok: true, code, name, market, watch: watchlist.get(code) });
+        return send(res, 200, { ok: true, code, name, market, themeStatus, klineStatus, watch: watchlist.get(code) });
+      }
+      if (pathname === '/api/watchlist/theme-evidence' && req.method === 'POST') {
+        const missing = watchlist.getList().filter((item) => !(Array.isArray(item.themeEvidence) && item.themeEvidence.length));
+        let updated = 0; let failed = 0;
+        for (const item of missing) {
+          try {
+            const evidence = await fetchStockThemeEvidence(item.code);
+            if (evidence.length && watchlist.setThemeEvidence(item.code, evidence).ok) updated += 1;
+            else failed += 1;
+          } catch { failed += 1; }
+        }
+        return send(res, 200, { ok: true, total: missing.length, updated, failed, watchlist: watchlist.getList() });
       }
       if (pathname === '/api/watchlist' && req.method === 'PATCH') {
         const code = String(url.searchParams.get('code') || '').trim();
@@ -427,19 +485,30 @@ function createServer(port = DEFAULT_PORT) {
         return send(res, 200, { pool: items, file: candidatePool.POOL_FILE, klineState: poolPrefetch.getStatus() });
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'GET') {
-        // 候选池与自选盯盘的代码都纳入查询：转入盯盘后推荐结论与理由在盯盘页仍然可见。
-        const poolCodes = candidatePool.getList().map((x) => String((x && x.code) || ''));
-        const watchCodes = watchlist.getList().map((x) => String((x && x.code) || ''));
-        const codes = [...new Set([...poolCodes, ...watchCodes])].filter((c) => /^\d{6}$/.test(c));
-        return send(res, 200, { recommendations: await watchRecommendation.latest(codes), status: watchRecommendation.getStatus(), ruleVersion: watchRecommendation.RULE_VERSION });
+        const view = await recommendationView();
+        return send(res, 200, { recommendations: view.records, status: watchRecommendation.getStatus(), ruleVersion: watchRecommendation.RULE_VERSION });
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'POST') {
         const running = watchRecommendation.getStatus();
         if (running.running) return send(res, 409, { ok: false, error: '评估任务正在运行', ...running });
-        const result = await watchRecommendation.start(candidatePool.getList());
+        const body = await readBody(req);
+        let items = candidatePool.getList();
+        if (body && body.retryOnly) {
+          const records = await watchRecommendation.latest(items.map((item) => String(item.code || '')));
+          items = items.filter((item) => records[item.code] && records[item.code].status === 'failed');
+          if (!items.length) return send(res, 409, { ok: false, error: '没有可重试的失败项' });
+        }
+        const result = await watchRecommendation.start(items);
         return send(res, result.started ? 200 : 409, result);
       }
       if (pathname === '/api/pool/recommendations' && req.method === 'DELETE') return send(res, 200, watchRecommendation.stop());
+      if (pathname === '/api/pool/migrate' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await poolWatchMigration.migratePoolToWatch({
+          codes: body && body.codes, mode: body && body.mode, limit: body && body.limit, baselineTargetDate: shanghaiClock().date,
+        });
+        return send(res, result.ok ? 200 : 207, result);
+      }
       if (pathname === '/api/pool/judgments' && req.method === 'GET') {
         const fetchDays = Math.round(Number(settings.load().fetchDays) || 250);
         const calendar = await recentTradingDates(Math.max(500, fetchDays * 3));
@@ -500,6 +569,10 @@ function createServer(port = DEFAULT_PORT) {
       if (pathname === '/api/pool/kline-status') {
         return send(res, 200, poolPrefetch.getStatus());
       }
+      // 只读返回上一次启动结算结果：只说明哪些遗留批次被标为中断，不触发任何重试。
+      if (pathname === '/api/tasks/recovery' && req.method === 'GET') {
+        return send(res, 200, { ok: true, last: taskRecovery.lastRecoveryReport() });
+      }
       if (pathname === '/api/kline-depths' && (req.method === 'GET' || req.method === 'POST')) {
         let codes = [];
         if (req.method === 'POST') {
@@ -508,8 +581,41 @@ function createServer(port = DEFAULT_PORT) {
         } else {
           codes = String(url.searchParams.get('codes') || '').split(',').map((s) => s.trim()).filter(Boolean);
         }
-        const depths = await readKlineStats(codes);
-        return send(res, 200, { depths });
+        const target = 250;
+        const clock = shanghaiClock();
+        const session = marketSession();
+        const provisional = session === 'morning' || session === 'midday_break' || session === 'afternoon';
+        const expectedDates = await recentTradingDates(target, { anchor: isAfterCnMarketClose() || provisional ? clock.date : '' });
+        const expectedLatestDate = expectedDates.at(-1) || '';
+        const stats = await readKlineStats(codes);
+        const depths = await Promise.all(stats.map(async (item) => {
+          const record = await readKline(item.code);
+          const bars = (record && record.kline) || [];
+          const tailBar = bars.length ? bars[bars.length - 1] : null;
+          // 尾K状态：盘中写入的暂定尾K在收盘后必须重新抓取才能算确认。
+          const tail = evaluateTailStatus({
+            bar: tailBar, now: new Date(), targetDate: clock.date, expectedLatestDate,
+            storedTailStatus: (record && record.tailStatus) || '',
+          });
+          return {
+            ...item,
+            source: (record && record.source) || item.source || '',
+            adjustmentType: (record && record.adjustmentType) || item.adjustmentType || '',
+            sourceLatestDate: (record && record.sourceLatestDate) || item.sourceLatestDate || '',
+            tailStatus: tail.status,
+            tailConfirmedAt: tail.confirmedAt || '',
+            tailReason: tail.reason,
+            tailDegraded: tail.degraded,
+            listingDate: (record && record.listingDate) || item.listingDate || '',
+            listingSource: (record && record.listingSource) || item.listingSource || '',
+            listingFetchedAt: (record && record.listingFetchedAt) || item.listingFetchedAt || '',
+            quality: assessKlineCoverage(bars, {
+              target, expectedDates, expectedLatestDate, provisional,
+              listingDate: (record && record.listingDate) || item.listingDate || '',
+            }),
+          };
+        }));
+        return send(res, 200, { depths, expectedLatestDate, session, provisional });
       }
       if (pathname === '/api/pool' && req.method === 'DELETE') {
         const all = String(url.searchParams.get('all') || '').trim();
@@ -519,7 +625,7 @@ function createServer(port = DEFAULT_PORT) {
         return send(res, r.ok ? 200 : 404, r);
       }
       if (pathname === '/api/kline-gaps') {
-        const lmt = Math.min(Math.max(Number(url.searchParams.get('lmt')) || prefetch.DEFAULT_LMT, 20), 500);
+        const lmt = Math.min(Math.max(Number(url.searchParams.get('lmt')) || 250, 20), 500);
         return send(res, 200, await computeKlineGaps(lmt));
       }
       if (pathname === '/api/kline') {
@@ -533,13 +639,18 @@ function createServer(port = DEFAULT_PORT) {
         const body = await readBody(req);
         const scope = String(body && body.scope || 'managed');
         if (!['managed', 'watch', 'explicit'].includes(scope)) return send(res, 400, { ok: false, error: { code: 'INVALID_SCOPE', message: '无效的 K 线同步范围', retryable: false } });
-        const result = await klineSync.sync(Array.isArray(body && body.codes) ? body.codes : [], {
+        const requestedCodes = Array.isArray(body && body.codes) ? body.codes : [];
+        let observation = null;
+        if (selectionObservation.isPostCloseObservationRequest(scope, body && body.reason, isAfterCnMarketClose())) {
+          observation = await selectionObservation.pendingObservationCodes({ readDates: readKlineDates });
+        }
+        const result = await klineSync.sync([...requestedCodes, ...((observation && observation.codes) || [])], {
           scope,
           gapMs: undefined,
           lmt: Math.min(Math.max(Number(body && body.lmt) || 260, 20), 500),
         });
         if (result.ok === false && result.errorCode === 'KLINE_FLUSH_FAILED') {
-          return send(res, 503, { ok: false, error: { code: result.errorCode, message: result.error, retryable: true }, result });
+          return send(res, 503, { ok: false, error: { code: result.errorCode, message: result.error, retryable: true }, result, observation });
         }
         const postSync = { settledBaselines: [], settledCustomBaselines: [], warnings: [] };
         try { postSync.settledBaselines = await settlePendingWatchBaselines(); } catch (e) { postSync.warnings.push('收益基准结算失败：' + String(e.message || e)); }
@@ -555,7 +666,8 @@ function createServer(port = DEFAULT_PORT) {
           error: { code: result.errorCode || 'KLINE_SYNC_FAILED', message: result.error || 'K 线同步失败', retryable: result.retryable !== false },
           result,
           postSync,
-        } : { ...result, postSync });
+          observation,
+        } : { ...result, postSync, observation });
       }
       if (pathname === '/api/kline/sync-status') return send(res, 200, klineSync.getStatus());
       if (pathname === '/api/kline/levels' && req.method === 'POST') {
@@ -699,12 +811,7 @@ function createServer(port = DEFAULT_PORT) {
 
 if (require.main === module) {
   const port = Number(process.env.VOLUME_INSIGHT_PORT || DEFAULT_PORT);
-  createServer(port).listen(port, '127.0.0.1', () => {
-    console.log(`智诊盯盘本地后端运行于 http://127.0.0.1:${port}`);
-  });
-  // 存量 K 线量纲迁移（手→股）：有标记即瞬时跳过；首次执行在后台跑，不阻塞服务。
-  require('./kline-volume-migration').maybeRun({ log: (...args) => console.log(...args) }).catch(() => {});
-  // 退出兜底：把仍在内存、未达自动落盘阈值的写入（预取 K 线等）同步导出到 kline.db。
+  // 退出兜底：把仍在内存、未达自动落盘阈值的写入（K 线同步等）同步导出到 kline.db。
   process.on('exit', () => { try { flushSync(); } catch { /* 忽略退出期导出失败 */ } });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
@@ -712,6 +819,17 @@ if (require.main === module) {
       process.exit(0);
     });
   }
+  // 必须在开始接受请求前结算遗留任务，避免新任务刚启动就被恢复流程误判为上次中断。
+  taskRecovery.settleInterruptedTasks({ log: (...args) => console.log(...args) })
+    .catch((error) => ({ ok: false, error: String((error && error.message) || error) }))
+    .then((recovery) => {
+      if (!recovery.ok) console.error(`[task-recovery] 中断任务结算未完全成功：${recovery.error || '请查看恢复报告'}`);
+      createServer(port).listen(port, '127.0.0.1', () => {
+        console.log(`智诊盯盘本地后端运行于 http://127.0.0.1:${port}`);
+      });
+      // 存量 K 线量纲迁移（手→股）：有标记即瞬时跳过；首次执行在后台跑，不阻塞服务。
+      require('./kline-volume-migration').maybeRun({ log: (...args) => console.log(...args) }).catch(() => {});
+    });
 }
 
 module.exports = { createServer, isWeekendDate };

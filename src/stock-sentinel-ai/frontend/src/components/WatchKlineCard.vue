@@ -13,6 +13,7 @@
       <button class="watch-card-remove" @click.stop="$emit('remove')" :aria-label="'移除 ' + quote.name">×</button>
     </header>
     <p v-if="entryStatus" class="watch-card-entry-status" :title="entryStatus.title" :aria-label="entryStatus.ariaLabel">{{ entryStatus.text }}</p>
+    <p class="watch-card-origin" :class="originClass">{{ originLabel }}</p>
     <p v-if="returnInfo" class="watch-card-return" :class="returnInfo.tone" role="status" :title="returnInfo.baselineText || returnInfo.text">
       <b>{{ returnInfo.text }}</b><span v-if="returnInfo.baselineText">{{ returnInfo.baselineText }}</span>
     </p>
@@ -20,6 +21,10 @@
       <div v-if="hasChart" ref="chartEl" class="watch-card-chart-inner"></div>
       <div v-if="hasChart && loading" class="watch-card-state">K 线更新中…</div>
       <div v-else-if="!hasChart" class="watch-card-state" :class="{ error: !!error }">{{ loading ? 'K 线加载中…' : (error || '暂无日 K 数据') }}</div>
+    </div>
+    <div v-if="themes.length" class="watch-card-themes" :aria-label="'关联行业和概念：' + themeText">
+      <p v-if="industryThemes.length"><b>行业：</b>{{ industryThemes.join(' / ') }}</p>
+      <p v-if="conceptThemes.length"><b>概念：</b>{{ conceptThemes.join(' / ') }}<span v-if="hasMoreConceptThemes"> / ...</span></p>
     </div>
     <p v-if="reason" class="watch-card-reason" :title="reason">{{ reason }}</p>
   </article>
@@ -32,10 +37,12 @@ import { useAppStore } from '../stores/app';
 
 const props = defineProps({
   quote: { type: Object, required: true },
+  watchItem: { type: Object, default: null },
   klineState: { type: Object, default: null },
   returnInfo: { type: Object, default: null },
   recommendation: { type: Object, default: null },
   levels: { type: Object, default: null },
+  themes: { type: Array, default: () => [] },
   pinned: { type: Boolean, default: false },
 });
 defineEmits(['open', 'remove', 'toggle-pin']);
@@ -57,6 +64,23 @@ const bars = computed(() => (props.klineState && Array.isArray(props.klineState.
 // 缓存 bar 在后台刷新时仍保留图表宿主，避免 ECharts 绑定到已销毁的 DOM。
 const hasChart = computed(() => bars.value.length > 0);
 const reason = computed(() => (props.recommendation ? app.recommendationReason(props.quote) : ''));
+const originLabel = computed(() => ({ pool_selected: '精选转入', pool_observation: '待确认观察', manual: '手工自选' }[props.watchItem?.source] || '历史自选'));
+const originClass = computed(() => ({ pool_selected: 'selected', pool_observation: 'observation', manual: 'manual' }[props.watchItem?.source] || 'legacy'));
+const MAX_CONCEPT_THEMES = 3;
+const themeNames = (themes) => themes.map((theme) => theme.name).filter(Boolean);
+const themesByRelevance = computed(() => [...props.themes].sort((a, b) => {
+  const rankA = Number.isFinite(Number(a.rank)) ? Number(a.rank) : Number.MAX_SAFE_INTEGER;
+  const rankB = Number.isFinite(Number(b.rank)) ? Number(b.rank) : Number.MAX_SAFE_INTEGER;
+  return rankA - rankB;
+}));
+const industryThemes = computed(() => themeNames(themesByRelevance.value.filter((theme) => theme.kind === 'industry')));
+const allConceptThemes = computed(() => themeNames(themesByRelevance.value.filter((theme) => theme.kind !== 'industry')));
+const conceptThemes = computed(() => allConceptThemes.value.slice(0, MAX_CONCEPT_THEMES));
+const hasMoreConceptThemes = computed(() => allConceptThemes.value.length > conceptThemes.value.length);
+const themeText = computed(() => [
+  industryThemes.value.length ? `行业：${industryThemes.value.join(' / ')}` : '',
+  conceptThemes.value.length ? `概念：${conceptThemes.value.join(' / ')}${hasMoreConceptThemes.value ? ' / ...' : ''}` : '',
+].filter(Boolean).join('；'));
   // 价位文字：建仓（首个触发确认价）/ 止损（失效价）/ 止盈（首个止盈观察价）
   const entryTriggers = computed(() => {
     const lv = props.levels;

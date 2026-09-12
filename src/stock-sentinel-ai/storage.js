@@ -5,6 +5,7 @@
 // 目录可用环境变量 VOLUME_INSIGHT_DATA_DIR 覆盖（Electron 打包时指向 userData）。
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const initSqlJs = require('sql.js/dist/sql-asm.js').default;
 
 const DATA_DIR = process.env.VOLUME_INSIGHT_DATA_DIR
@@ -69,8 +70,30 @@ async function ensureDb() {
     db.run(`CREATE TABLE IF NOT EXISTS kline_meta (
       code     TEXT PRIMARY KEY,
       date     TEXT,
-      savedAt  TEXT
+      savedAt  TEXT,
+      source   TEXT,
+      adjustmentType TEXT,
+      sourceLatestDate TEXT,
+      fetchedAt TEXT,
+      tailStatus TEXT,
+      tailConfirmedAt TEXT,
+      listingDate TEXT,
+      listingSource TEXT,
+      listingFetchedAt TEXT
     )`);
+    const metaColumns = db.exec('PRAGMA table_info(kline_meta)');
+    const metaNames = metaColumns.length ? metaColumns[0].values.map((row) => String(row[1])) : [];
+    if (!metaNames.includes('source')) db.run('ALTER TABLE kline_meta ADD COLUMN source TEXT');
+    if (!metaNames.includes('adjustmentType')) db.run('ALTER TABLE kline_meta ADD COLUMN adjustmentType TEXT');
+    // D14-02：来源复权口径与尾K状态元数据。旧库缺列时补齐为空值，不伪造历史状态。
+    if (!metaNames.includes('sourceLatestDate')) db.run('ALTER TABLE kline_meta ADD COLUMN sourceLatestDate TEXT');
+    if (!metaNames.includes('fetchedAt')) db.run('ALTER TABLE kline_meta ADD COLUMN fetchedAt TEXT');
+    if (!metaNames.includes('tailStatus')) db.run('ALTER TABLE kline_meta ADD COLUMN tailStatus TEXT');
+    if (!metaNames.includes('tailConfirmedAt')) db.run('ALTER TABLE kline_meta ADD COLUMN tailConfirmedAt TEXT');
+    // 上市日必须来自可核验的证券资料接口；旧库保持空值，不能用本地首根K线冒充。
+    if (!metaNames.includes('listingDate')) db.run('ALTER TABLE kline_meta ADD COLUMN listingDate TEXT');
+    if (!metaNames.includes('listingSource')) db.run('ALTER TABLE kline_meta ADD COLUMN listingSource TEXT');
+    if (!metaNames.includes('listingFetchedAt')) db.run('ALTER TABLE kline_meta ADD COLUMN listingFetchedAt TEXT');
     // 全市场快照采用批次表 + 明细表。批次保存数据质量与来源，明细以 batchId+code
     // 唯一，避免把一次 5,000+ 股票抓取拆成逐行落盘和逐行导出数据库。
     db.run(`CREATE TABLE IF NOT EXISTS market_snapshot_batches (
@@ -379,6 +402,30 @@ async function readMarketSentimentSnapshot(tradeDate) {
   } catch { return null; }
 }
 
+async function readMarketSentimentEvidence(tradeDate) {
+  try {
+    const d = await ensureDb();
+    const q = d.exec(`SELECT tradeDate,source,fetchedAt,available,rawJson,qualityJson
+      FROM market_sentiment_snapshots WHERE tradeDate = ? LIMIT 1`, [String(tradeDate || '')]);
+    if (!q.length || !q[0].values.length) return null;
+    const row = Object.fromEntries(q[0].columns.map((column, index) => [column, q[0].values[0][index]]));
+    const rawJson = typeof row.rawJson === 'string' ? row.rawJson : '';
+    const raw = fromJson(rawJson);
+    const pools = Object.fromEntries(['limitUp', 'limitDown', 'broken'].map((name) => {
+      if (!raw || !raw[name]) return [name, { present: false, rawBytes: 0, sha256: '' }];
+      const text = JSON.stringify(raw[name]);
+      return [name, { present: true, rawBytes: Buffer.byteLength(text), sha256: crypto.createHash('sha256').update(text).digest('hex') }];
+    }));
+    return {
+      tradeDate: String(row.tradeDate || ''), source: String(row.source || ''), fetchedAt: String(row.fetchedAt || ''),
+      available: Boolean(row.available), rawBytes: Buffer.byteLength(rawJson),
+      sha256: rawJson ? crypto.createHash('sha256').update(rawJson).digest('hex') : '',
+      storage: 'market_sentiment_snapshots.rawJson', rawFormat: 'json', pools,
+      quality: fromJson(row.qualityJson) || null,
+    };
+  } catch { return null; }
+}
+
 async function getStockRiskPlans(codes = []) {
   try {
     const d = await ensureDb();
@@ -395,25 +442,73 @@ async function getStockRiskPlans(codes = []) {
 
 // ── 单票K线落盘（SQLite：一票一日一行）─────────────────────────────
 // kline: [{date, open, high, low, close, volume, amount?}], date: 抓取日期。
-async function writeKline(code, kline, date) {
+async function writeKline(code, kline, date, options = {}) {
   let dbStarted = false;
   try {
+    if (options.replaceSeries === true && (!Array.isArray(kline) || !kline.length)) return false;
     const d = await ensureDb();
+    const savedAt = new Date().toISOString();
+    const hasOption = (key) => Object.prototype.hasOwnProperty.call(options, key);
+    const existingResult = d.exec('SELECT source,adjustmentType,sourceLatestDate,fetchedAt,tailStatus,tailConfirmedAt,listingDate,listingSource,listingFetchedAt FROM kline_meta WHERE code = ? LIMIT 1', [String(code)]);
+    const existing = existingResult.length && existingResult[0].values.length ? existingResult[0].values[0] : null;
+    const previous = {
+      source: existing ? String(existing[0] || '') : '', adjustmentType: existing ? String(existing[1] || '') : '',
+      sourceLatestDate: existing ? String(existing[2] || '') : '', fetchedAt: existing ? String(existing[3] || '') : '',
+      tailStatus: existing ? String(existing[4] || '') : '', tailConfirmedAt: existing ? String(existing[5] || '') : '',
+      listingDate: existing ? String(existing[6] || '') : '', listingSource: existing ? String(existing[7] || '') : '',
+      listingFetchedAt: existing ? String(existing[8] || '') : '',
+    };
+    let latestBarDate = '';
     d.run('BEGIN');
     dbStarted = true;
+    // 仅由通过完整覆盖校验的调用方启用；删除和写入处于同一事务，失败会恢复旧序列。
+    if (options.replaceSeries === true) d.run('DELETE FROM kline WHERE code = ?', [String(code)]);
     const stmt = d.prepare(
       'INSERT OR REPLACE INTO kline(code,date,open,high,low,close,volume,amount) VALUES(?,?,?,?,?,?,?,?)'
     );
     try {
       for (const c of kline || []) {
         if (!c || !c.date) continue;
-        stmt.run([String(code), String(c.date), num(c.open), num(c.high), num(c.low), num(c.close), num(c.volume), num(c.amount)]);
+        const barDate = String(c.date);
+        if (barDate > latestBarDate) latestBarDate = barDate;
+        stmt.run([String(code), barDate, num(c.open), num(c.high), num(c.low), num(c.close), num(c.volume), num(c.amount)]);
       }
     } finally { stmt.free(); }
-    d.run('INSERT OR REPLACE INTO kline_meta(code,date,savedAt) VALUES(?,?,?)', [String(code), String(date || ''), new Date().toISOString()]);
+    // 旧调用方未传 options 时保留已有证据；新记录仍保持空口径，不能默认冒充 qfq。
+    const source = hasOption('source') ? String(options.source || '') : previous.source;
+    const adjustmentType = hasOption('adjustmentType') ? String(options.adjustmentType || '').trim() : previous.adjustmentType;
+    const sourceLatestDate = hasOption('sourceLatestDate')
+      ? String(options.sourceLatestDate || '') : previous.sourceLatestDate || latestBarDate;
+    const fetchedAt = hasOption('fetchedAt') ? String(options.fetchedAt || '') : previous.fetchedAt || savedAt;
+    const tailStatus = hasOption('tailStatus')
+      ? (options.tailStatus === 'confirmed' || options.tailStatus === 'provisional' ? options.tailStatus : '')
+      : previous.tailStatus;
+    const tailConfirmedAt = tailStatus === 'confirmed'
+      ? (hasOption('tailConfirmedAt') ? String(options.tailConfirmedAt || '') : previous.tailConfirmedAt || fetchedAt || savedAt)
+      : '';
+    const listingDate = hasOption('listingDate') ? String(options.listingDate || '') : previous.listingDate;
+    const listingSource = hasOption('listingSource') ? String(options.listingSource || '') : previous.listingSource;
+    const listingFetchedAt = hasOption('listingFetchedAt') ? String(options.listingFetchedAt || '') : previous.listingFetchedAt;
+    d.run(
+      'INSERT OR REPLACE INTO kline_meta(code,date,savedAt,source,adjustmentType,sourceLatestDate,fetchedAt,tailStatus,tailConfirmedAt,listingDate,listingSource,listingFetchedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+      [
+        String(code),
+        String(date || ''),
+        savedAt,
+        source,
+        adjustmentType,
+        sourceLatestDate,
+        fetchedAt,
+        tailStatus,
+        tailConfirmedAt,
+        listingDate,
+        listingSource,
+        listingFetchedAt,
+      ]
+    );
     const stat = d.exec('SELECT COUNT(*), MIN(date), MAX(date) FROM kline WHERE code = ?', [String(code)]);
     const sv = stat.length && stat[0].values.length ? stat[0].values[0] : [0, null, null];
-    d.run('INSERT OR REPLACE INTO kline_stats(code,barCount,firstDate,latestDate,updatedAt) VALUES(?,?,?,?,?)', [String(code), Number(sv[0]) || 0, sv[1], sv[2], new Date().toISOString()]);
+    d.run('INSERT OR REPLACE INTO kline_stats(code,barCount,firstDate,latestDate,updatedAt) VALUES(?,?,?,?,?)', [String(code), Number(sv[0]) || 0, sv[1], sv[2], savedAt]);
     d.run('COMMIT');
     dbStarted = false;
     dirtyWrites += 1;
@@ -424,6 +519,35 @@ async function writeKline(code, kline, date) {
     return true;
   } catch {
     if (dbStarted && db) { try { db.run('ROLLBACK'); } catch { /* 忽略回滚失败 */ } }
+    return false;
+  }
+}
+
+// 单独保存上市日证据，不改写行情序列、来源或复权口径。
+async function writeKlineListingEvidence(code, evidence = {}) {
+  const listingDate = String(evidence.listingDate || '');
+  const listingSource = String(evidence.listingSource || '');
+  const listingFetchedAt = String(evidence.listingFetchedAt || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(listingDate) || !listingSource || !listingFetchedAt) return false;
+  try {
+    const d = await ensureDb();
+    const savedAt = new Date().toISOString();
+    d.run(
+      `INSERT INTO kline_meta(code,date,savedAt,listingDate,listingSource,listingFetchedAt)
+       VALUES(?,?,?,?,?,?)
+       ON CONFLICT(code) DO UPDATE SET
+         listingDate=excluded.listingDate,
+         listingSource=excluded.listingSource,
+         listingFetchedAt=excluded.listingFetchedAt`,
+      [String(code), '', savedAt, listingDate, listingSource, listingFetchedAt]
+    );
+    dirtyWrites += 1;
+    if (dirtyWrites >= FLUSH_BATCH) {
+      persist();
+      dirtyWrites = 0;
+    }
+    return true;
+  } catch {
     return false;
   }
 }
@@ -442,12 +566,33 @@ async function readKline(code) {
       if (r[6] != null) o.amount = r[6];
       return o;
     });
-    let fetchDate = '';
+    let fetchDate = '', source = '', adjustmentType = '', sourceLatestDate = '', fetchedAt = '', tailStatus = '', tailConfirmedAt = '', savedAt = '', listingDate = '', listingSource = '', listingFetchedAt = '';
     try {
-      const meta = d.exec('SELECT date FROM kline_meta WHERE code = ?', [String(code)]);
-      if (meta.length && meta[0].values.length) fetchDate = String(meta[0].values[0][0] || '');
+      const meta = d.exec('SELECT date,source,adjustmentType,sourceLatestDate,fetchedAt,tailStatus,tailConfirmedAt,savedAt,listingDate,listingSource,listingFetchedAt FROM kline_meta WHERE code = ?', [String(code)]);
+      if (meta.length && meta[0].values.length) {
+        const row = meta[0].values[0];
+        fetchDate = String(row[0] || '');
+        source = String(row[1] || '');
+        adjustmentType = String(row[2] || '');
+        sourceLatestDate = String(row[3] || '');
+        fetchedAt = String(row[4] || '');
+        tailStatus = String(row[5] || '');
+        tailConfirmedAt = String(row[6] || '');
+        savedAt = String(row[7] || '');
+        listingDate = String(row[8] || '');
+        listingSource = String(row[9] || '');
+        listingFetchedAt = String(row[10] || '');
+      }
     } catch { /* meta 缺失可容忍 */ }
-    return { code: String(code), date: fetchDate || rows[rows.length - 1].date, kline: rows };
+    return {
+      code: String(code),
+      date: fetchDate || rows[rows.length - 1].date,
+      source, adjustmentType,
+      // 旧库没有源最新日期/尾K状态时保持为空，不用序列日期或当前时间冒充历史状态。
+      sourceLatestDate,
+      fetchedAt, savedAt, tailStatus, tailConfirmedAt, listingDate, listingSource, listingFetchedAt,
+      kline: rows,
+    };
   } catch {
     return null;
   }
@@ -503,16 +648,30 @@ async function readKlineDates(code) {
   }
 }
 
-async function readKlineStats(codes = []) {
+async function readKlineStats(codes = [], { includeFingerprint = false } = {}) {
   try {
     const d = await ensureDb();
     const list = [...new Set((Array.isArray(codes) ? codes : []).map((c) => String(c).trim()).filter(Boolean))];
     if (!list.length) return [];
     const marks = list.map(() => '?').join(',');
-    const res = d.exec(`SELECT s.code, s.barCount, s.firstDate, s.latestDate, m.savedAt FROM kline_stats s LEFT JOIN kline_meta m ON m.code = s.code WHERE s.code IN (${marks})`, list);
+    const res = d.exec(`SELECT s.code, s.barCount, s.firstDate, s.latestDate, m.savedAt, m.source, m.adjustmentType, m.sourceLatestDate, m.fetchedAt, m.tailStatus, m.tailConfirmedAt, m.listingDate, m.listingSource, m.listingFetchedAt FROM kline_stats s LEFT JOIN kline_meta m ON m.code = s.code WHERE s.code IN (${marks})`, list);
     const map = new Map();
-    if (res.length) for (const row of res[0].values) map.set(String(row[0]), { code: String(row[0]), depth: Number(row[1]) || 0, firstDate: row[2] || '', latestDate: row[3] || '', savedAt: row[4] || '' });
-    return list.map((code) => map.get(code) || { code, depth: 0, firstDate: '', latestDate: '', savedAt: '' });
+    if (res.length) for (const row of res[0].values) map.set(String(row[0]), {
+      code: String(row[0]), depth: Number(row[1]) || 0, firstDate: row[2] || '', latestDate: row[3] || '', savedAt: row[4] || '',
+      source: row[5] || '', adjustmentType: row[6] || '', sourceLatestDate: row[7] || '', fetchedAt: row[8] || '',
+      tailStatus: row[9] || '', tailConfirmedAt: row[10] || '',
+      listingDate: row[11] || '', listingSource: row[12] || '', listingFetchedAt: row[13] || '',
+    });
+    const stats = list.map((code) => map.get(code) || { code, depth: 0, firstDate: '', latestDate: '', savedAt: '', source: '', adjustmentType: '', sourceLatestDate: '', fetchedAt: '', tailStatus: '', tailConfirmedAt: '', listingDate: '', listingSource: '', listingFetchedAt: '' });
+    if (includeFingerprint) {
+      const { klineFingerprint } = require('./recommendation-validity');
+      for (const item of stats) {
+        const result = d.exec('SELECT date,open,high,low,close,volume,amount FROM kline WHERE code=? ORDER BY date ASC', [item.code]);
+        const bars = result.length ? result[0].values.map((values) => Object.fromEntries(result[0].columns.map((key, i) => [key, values[i]]))) : [];
+        item.klineHash = klineFingerprint(bars);
+      }
+    }
+    return stats;
   } catch { return []; }
 }
 
@@ -578,7 +737,7 @@ async function clearJudgments() {
   }
 }
 
-// 强制把所有已写入的 K 线导出到磁盘（迁移/预取结束、进程退出前调用）。
+// 强制把所有已写入的 K 线导出到磁盘（迁移/批量写入结束、进程退出前调用）。
 async function flush() {
   try {
     await ensureDb();
@@ -997,21 +1156,58 @@ async function saveWatchRecommendation(record) {
 async function latestWatchRecommendations(codes = []) {
   const d = await ensureDb(); const list = codes.filter((x) => /^\d{6}$/.test(String(x)));
   if (!list.length) return {};
-  const q = d.exec(`SELECT w.* FROM watch_recommendations w JOIN (SELECT code, MAX(id) id FROM watch_recommendations WHERE code IN (${list.map(() => '?').join(',')}) GROUP BY code) x ON x.id=w.id`, list);
+  const q = d.exec(`SELECT w.*, b.status AS batchStatus FROM watch_recommendations w JOIN (SELECT code, MAX(id) id FROM watch_recommendations WHERE code IN (${list.map(() => '?').join(',')}) GROUP BY code) x ON x.id=w.id LEFT JOIN watch_recommendation_batches b ON b.batchId=w.batchId`, list);
   const result = {};
   if (q.length) q[0].values.forEach((row) => { const o = {}; q[0].columns.forEach((c, i) => { o[c] = ['reasonCodesJson','evidenceJson','conditionsJson','missingJson'].includes(c) ? fromJson(row[i]) : row[i]; }); result[o.code] = o; });
   return result;
 }
 
+// 只读读取复核批次（D15-03 盘点 / D15-02 归档回链 / D15-05 中断结算）。
+// 只做 SELECT，不写入、不落盘。
+async function readWatchRecommendationBatches({ batchId = '', status = '', limit = 200, throwOnError = false } = {}) {
+  try {
+    const d = await ensureDb();
+    const where = [];
+    const params = [];
+    if (batchId) { where.push('batchId = ?'); params.push(String(batchId)); }
+    if (status) { where.push('status = ?'); params.push(String(status)); }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const size = Math.min(Math.max(Number(limit) || 200, 1), 2000);
+    const q = d.exec(`SELECT batchId,status,total,done,succeeded,failed,startedAt,finishedAt,createdAt FROM watch_recommendation_batches ${clause} ORDER BY COALESCE(finishedAt, startedAt, 0) DESC LIMIT ${size}`, params);
+    if (!q.length) return [];
+    return q[0].values.map((row) => Object.fromEntries(q[0].columns.map((column, index) => [column, row[index]])));
+  } catch (error) {
+    if (throwOnError) throw error;
+    return [];
+  }
+}
+
+// 把遗留的 running 复核批次结算为 interrupted（D15-05）。只改状态，不删除结果、不重跑。
+async function markWatchRecommendationBatchInterrupted(batchId, { interruptedAt = new Date().toISOString(), note = '' } = {}) {
+  const id = String(batchId || '');
+  if (!id) return { ok: false, changed: 0, error: '缺少批次ID' };
+  return enqueueWrite(async () => {
+    const d = await ensureDb();
+    const before = d.exec('SELECT status FROM watch_recommendation_batches WHERE batchId = ? LIMIT 1', [id]);
+    if (!before.length || !before[0].values.length) return { ok: false, changed: 0, error: '批次不存在' };
+    if (String(before[0].values[0][0] || '') !== 'running') return { ok: true, changed: 0, skipped: true };
+    // 只改状态：快照与进度字段保持原样，中断说明写在 task-recovery 报告里，不覆盖既有证据。
+    d.run('UPDATE watch_recommendation_batches SET status = ? WHERE batchId = ? AND status = \'running\'', ['interrupted', id]);
+    await persistAsync();
+    return { ok: true, changed: 1 };
+  }, id);
+}
+
 module.exports = {
   DATA_DIR, SNAP_DIR, KLINE_DIR: path.join(DATA_DIR, 'kline'), DB_FILE,
   writeSnapshot, readSnapshot, readLatestSnapshot, listSnapshotDates,
-  writeMarketSnapshotBatch, writeMarketSentimentSnapshot, readMarketSentimentSnapshot, saveStockRiskPlan, getStockRiskPlans,
-  writeKline, readKline, readKlineStats, listKlineDates, clearKlines, clearJudgments, flush, reloadDbFromDisk, klineStats,
+  writeMarketSnapshotBatch, writeMarketSentimentSnapshot, readMarketSentimentSnapshot, readMarketSentimentEvidence, saveStockRiskPlan, getStockRiskPlans,
+  writeKline, writeKlineListingEvidence, readKline, readKlineStats, listKlineDates, clearKlines, clearJudgments, flush, reloadDbFromDisk, klineStats,
   readKlineDates, recentTradingDates, klineGaps,
   getMigration, setMigration,
   writeJudgmentRecord, getLastSuccessJudgment, listJudgmentAttempts,
   writePriceLevelSet, getPriceLevelSet, refreshDataStats, getDataStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences,
   saveWatchRecommendationBatch, saveWatchRecommendation, latestWatchRecommendations,
+  readWatchRecommendationBatches, markWatchRecommendationBatchInterrupted,
   setWriteDelegate, flushSync,
 };

@@ -1,6 +1,7 @@
 // 智诊盯盘 · 统一日 K 同步。只同步本地行情与派生数据，不触发 AI 研判。
 const { fetchKlineRaw } = require('./data');
 const { readKline, writeKline, flush } = require('./storage');
+const { decideKlineWrite, canSafelyRebuildUnverifiedSeries } = require('./kline-source-contract');
 const watchlist = require('./watchlist');
 const candidatePool = require('./candidate-pool');
 
@@ -36,7 +37,9 @@ function normalizeBars(bars) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     const open = Number(bar.open), high = Number(bar.high), low = Number(bar.low), close = Number(bar.close);
     if (![open, high, low, close].every(Number.isFinite) || high < low || high < Math.max(open, close) || low > Math.min(open, close)) continue;
-    const item = { date, open, high, low, close, volume: Number.isFinite(Number(bar.volume)) ? Number(bar.volume) : 0 };
+    const volume = bar.volume == null || bar.volume === '' ? NaN : Number(bar.volume);
+    if (!Number.isFinite(volume) || volume < 0) continue;
+    const item = { date, open, high, low, close, volume };
     if (Number.isFinite(Number(bar.amount))) item.amount = Number(bar.amount);
     byDate.set(date, item);
   }
@@ -95,21 +98,74 @@ async function syncOne(code, { lmt = DEFAULT_LMT } = {}) {
         writes.push(bar); overwritten++;
       }
     }
+    // 落盘前先判定复权口径相容性：口径冲突或无法验证时拒绝覆盖既有序列，要求重建。
+    const decision = decideKlineWrite({ stored: localRecord, source: raw.source, adjustmentType: raw.adjustmentType });
+    const metaOptions = {
+      source: raw.source,
+      adjustmentType: raw.adjustmentType,
+      sourceLatestDate: raw.sourceLatestDate,
+      fetchedAt: raw.fetchedAt,
+      tailStatus: raw.tailStatus,
+      tailConfirmedAt: raw.tailConfirmedAt,
+    };
+    const rebuild = canSafelyRebuildUnverifiedSeries({
+      storedBars: localBars,
+      incomingBars: sourceBars,
+      source: raw.source,
+      adjustmentType: raw.adjustmentType,
+      decisionStatus: decision.status,
+    });
+    if (rebuild) {
+      const written = await writeKline(code, sourceBars, sourceLast.date, { ...metaOptions, replaceSeries: true });
+      if (!written) return { code, ok: false, checked: true, changed: false, appended: 0, overwritten: 0, changedDates: [], latestDate: localLast && localLast.date || '', errorCode: 'KLINE_REBUILD_FAILED', error: '本地 K 线整段重建失败，旧序列已保留', retryable: true, source: raw.source, sourceAttempts: raw.sourceAttempts || [] };
+      return {
+        code, ok: true, checked: true, changed: true, rebuilt: true,
+        previousDepth: localBars.length, depth: sourceBars.length,
+        appended: Math.max(0, sourceBars.length - localBars.length), overwritten: Math.min(sourceBars.length, localBars.length),
+        changedDates: sourceBars.map((bar) => bar.date), latestDate: sourceLast.date,
+        source: raw.source, sourceAdjustmentType: raw.adjustmentType, sourceAttempts: raw.sourceAttempts || [],
+        tailStatus: raw.tailStatus || '', tailConfirmedAt: raw.tailConfirmedAt || '',
+        writeDecision: 'full-rebuild-from-verified-source', summary: summaryFor(sourceBars),
+      };
+    }
+    if (!decision.allowed) {
+      return {
+        code, ok: false, checked: true, changed: false, appended: 0, overwritten: 0, changedDates: [],
+        latestDate: localLast && localLast.date || '',
+        source: raw.source, sourceAdjustmentType: raw.adjustmentType, sourceAttempts: raw.sourceAttempts || [],
+        errorCode: decision.code || 'KLINE_ADJUSTMENT_CONFLICT',
+        error: decision.reason || '源复权口径与本地不一致，拒绝覆盖',
+        retryable: false, action: decision.action || 'rebuild_required',
+        writeDecision: decision.status, storedAdjustment: decision.storedAdjustment || '', storedSource: decision.storedSource || '',
+      };
+    }
+    let metaRefreshed = false;
     if (writes.length) {
-      const written = await writeKline(code, writes, sourceLast.date);
+      const written = await writeKline(code, writes, sourceLast.date, metaOptions);
       if (!written) return { code, ok: false, checked: true, changed: false, appended: 0, overwritten: 0, changedDates: [], latestDate: localLast && localLast.date || '', errorCode: 'KLINE_WRITE_FAILED', error: '本地 K 线写入失败，请检查数据目录权限', retryable: true, source: raw.source, sourceAttempts: raw.sourceAttempts || [] };
+    } else if (localRecord && localLast && sourceLast.date === localLast.date
+      && (String(localRecord.tailStatus || '') !== String(raw.tailStatus || '')
+        || String(localRecord.source || '') !== String(raw.source || '')
+        || String(localRecord.adjustmentType || '') !== String(raw.adjustmentType || ''))) {
+      // 序列内容未变时只刷新元数据（例如盘中暂定尾K在收盘后重新抓取到收盘数据）。
+      metaRefreshed = await writeKline(code, [], sourceLast.date, metaOptions);
     }
     return {
       code,
       ok: true,
       source: raw.source || '',
+      sourceAdjustmentType: raw.adjustmentType || '',
       sourceAttempts: raw.sourceAttempts || [],
       checked: true,
-      changed: writes.length > 0,
+      changed: writes.length > 0 || Boolean(metaRefreshed),
       appended,
       overwritten,
       changedDates: writes.map((bar) => bar.date),
       latestDate: sourceLast.date,
+      tailStatus: raw.tailStatus || '',
+      tailConfirmedAt: raw.tailConfirmedAt || '',
+      writeDecision: decision.status,
+      warning: decision.warning || '',
       summary: summaryFor(sourceBars),
     };
   } catch (error) {

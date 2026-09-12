@@ -79,3 +79,12 @@ assert.strictEqual(rr.available, true);
 assert.ok(rr.value > 0, '空间比应为正');
 assert.strictEqual(rr.state, 'reasonable');
 console.log('price-levels 新增项通过', 'gaps', gaps.length, 'trail', trail.value, 'rr', rr.value);
+
+const actionable = levels.actionableRiskReward({
+  entryTriggers: [{ confirmAbove: 10.5, status: 'confirmed' }],
+  invalidationLevel: { value: 10 },
+  resistanceZones: [{ low: 12 }],
+});
+assert.equal(actionable.available, true);
+assert.ok(actionable.value >= 2, '计入成本滑点后仍应按有效三价计算风险收益比');
+assert.equal(levels.actionableRiskReward({ entryTriggers: [{ confirmAbove: 10 }], invalidationLevel: { value: 10.1 }, resistanceZones: [{ low: 12 }] }).available, false);

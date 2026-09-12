@@ -4,13 +4,15 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./storage');
+const { normalizeSelectionRecord } = require('./selection-contract');
 
 const POOL_FILE = path.join(DATA_DIR, 'candidate-pool.json');
+const ARCHIVE_DIR = path.join(DATA_DIR, 'selection-archive');
 
 // 只保存扫描结果里的快照字段，避免写入任意大对象。
 // 扫描阶段只产生“规则命中（预筛）”，K 线复筛/形态命中结果在补齐后另行回写，
 // 因此这里保存 ruleLabel/ruleIds 作为候选线索，pattern 仅为兼容旧数据保留。
-const SNAPSHOT_KEYS = ['name', 'market', 'price', 'changePct', 'turnover', 'volumeRatio', 'amountYi', 'mainNetYi', 'score', 'pattern', 'patternScore', 'ruleLabel', 'ruleIds', 'snapshotDate', 'marketRegime', 'themeEvidence', 'scanScope', 'strategyRuleIds', 'deprioritizedRuleIds', 'riskFlags', 'selectionTrace', 'admissionMode'];
+const SNAPSHOT_KEYS = ['name', 'market', 'price', 'prevClose', 'changePct', 'turnover', 'volumeRatio', 'amountYi', 'mainNetYi', 'score', 'pattern', 'patternScore', 'ruleLabel', 'ruleIds', 'snapshotDate', 'marketRegime', 'themeEvidence', 'themeLeaderRanks', 'boardLeaderRanks', 'candidateThemeRanks', 'isThemeLeader', 'isBoardLeader', 'isCandidateThemeLeader', 'isLimitUp', 'scanScope', 'strategyRuleIds', 'deprioritizedRuleIds', 'riskFlags', 'selectionTrace', 'admissionMode', 'localKlineConfirmation', 'initialAssessment', 'selectionPolicyVersion', 'selectionParameterStatus', 'selectionPolicyParams', 'selectionRuleEvidence', 'selectionRulesFingerprint', 'selectionBatchId', 'prescanBatchId', 'selectionContractVersion', 'quoteEvidence'];
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -21,7 +23,7 @@ function load() {
     ensureDir(DATA_DIR);
     if (!fs.existsSync(POOL_FILE)) return [];
     const parsed = JSON.parse(fs.readFileSync(POOL_FILE, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeSelectionRecord) : [];
   } catch {
     return [];
   }
@@ -36,6 +38,33 @@ function save(list) {
     return false;
   }
 }
+
+// 追加不可变的候选批次快照。仅归档带新契约批次ID的扫描结果；手工添加不进入历史回放。
+function archiveBatch(items) {
+  const grouped = new Map();
+  for (const item of items || []) {
+    const batchId = String(item.selectionBatchId || '');
+    if (!batchId || Number(item.selectionContractVersion) !== 3) continue;
+    if (!grouped.has(batchId)) grouped.set(batchId, []);
+    grouped.get(batchId).push(pickSnap(item));
+  }
+  const archived = [];
+  try {
+    ensureDir(ARCHIVE_DIR);
+    for (const [batchId, records] of grouped) {
+      const file = path.join(ARCHIVE_DIR, `${safeFilePart(batchId)}.json`);
+      if (fs.existsSync(file)) { archived.push({ batchId, skipped: true, file }); continue; }
+      const payload = { archiveVersion: 'selection-archive-v1', batchId, createdAt: new Date().toISOString(), records };
+      const temp = `${file}.tmp`;
+      fs.writeFileSync(temp, JSON.stringify(payload, null, 2), 'utf8');
+      fs.renameSync(temp, file);
+      archived.push({ batchId, skipped: false, file, count: records.length });
+    }
+  } catch (error) { return { ok: false, archived, error: String(error.message || error) }; }
+  return { ok: true, archived };
+}
+
+function safeFilePart(value) { return String(value).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 120) || 'batch'; }
 
 function getList() {
   return load();
@@ -83,8 +112,10 @@ function addMany(itemsInput) {
       added++;
     }
   }
-  save(list);
-  return { ok: true, added, updated, total: list.length, errors };
+  if (!save(list)) return { ok: false, added: 0, updated: 0, errors: ['候选池保存失败'] };
+  const archive = archiveBatch(items);
+  if (!archive.ok) errors.push('候选批次归档失败：' + archive.error);
+  return { ok: errors.length === 0, added, updated, total: list.length, errors, archive };
 }
 
 function add(item) {
@@ -96,7 +127,7 @@ function remove(codeInput) {
   const list = load();
   const next = list.filter((x) => x.code !== code);
   if (next.length === list.length) return { ok: false, error: '不在候选池中' };
-  save(next);
+  if (!save(next)) return { ok: false, error: '候选池保存失败，原记录已保留' };
   return { ok: true };
 }
 
@@ -105,4 +136,4 @@ function clear() {
   return { ok: true, total: 0 };
 }
 
-module.exports = { POOL_FILE, getList, has, add, addMany, remove, clear };
+module.exports = { POOL_FILE, ARCHIVE_DIR, getList, has, add, addMany, archiveBatch, remove, clear };
