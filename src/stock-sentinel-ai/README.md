@@ -51,8 +51,8 @@ A 股**AI 辅助诊股与自选盯盘**桌面工具。本地取数，不经过�
 ## 设置页
 
 - 顶部「设置」标签提供：**抓取天数**（20～500 日，默认 250）、**交易时间内自动补全间隔**（30～3600 秒，默认 300）、候选池 K 线日期索引核对，以及 **AI 辅助研判配置**（接口类型 / Base URL / 模型 / API Key / Temperature / 最大输出 tokens / 启用开关）。
-- 设置通过 `GET /api/settings` 读取、`POST /api/settings` 保存，持久化到 **源码 `data/settings.json`**（已 gitignore）。配置仅保存在本机，不离开本地。
-- **配置目录与大数据目录分离（开发模式约定）**：设置读写固定落在源码 `<项目>/data/settings.json`，`settings.js` 不再跟随 `VOLUME_INSIGHT_DATA_DIR`；K 线库 / 快照等仍随 `storage` 的该环境变量（如上所述可指到 `userData`）。注意：一旦把桌面版**打包成只读 asar 发布**，写死在源码 `data/` 将不可写，届时需把 `settings.js` 重新接回 `DATA_DIR`（或改用 `userData` 路径）并做配置迁移——当前按“先开发模式统一到 `data/`”落地，打包前需回归此点。
+- 设置通过 `GET /api/settings` 读取、`POST /api/settings` 保存，持久化到 **数据目录下的 `settings.json`**（已 gitignore）：开发/Web 调试为源码 `data/settings.json`，桌面安装版为 Electron `userData`（`%APPDATA%\stock-sentinel-ai\settings.json`）。配置仅保存在本机，不离开本地。
+- **配置目录与数据目录同一套解析（勿写 `__dirname`）**：`settings.js` 与 `storage` 一样优先跟随 `VOLUME_INSIGHT_DATA_DIR`，未设置时才回退源码 `<项目>/data`；桌面安装版的 `__dirname` 指向只读 `app.asar`，把 `settings.json` 写进去会直接报 `ENOTDIR, not a directory`（0.1.0 安装版曾复现）。回归用例 `test/settings-path.test.js` 守护该约束：既校验落在可写数据目录，也校验开发模式回退源码 `data/`。
 - **AI 辅助研判（已接线）**：设置页保存接口类型 / Base URL / 模型 / API Key / Temperature / 最大输出 tokens，并默认关闭；在个股详情点「AI 辅助研判」后用本机行情 + 日 K + 均线/MACD/RSI + 命中形态证据组装 prompt，调用 OpenAI 兼容 `/chat/completions` 返回研判文本。API Key 仅用于瞬时请求头，不落日志、不进证据、不离开本机。用量/形态信号仍完全由 `screener-core` 本地计算；AI 输出仅作研究参考，不构成投资建议。新增后端模块 `ai-assist.js`（含 `configReady` / `buildEvidence` / `buildPrompt` / 超时与错误处理），`screener-core` 导出 `detectSinglePatterns` 供单票形态证据。
 
 ## 选股规则（热插拔）

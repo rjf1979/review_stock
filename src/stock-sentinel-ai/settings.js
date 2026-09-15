@@ -1,13 +1,14 @@
-// 智诊盯盘 · 本地设置存储（data/settings.json，已 gitignore，API Key 不落日志/不提交）
-// 说明（开发模式约定）：设置统一读写源码项目 src/<app>/data/settings.json，成为唯一配置源，
-// 不再跟随 VOLUME_INSIGHT_DATA_DIR(userData)。理由：配置到源码 data 便于开发统一；仅当
-// 打包安装版(asar 只读)发行时需重新评估回归 userData 或配置归并。K线库/快照等大文件仍
-// 不受影响 —— 它们继续随 storage 的 VOLUME_INSIGHT_DATA_DIR(kline.db / snapshots)。
+// 智诊盯盘 · 本地设置存储（settings.json，已 gitignore，API Key 不落日志/不提交）
+// 路径规则与 storage 一致：优先 VOLUME_INSIGHT_DATA_DIR（Electron 打包后为可写 userData），
+// 开发/Web 调试模式未设置该变量时落到源码 <项目>/data/settings.json，保持开发期唯一配置源。
+// 禁止写 __dirname（打包后即只读 app.asar，写盘会报 ENOTDIR）。
 const fs = require('fs');
 const path = require('path');
 
-// 固定写/读源码目录下的 data/settings.json（__dirname 即 src/stock-sentinel-ai）。
-const FILE = path.join(__dirname, 'data', 'settings.json');
+const DATA_DIR = process.env.VOLUME_INSIGHT_DATA_DIR
+  ? path.resolve(process.env.VOLUME_INSIGHT_DATA_DIR)
+  : path.join(__dirname, 'data');
+const FILE = path.join(DATA_DIR, 'settings.json');
 
 // 默认值：抓取任务 250 日；AI 研判配置为「OpenAI 兼容」模板，默认关闭且不接线。
 const DEFAULTS = {
@@ -100,12 +101,19 @@ function load() {
   return clone(DEFAULTS);
 }
 
-// 保存设置；返回经过校验合并后的完整对象。
+// 保存设置；返回经过校验合并后的完整对象。写盘失败时补上落盘路径，便于定位只读/非目录问题。
 function save(next) {
   const data = merge(clone(DEFAULTS), next || {});
-  ensureDir(path.dirname(FILE));
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2), 'utf8');
+  try {
+    ensureDir(path.dirname(FILE));
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    const detail = e && e.message ? e.message : String(e);
+    const err = new Error(`设置写入失败（${FILE}）：${detail}`);
+    if (e && e.code) err.code = e.code;
+    throw err;
+  }
   return data;
 }
 
-module.exports = { FILE, DEFAULTS, load, save };
+module.exports = { FILE, DATA_DIR, DEFAULTS, load, save };
