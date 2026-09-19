@@ -26,6 +26,12 @@
           <template v-else>严格复核已结束：成功 {{ recommendationBatch.succeeded }} · 失败 {{ recommendationBatch.failed }} · 用时 {{ fmtDuration(recommendationBatch.finishedAt - recommendationBatch.startedAt) }}。失败记录已保留，可单独重试。</template>
         </div>
         <div v-if="concentrationPreview.length" class="status concentration-warning" role="status" aria-live="polite">题材集中风险：{{ concentrationPreview.join('；') }}</div>
+        <div v-if="quoteExpiredPoolItems.length" class="status stale-warning" role="status" aria-live="polite">
+          行情过期候选 {{ quoteExpiredPoolItems.length }} 只：{{ quoteExpiredPoolSummary }}。复核结论失效的原因是入池时点的行情快照，重新严格复核无法恢复——请在“选股扫描”重新扫描刷新该票行情后重新入池，或直接移除该候选。
+        </div>
+        <div v-if="klineUnverifiedPoolItems.length" class="status kline-warning" role="status" aria-live="polite">
+          K线口径待修复 {{ klineUnverifiedPoolItems.length }} 只：{{ klineUnverifiedPoolSummary }}。本地K线的来源或前复权口径不可核对，只能判为数据不足；点击“重新严格复核”会先按可验证来源重取这些票的K线，再按当前规则复核。
+        </div>
         <div class="toolbar pool-filters" aria-label="候选池筛选">
           <div class="pool-filter-group">
             <span class="pool-filter-label" id="poolTrackFilterLabel">跟踪建议</span>
@@ -72,21 +78,21 @@
 
         <div v-if="!pool.length" class="status empty" role="status">候选池为空：请先到“选股扫描”执行全市扫描，将命中股票纳入候选池；入池后可补齐研判数据并发起批量 AI 研判。</div>
 
-        <div class="table-wrap" v-if="pool.length">
-          <table aria-label="候选池列表">
+        <div class="table-wrap pool-table-wrap" :class="{ 'is-scrolled-x': pinnedScrolled }" :style="pinnedColumnStyle" v-if="pool.length" @scroll="onPoolTableScroll">
+          <table aria-label="候选池列表" ref="poolTableEl">
             <thead>
               <tr>
-                <th>代码</th><th>名称</th><th>推荐</th><th>状态</th><th class="hide-mobile">市场</th><th>现价</th><th><button type="button" class="sort-head" :class="{ asc: poolSortDir === 1 }" :aria-pressed="poolSort === 'changePct'" @click="togglePoolSort('changePct')">涨跌幅</button></th>
+                <th class="pool-pin-code">代码</th><th class="pool-pin-name">名称</th><th>推荐</th><th>状态</th><th class="hide-mobile">市场</th><th>现价</th><th><button type="button" class="sort-head" :class="{ asc: poolSortDir === 1 }" :aria-pressed="poolSort === 'changePct'" @click="togglePoolSort('changePct')">涨跌幅</button></th>
                 <th class="hide-mobile">换手%</th><th><button type="button" class="sort-head" :class="{ asc: poolSortDir === 1 }" :aria-pressed="poolSort === 'volumeRatio'" @click="togglePoolSort('volumeRatio')">量比</button></th><th class="hide-mobile">成交额(亿)</th><th class="hide-mobile">主力净流入(亿)</th>
                  <th class="hide-mobile"><button type="button" class="sort-head" :class="{ asc: poolSortDir === 1 }" :aria-pressed="poolSort === 'score'" @click="togglePoolSort('score')">量能评分</button></th><th>形态信号</th><th class="hide-mobile">K线深度</th><th class="hide-mobile">最新K线</th><th class="hide-mobile"><button type="button" class="sort-head" :class="{ asc: poolSortDir === 1 }" :aria-pressed="poolSort === 'addedAt'" @click="togglePoolSort('addedAt')">入池时间</button></th><th>操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in sortedPool" :key="r.code" tabindex="0" @click="openDetail(r)" @keydown.enter="openDetail(r)">
-                <td class="num">{{ r.code }}</td>
-                <td>{{ r.name }}</td>
+                <td class="num pool-pin-code">{{ r.code }}</td>
+                <td class="pool-pin-name">{{ r.name }}</td>
                 <td><span class="workbench-state" :class="recommendationClass(r)" :title="recommendationReason(r)">{{ recommendationLabel(r) }}</span></td>
-                <td><span class="workbench-state" :class="candidateStateClass(r)">{{ candidateState(r) }}</span></td>
+                <td><span class="workbench-state" :class="candidateStateClass(r)" :title="candidateStateHint(r)">{{ candidateState(r) }}</span></td>
                 <td class="hide-mobile">{{ marketLabel(r.market) }}</td>
                 <td class="num" :class="r.changePct >= 0 ? 'pos' : 'neg'">{{ fmtNum(r.price) }}</td>
                 <td class="num" :class="r.changePct >= 0 ? 'pos' : 'neg'">{{ r.changePct >= 0 ? '+' : '' }}{{ fmtNum(r.changePct) }}%</td>
@@ -116,12 +122,12 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, pool, watchlist, summary, poolPrefetch, recommendationBatch, poolRecommendations, judgmentBatch, hasFailedJudgments, poolBusy, poolMsgError, status, poolMsg, poolTrackFilterOptions, poolTrackFilter, poolPatternFilterOptions, poolPatternFilter, poolStats, poolFilterStats, poolSortDir, poolSort, sortedPool } = storeToRefs(app);
-const { startPoolKline, startRecommendations, stopRecommendations, openBatchConfirm, moveAllToWatch, loadPool, clearPool, fmtDuration, stopBatch, stopPoolKline, togglePoolSort, openDetail, recommendationClass, recommendationLabel, recommendationReason, candidateStateClass, candidateState, marketLabel, fmtNum, poolPatternLabel, klineDone, poolKlineLatest, fmtClock, fmtDateTime, isPoolItemBusy, moveToWatch, removeFromPool } = app;
+const { mode, pool, watchlist, summary, poolPrefetch, recommendationBatch, poolRecommendations, judgmentBatch, hasFailedJudgments, poolBusy, poolMsgError, status, poolMsg, poolTrackFilterOptions, poolTrackFilter, poolPatternFilterOptions, poolPatternFilter, poolStats, poolFilterStats, poolSortDir, poolSort, sortedPool, concentrationPreview, quoteExpiredPoolItems, quoteExpiredPoolSummary, klineUnverifiedPoolItems, klineUnverifiedPoolSummary } = storeToRefs(app);
+const { startPoolKline, startRecommendations, stopRecommendations, openBatchConfirm, moveAllToWatch, loadPool, clearPool, fmtDuration, stopBatch, stopPoolKline, togglePoolSort, openDetail, recommendationClass, recommendationLabel, recommendationReason, candidateStateClass, candidateState, candidateStateHint, marketLabel, fmtNum, poolPatternLabel, klineDone, poolKlineLatest, fmtClock, fmtDateTime, isPoolItemBusy, moveToWatch, removeFromPool } = app;
 const klineQualityLabel = (code) => {
   const quality = poolKlineLatest(code).quality;
   if (quality?.listingHistoryComplete) return `上市历史完整 ${quality.depth}/${quality.target}`;
@@ -141,23 +147,37 @@ const isSelectedRecommendation = (row) => recommendationFor(row).status === 'suc
 const isObservationRecommendation = (row) => recommendationFor(row).status === 'success' && isCurrentRecommendation(row) && recommendationFor(row).classification === 'pending_confirmation';
 const selectedTransferCount = computed(() => Math.min(5, pool.value.filter(isSelectedRecommendation).length));
 const hasFailedRecommendations = computed(() => Object.values(poolRecommendations.value).some((item) => item && item.status === 'failed'));
-const primaryThemeName = (item) => {
-  const evidence = item.selectionEvidence || item;
-  const ranks = Array.isArray(evidence.candidateThemeRanks) ? evidence.candidateThemeRanks : [];
-  const rank = ranks.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
-  const themes = Array.isArray(evidence.themeEvidence) ? evidence.themeEvidence : (item.themeEvidence || []);
-  const theme = themes.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
-  return String((rank && (rank.name || rank.code)) || (theme && (theme.name || theme.code)) || '');
+
+// 候选池冻结列：横向滚动时“代码 / 名称”吸左。第二列的吸左偏移必须等于第一列的实测宽度，
+// 因此这里测量表头首列宽度并写入 CSS 变量；窗口、缩放或列宽变化时重新测量。
+const poolTableEl = ref(null);
+const pinnedCodeWidth = ref(0);
+const pinnedScrolled = ref(false);
+const pinnedColumnStyle = computed(() => (pinnedCodeWidth.value ? { '--pool-pin-name-left': `${pinnedCodeWidth.value}px` } : {}));
+const measurePinnedCode = () => {
+  const head = poolTableEl.value?.querySelector('thead th.pool-pin-code');
+  // 向上取整：名称列宁可让出不到 1px，也不覆盖代码列的内容。
+  const width = head ? Math.ceil(head.getBoundingClientRect().width) : 0;
+  pinnedCodeWidth.value = width > 0 ? width : 0;
 };
-const concentrationPreview = computed(() => {
-  const counts = new Map();
-  for (const item of [...watchlist.value, ...pool.value.filter(isSelectedRecommendation).slice(0, 5)]) {
-    const evidence = item.selectionEvidence || item;
-    const names = new Set((Array.isArray(evidence.themeEvidence) ? evidence.themeEvidence : (item.themeEvidence || [])).map((theme) => String(theme.name || theme.code || '')).filter(Boolean));
-    const primary = primaryThemeName(item);
-    if (primary) names.add(primary);
-    for (const name of names) counts.set(name, (counts.get(name) || 0) + 1);
+const onPoolTableScroll = (event) => { pinnedScrolled.value = event.currentTarget.scrollLeft > 1; };
+let poolResizeObserver = null;
+const syncPoolTable = () => {
+  measurePinnedCode();
+  if (!poolResizeObserver || !poolTableEl.value) return;
+  poolResizeObserver.disconnect();
+  poolResizeObserver.observe(poolTableEl.value);
+};
+onMounted(() => {
+  window.addEventListener('resize', measurePinnedCode);
+  if (typeof ResizeObserver === 'function') {
+    poolResizeObserver = new ResizeObserver(syncPoolTable);
   }
-  return [...counts.entries()].filter(([, count]) => count > 2).map(([name, count]) => `${name}预计${count}只，超过建议线2只`);
+  nextTick(syncPoolTable);
 });
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', measurePinnedCode);
+  if (poolResizeObserver) { poolResizeObserver.disconnect(); poolResizeObserver = null; }
+});
+watch(() => pool.value.length, () => { nextTick(syncPoolTable); });
 </script>

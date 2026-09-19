@@ -75,7 +75,9 @@ async function syncOne(code, { lmt = DEFAULT_LMT } = {}) {
     const sourceBars = normalizeBars(raw && raw.kline);
     if (!sourceBars.length) {
       const attempts = Array.isArray(raw && raw.sourceAttempts) ? raw.sourceAttempts : [];
-      const allErrors = attempts.length > 0 && attempts.every((x) => x.outcome === 'error' || x.outcome === 'cooldown');
+      // 本地来源（通达信）返回空只表示该票本地没有文件，与网络可用性无关，不参与该判定。
+      const networkAttempts = attempts.filter((x) => !(x && x.local && x.outcome === 'empty'));
+      const allErrors = networkAttempts.length > 0 && networkAttempts.every((x) => x.outcome === 'error' || x.outcome === 'cooldown');
       return {
         code, ok: false, checked: true, changed: false, appended: 0, overwritten: 0, changedDates: [],
         latestDate: localLast && localLast.date || '', sourceAttempts: attempts,
@@ -114,6 +116,7 @@ async function syncOne(code, { lmt = DEFAULT_LMT } = {}) {
       source: raw.source,
       adjustmentType: raw.adjustmentType,
       decisionStatus: decision.status,
+      storedAdjustment: decision.storedAdjustment || (localRecord && localRecord.adjustmentType) || '',
     });
     if (rebuild) {
       const written = await writeKline(code, sourceBars, sourceLast.date, { ...metaOptions, replaceSeries: true });

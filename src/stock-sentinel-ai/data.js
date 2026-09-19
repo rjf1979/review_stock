@@ -7,8 +7,9 @@
 const { writeSnapshot, readSnapshot, readLatestSnapshot, writeMarketSnapshotBatch, writeMarketSentimentSnapshot, readMarketSentimentSnapshot, readMarketSentimentEvidence, writeKline, writeKlineListingEvidence, readKline } = require('./storage');
 const { isCnStockTradingSession } = require('./market-session');
 const { validBar } = require('./kline-quality');
-const { ADJUSTMENT, normalizeKlineVolumeByContract, resolveSourceAdjustment, decideKlineWrite, canSafelyRebuildUnverifiedSeries, describeSourceCapabilities } = require('./kline-source-contract');
+const { ADJUSTMENT, normalizeKlineVolumeByContract, resolveSourceAdjustment, isAdjustmentCorroborated, decideKlineWrite, canSafelyRebuildUnverifiedSeries, describeSourceCapabilities } = require('./kline-source-contract');
 const { evaluateTailStatus } = require('./kline-tail-status');
+const { fetchTdxKline } = require('./tdx-vipdoc');
 const { TextDecoder } = require('util');
 const crypto = require('crypto');
 
@@ -492,35 +493,61 @@ function normalizeKlineVolumeSeries(bars) {
   return list;
 }
 
+// 腾讯 fqkline 契约下的两个等价入口：主站 web.ifzq.gtimg.cn 与其财经代理 proxy.finance.qq.com。
+// 2026-09-14 实测主站被腾讯 WAF 拦截（HTTP 501 + waf.tencent.com 跳转页），代理入口返回
+// 同结构 JSON（600519/603920 逐日收盘价与主站完全一致，节点名同样为 qfqday）。主站被拦时
+// 若整条链退化到无法验证复权口径的来源，候选池会永久卡在「K线前复权口径未验证」，
+// 因此同一契约内保留顺序回退；两个入口都不可用时仍按失败处理，不降级口径。
+const TENCENT_KLINE_HOSTS = [
+  'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+  'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get',
+];
+
 async function fetchKlineTencent(code, lmt) {
   // 北交所代码推断：当前统一为 92 开头，遗留为 4/8 开头；勿把 920 误判为深市。
   const prefix =
     code.startsWith('6') ? 'sh'
     : (code.startsWith('4') || code.startsWith('8') || code.startsWith('92')) ? 'bj'
     : 'sz';
-  const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${prefix}${code},day,,,${lmt},qfq`;
-  const response = await fetch(url, {
-    headers: { 'User-Agent': DEFAULT_UA },
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const res = await response.json();
   const symbol = `${prefix}${code}`;
-  const node = res && res.data && res.data[symbol];
-  // 数据节点名是唯一能从响应验证复权口径的证据：qfq 请求返回 qfqday，去掉复权参数则返回 day。
-  const nodeName = node && node.qfqday ? 'qfqday' : node && node.day ? 'day' : '';
-  const arr = (node && (node.qfqday || node.day)) || [];
-  const bars = arr
-    .filter((k) => k && k.length >= 6)
-    .map((k) => ({
-      date: k[0],
-      open: Number(k[1]),
-      close: Number(k[2]),
-      high: Number(k[3]),
-      low: Number(k[4]),
-      volume: normalizeKlineVolume(k[5], 'tencent'),
-    }));
-  return { bars, evidence: { node: nodeName, symbol, requestedAdjustment: ADJUSTMENT.QFQ } };
+  const query = `param=${symbol},day,,,${lmt},qfq`;
+  const failures = [];
+  let blankResponse = null; // 有入口返回了合法 JSON 但没有 qfqday/day 节点：按空响应上报，不标记源故障。
+  for (const host of TENCENT_KLINE_HOSTS) {
+    try {
+      const response = await fetch(`${host}?${query}`, {
+        headers: { 'User-Agent': DEFAULT_UA, Referer: 'https://gu.qq.com/' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const res = await response.json();
+      const node = res && res.data && res.data[symbol];
+      // 数据节点名是唯一能从响应验证复权口径的证据：qfq 请求返回 qfqday，去掉复权参数则返回 day。
+      const nodeName = node && node.qfqday ? 'qfqday' : node && node.day ? 'day' : '';
+      const arr = (node && (node.qfqday || node.day)) || [];
+      const bars = arr
+        .filter((k) => k && k.length >= 6)
+        .map((k) => ({
+          date: k[0],
+          open: Number(k[1]),
+          close: Number(k[2]),
+          high: Number(k[3]),
+          low: Number(k[4]),
+          volume: normalizeKlineVolume(k[5], 'tencent'),
+        }));
+      const hostName = new URL(host).host;
+      // 无 qfqday/day 节点按空响应处理，交给上层链路决定是否换源，不在这里伪造口径。
+      if (!bars.length) {
+        blankResponse = { bars: [], evidence: { node: nodeName, symbol, requestedAdjustment: ADJUSTMENT.QFQ, host: hostName } };
+        continue;
+      }
+      return { bars, evidence: { node: nodeName, symbol, requestedAdjustment: ADJUSTMENT.QFQ, host: hostName } };
+    } catch (e) {
+      failures.push(`${new URL(host).host} ${String((e && e.message) || e).replace(/https?:\/\/\S+/g, '').slice(0, 80)}`);
+    }
+  }
+  if (blankResponse) return blankResponse;
+  throw new Error(failures.join('; ') || '腾讯日K取数失败');
 }
 
 // 个股板块归属：东财公开 slist 接口一次返回行业层级、概念及地域/指数板块。
@@ -676,11 +703,12 @@ async function fetchKlineSina(code, lmt) {
     }));
 }
 
-// ── K线多源链（免费平台故障转移）──────────────────────────────
-// 依次尝试 腾讯 → 东财 → 新浪；任一源拉到足够历史即停。
-// 每个源维护「健康熔断」：连续失败会被降级冷却（冷却期内不再请求），
+// ── K线多源链（免费平台故障转移 + 本地通达信）──────────────────
+// 依次尝试 腾讯 → 通达信本地 → 百度 → 搜狐 → 东财 → 新浪；拿到可自证前复权且深度达标的序列即停。
+// 每个联网源维护「健康熔断」：连续失败会被降级冷却（冷却期内不再请求），
 // 成功后立即复位，从而在某个平台限流时自动切到其它免费平台，避免继续轰接口。
-const KLINE_SOURCES = ['tencent', 'baidu', 'sohu', 'em', 'sina'];
+// 通达信本地源是本地读盘，失败与网络无关，因此不参与健康熔断（见 fetchKlineRaw）。
+const KLINE_SOURCES = ['tencent', 'tdx', 'baidu', 'sohu', 'em', 'sina'];
 const KLINE_SOURCE_COOLDOWN_MS = 60_000;      // 单源冷却起始时长
 const KLINE_SOURCE_COOLDOWN_MAX_MS = 300_000; // 单源冷却上限（5 分钟）
 const KLINE_SOURCE_FAIL_LIMIT = 2;            // 连续失败该次数 → 冷却
@@ -726,10 +754,12 @@ function klineSourceOrder(prefer) {
 async function fetchKlineBySource(src, code, lmt) {
   const result =
     src === 'tencent' ? await fetchKlineTencent(code, lmt)
+    : src === 'tdx' ? await fetchTdxKline(code, lmt)
     : src === 'baidu' ? await fetchKlineBaidu(code, lmt)
     : src === 'sohu' ? await fetchKlineSohu(code, lmt)
     : src === 'em' ? await fetchKlineEastmoney(code, lmt)
-    : await fetchKlineSina(code, lmt);
+    : src === 'sina' ? await fetchKlineSina(code, lmt)
+    : [];
   if (Array.isArray(result)) return { bars: result, evidence: {} };
   return { bars: (result && result.bars) || [], evidence: (result && result.evidence) || {} };
 }
@@ -743,34 +773,53 @@ async function fetchKlineRaw(code, { lmt = 250, prefer = '' } = {}) {
   let adjustmentType = '';
   let sourceEvidence = {};
   const sourceAttempts = [];
-  for (const src of klineSourceOrder(prefer)) {
+  const order = klineSourceOrder(prefer);
+  // 能自证前复权的来源（腾讯 qfqday / 通达信 gbbq 推导）：这些来源值得多试一次，
+  // 否则腾讯先返回的未复权 `day` 节点会在深度达标时提前终止整条链，本地前复权永远接不上。
+  const qfqCapable = new Set(order.filter((src) => isAdjustmentCorroborated(src, ADJUSTMENT.QFQ)));
+  let qfqCapableRemaining = qfqCapable.size;
+  // 口径优劣：可自证前复权 > 可自证未复权 > 口径未知。仅在尾日与深度相同时用于决胜。
+  const adjustmentRank = (value) => (value === ADJUSTMENT.QFQ ? 2 : value === ADJUSTMENT.UNADJUSTED ? 1 : 0);
+  for (const src of order) {
+    if (qfqCapable.has(src)) qfqCapableRemaining -= 1;
     // 冷却源仍排在最后尝试：健康源全不可用时保留最后的故障转移机会。
     const cooling = srcHealth(src).cooldownUntil > Date.now();
     try {
       const fetched = await fetchKlineBySource(src, code, lmt);
+      // 未配置的本地来源（通达信目录为空）等于「本来源不存在」：不记入尝试记录，
+      // 也不参与「全部联网源不可用」的判定，避免把「没接本地数据」说成取数失败。
+      if (fetched && fetched.evidence && fetched.evidence.disabled) continue;
       const rawRows = fetched.bars;
       const rows = normalizeKlineVolumeSeries(rawRows).filter(validBar);
       const resolvedAdjustment = resolveSourceAdjustment(src, fetched.evidence);
       if (rows && rows.length) {
         markKlineSourceSuccess(src);
         sourceAttempts.push({
-          source: src, outcome: 'success', depth: rows.length, cooling,
+          source: src, outcome: 'success', depth: rows.length, cooling, local: src === 'tdx',
           adjustmentType: resolvedAdjustment,
           adjustmentVerified: resolvedAdjustment !== ADJUSTMENT.UNKNOWN,
         });
       } else {
-        sourceAttempts.push({ source: src, outcome: 'empty', retryable: false, cooling, adjustmentType: resolvedAdjustment });
+        sourceAttempts.push({ source: src, outcome: 'empty', retryable: false, cooling, local: src === 'tdx', adjustmentType: resolvedAdjustment });
       }
       const candidateLatest = rows.length ? String(rows[rows.length - 1].date || '') : '';
       const currentLatest = kline.length ? String(kline[kline.length - 1].date || '') : '';
-      if (rows.length && (candidateLatest > currentLatest || (candidateLatest === currentLatest && rows.length > kline.length))) {
+      // 选择规则：尾日更新者优先；尾日相同时更深的优先；两者都相同时口径更可信者优先
+      // （可自证前复权 > 未复权 > 未知），避免同深度下被未复权序列长期占据候选池。
+      const candidateBetter = candidateLatest > currentLatest
+        || (candidateLatest === currentLatest && (rows.length > kline.length
+          || (rows.length === kline.length && adjustmentRank(resolvedAdjustment) > adjustmentRank(adjustmentType))));
+      if (rows.length && candidateBetter) {
         kline = rows; source = src; adjustmentType = resolvedAdjustment; sourceEvidence = fetched.evidence || {};
       }
-      // 主源已达到目标深度时停止，避免为校验备用源而重复请求；若主源尾日过旧，
-      // 调用方可通过 prefer 指定备用源重试，避免不同复权口径的历史序列拼接。
-      if (kline.length >= lmt) break;
+      // 终止条件：已拿到目标深度且口径可自证前复权 → 立即停止；
+      // 或深度达标但所有「可自证前复权」的来源都已试过 → 再试也无从提升口径，停止避免重复请求。
+      // 若主源尾日过旧，调用方可通过 prefer 指定备用源重试，避免不同复权口径的历史序列拼接。
+      const fullDepth = kline.length >= lmt;
+      if (fullDepth && (adjustmentType === ADJUSTMENT.QFQ || qfqCapableRemaining === 0)) break;
     } catch (e) {
-      markKlineSourceFail(src);
+      // 本地通达信源读盘失败与网络无关，不进入源健康冷却。
+      if (src !== 'tdx') markKlineSourceFail(src);
       const message = String(e && e.message || e).replace(/https?:\/\/\S+/g, '').slice(0, 120);
       sourceAttempts.push({ source: src, outcome: 'error', reason: message || '请求失败', retryable: true });
     }
@@ -793,27 +842,32 @@ async function fetchKlineRaw(code, { lmt = 250, prefer = '' } = {}) {
 
 async function fetchKline(code, { lmt = 250, dataSource = 'live', minDate = '', prefer = '' } = {}) {
   const today = todayStr();
+  const cachedBefore = await readKline(code);
 
   // 缓存优先：live 不优先；local 仅用当日缓存；last 用不早于 minDate（快照日期）的缓存。
   if (dataSource !== 'live') {
-    const cached = await readKline(code);
-    if (cached && Array.isArray(cached.kline) && cached.kline.length >= Math.min(lmt, 10)) {
-      const cacheDate = String(cached.date || '');
+    if (cachedBefore && Array.isArray(cachedBefore.kline) && cachedBefore.kline.length >= Math.min(lmt, 10)) {
+      const cacheDate = String(cachedBefore.date || '');
       const ok = dataSource === 'local' ? true
         : dataSource === 'last' ? (!minDate || cacheDate >= minDate)
           : false;
-      if (ok) return cached.kline;
+      if (ok) return cachedBefore.kline;
     }
   }
 
+  // 既有序列更深时按既有深度取数：整段重建要求新序列覆盖旧窗口，只请求默认深度会让
+  // 可验证来源的新序列因“缩短历史”被拒绝，从而永久停留在不可验证口径上。
+  const storedDepth = cachedBefore && Array.isArray(cachedBefore.kline) ? cachedBefore.kline.length : 0;
+  const requestLmt = Math.min(1000, Math.max(Number(lmt) || 0, storedDepth));
   // 多源链取数后落盘，兼容既有调用方（/api/kline、screener-core）。
-  const raw = await fetchKlineRaw(code, { lmt, prefer });
+  const raw = await fetchKlineRaw(code, { lmt: requestLmt, prefer });
   const { kline } = raw;
-  const listingEvidence = kline.length < lmt ? await fetchStockListingEvidence(code) : {};
+  const listingEvidence = kline.length < requestLmt ? await fetchStockListingEvidence(code) : {};
   if (listingEvidence.listingDate) await writeKlineListingEvidence(code, listingEvidence);
   // 只在有有效 K 线时落盘，避免失败/无数据时写空文件污染 data/kline。
   // 落盘前先判定复权口径是否与既有序列相容：冲突时保留既有序列，不静默混写。
   if (kline.length) {
+    // 落盘前重新读取：联网等待期间可能有其它流程写入同一只票，判定必须基于最新既有序列。
     const stored = await readKline(code);
     const decision = decideKlineWrite({ stored, source: raw.source, adjustmentType: raw.adjustmentType });
     const rebuild = canSafelyRebuildUnverifiedSeries({
@@ -822,6 +876,7 @@ async function fetchKline(code, { lmt = 250, dataSource = 'live', minDate = '', 
       source: raw.source,
       adjustmentType: raw.adjustmentType,
       decisionStatus: decision.status,
+      storedAdjustment: decision.storedAdjustment || (stored && stored.adjustmentType) || '',
     });
     if (decision.allowed || rebuild) {
       const written = await writeKline(code, kline, today, {
@@ -967,6 +1022,7 @@ module.exports = {
   fetchMarketSnapshot,
   fetchKline,
   fetchKlineRaw,
+  fetchTdxKline,
   fetchKlineBaidu,
   fetchKlineSohu,
   fetchStockListingEvidence,

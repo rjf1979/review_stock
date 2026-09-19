@@ -113,5 +113,85 @@ themeModule.getAttribution = async (code) => ({
   assert.ok(res3.record.promptVersion.startsWith(aiAssist.PROMPT_VERSION + '-'), '记录应带固定协议的 Prompt 版本前缀');
   assert.notStrictEqual(res3.record.promptVersion, res.record.promptVersion, '用户 Prompt 内容变更后幂等版本应随之变化');
 
+  // rsi_low_turn v4 接入：命中该形态时，研判证据必须改用 v4 退出计划（结构止损 + 6R 跟踪启动线）。
+  const v4Bars = [];
+  let v4Day = 0;
+  const pushV4 = (close, { open = close + 0.5, volume = 1000 } = {}) => {
+    v4Day += 1;
+    const dd = new Date(Date.UTC(2026, 0, 1));
+    dd.setUTCDate(dd.getUTCDate() + v4Day);
+    v4Bars.push({
+      date: dd.toISOString().slice(0, 10),
+      open,
+      high: Math.max(open, close) + 0.2,
+      low: Math.min(open, close) - 0.2,
+      close,
+      volume,
+    });
+  };
+  for (let k = 0; k < 20; k++) pushV4(100, { open: 100 });
+  for (let k = 1; k <= 40; k++) pushV4(100 - k * 1.035, { open: 100 - (k - 1) * 1.035 });
+  for (let k = 1; k <= 3; k++) pushV4(58.6 + k * 0.6, { open: 58.6 + (k - 1) * 0.6, volume: 1300 });
+  await storage.writeKline('000592', v4Bars, v4Bars[v4Bars.length - 1].date);
+  const v4Prep = await judgmentCore.prepareCode('000592', { fetchDays: 250 });
+  assert.ok(v4Prep.patterns.some((p) => p.patternId === 'rsi_low_turn'), 'v4 形态应被本地复筛命中');
+  assert.ok(v4Prep.rsiLowTurnPlan, '命中 v4 时应返回形态退出计划');
+  assert.strictEqual(v4Prep.rsiLowTurnPlan.algorithmVersion, 'rsi-low-turn-v4');
+  assert.strictEqual(v4Prep.rsiLowTurnPlan.exitRule.maxHoldDays, 20, 'v4 最长持有 20 个交易日');
+  assert.strictEqual(v4Prep.rsiLowTurnPlan.exitRule.partialExitFraction, 0, 'v4 不做 1R 减仓');
+  assert.strictEqual(v4Prep.rsiLowTurnPlan.takeProfit[0].type, 'trail_activation', '6R 只是跟踪启动线');
+  assert.ok(String(v4Prep.rsiLowTurnPlan.stopLoss.source).includes('8%'), '结构止损应带 8% 风险上限');
+  assert.ok(JSON.stringify(v4Prep.evidence).includes('rsi-low-turn-v4'), '研判证据应带上 v4 退出口径版本');
+  console.log('judgment core v4 分支 ok', v4Prep.rsiLowTurnPlan.algorithmVersion, v4Prep.rsiLowTurnPlan.price, v4Prep.rsiLowTurnPlan.stopLoss.value);
+
+  // limit_pullback v4 接入：涨停后缩量回踩 + 超跌 + 相对沪深300 走弱，研判证据必须改用 limit-pullback-v4 退出计划。
+  // 该形态需要基准序列做相对强度核对，测试写入临时缓存文件（与真实 data/bench-sh000300.json 同结构）。
+  const limitBars = [];
+  let limitDay = 0;
+  const pushLimit = (close, { open = close + 0.2, high = null, low = null, volume = 1000 } = {}) => {
+    limitDay += 1;
+    const dd = new Date(Date.UTC(2026, 0, 1));
+    dd.setUTCDate(dd.getUTCDate() + limitDay);
+    limitBars.push({
+      date: dd.toISOString().slice(0, 10),
+      open,
+      high: high == null ? Math.max(open, close) + 0.2 : high,
+      low: low == null ? Math.min(open, close) - 0.2 : low,
+      close,
+      volume,
+    });
+  };
+  for (let k = 0; k < 70; k++) pushLimit(100, { open: 100, high: 100.5, low: 99.5 });
+  for (let k = 0; k < 40; k++) {
+    const close = 100 - 0.85 * (k + 1);
+    pushLimit(close, { open: close + 0.4, high: close + 0.6, low: close - 0.3 });
+  }
+  const limitUpClose = 66 * 1.1;
+  pushLimit(limitUpClose, { open: 66.6, high: limitUpClose, low: 66.2, volume: 3000 }); // 涨停：+10% 且收盘封在最高
+  pushLimit(limitUpClose * 0.985, { open: limitUpClose * 0.992, high: limitUpClose * 0.995, low: limitUpClose * 0.978, volume: 1600 });
+  pushLimit(limitUpClose * 0.970, { open: limitUpClose * 0.983, high: limitUpClose * 0.985, low: limitUpClose * 0.964, volume: 1200 });
+  pushLimit(limitUpClose * 0.950, { open: limitUpClose * 0.967, high: limitUpClose * 0.972, low: limitUpClose * 0.945, volume: 700 });
+  fs.writeFileSync(path.join(storage.DATA_DIR, 'bench-sh000300.json'), JSON.stringify({
+    code: 'sh000300',
+    name: '沪深300',
+    source: 'test-fixture',
+    fetchedAt: new Date().toISOString(),
+    bars: limitBars.map((bar) => ({ date: bar.date, close: 100 })), // 基准平盘：个股 20 日 -13% 即为相对走弱
+  }), 'utf8');
+  require('../bench-series').resetBenchCache();
+  await storage.writeKline('600519', limitBars, limitBars[limitBars.length - 1].date);
+  const limitPrep = await judgmentCore.prepareCode('600519', { fetchDays: 250 });
+  assert.ok(limitPrep.patterns.some((p) => p.patternId === 'limit_pullback'), 'limit_pullback 形态应被本地复筛命中');
+  assert.ok(limitPrep.limitPullbackPlan, '命中 limit_pullback 时应返回形态退出计划');
+  assert.strictEqual(limitPrep.limitPullbackPlan.algorithmVersion, 'limit-pullback-v4');
+  assert.strictEqual(limitPrep.limitPullbackPlan.exitRule.maxHoldDays, 20, 'v4 最长持有 20 个交易日');
+  assert.strictEqual(limitPrep.limitPullbackPlan.exitRule.partialExitFraction, 0, 'v4 不做 1R 减仓');
+  assert.strictEqual(limitPrep.limitPullbackPlan.exitRule.trailMa, 5);
+  assert.strictEqual(limitPrep.limitPullbackPlan.takeProfit[0].type, 'trail_activation', '6R 只是跟踪启动线');
+  assert.ok(String(limitPrep.limitPullbackPlan.stopLoss.source).includes('8%'), '结构止损应带 8% 风险上限');
+  assert.ok(limitPrep.limitPullbackPlan.evidence.rsPct <= -5, '相对强度应弱于沪深300 5 个百分点以上');
+  assert.ok(JSON.stringify(limitPrep.evidence).includes('limit-pullback-v4'), '研判证据应带上 limit_pullback v4 退出口径版本');
+  console.log('judgment core limit_pullback v4 分支 ok', limitPrep.limitPullbackPlan.algorithmVersion, limitPrep.limitPullbackPlan.price, limitPrep.limitPullbackPlan.stopLoss.value, 'rs', limitPrep.limitPullbackPlan.evidence.rsPct);
+
   console.log('judgment core flow ok', { id: res.record.id, priceLevelSetId: res.record.priceLevelSetId });
 })().catch((e) => { console.error(e); process.exit(1); });

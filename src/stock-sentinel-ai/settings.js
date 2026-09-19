@@ -15,6 +15,9 @@ const DEFAULTS = {
   fetchDays: 250,
   // 交易时间内统一日 K 自动补全周期（秒），候选池与自选共同使用。
   klineSyncIntervalSec: 300,
+  // 通达信本地数据目录：留空表示关闭本地日线来源，只走联网源。
+  // 默认不写死盘符，避免开发/测试环境在未配置时真读本地磁盘。
+  tdxDir: '',
   tradingStyle: '',
   ai: {
     enabled: false,
@@ -54,6 +57,7 @@ function merge(base, next) {
   const src = next && typeof next === 'object' ? next : {};
   out.fetchDays = Math.round(clampNum(src.fetchDays, 20, 500, base.fetchDays));
   out.klineSyncIntervalSec = Math.round(clampNum(src.klineSyncIntervalSec, 30, 3600, base.klineSyncIntervalSec));
+  out.tdxDir = typeof src.tdxDir === 'string' ? src.tdxDir.trim() : base.tdxDir;
   out.tradingStyle = ['short', 'medium', 'long'].includes(src.tradingStyle) ? src.tradingStyle : '';
   if (src.ai && typeof src.ai === 'object') {
     const a = src.ai;

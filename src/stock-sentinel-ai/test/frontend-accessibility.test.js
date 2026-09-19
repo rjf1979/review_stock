@@ -16,11 +16,12 @@ function collectFrontendSources() {
     }
   };
   walk(root);
-  // js/css 文件内容包进 script 块，让标签平衡检查按原 index.html 的口径剥离脚本内容
+  // js/mjs/css 文件内容包进 script 块，让标签平衡检查按原 index.html 的口径剥离脚本内容
+  // （.mjs 与 .js 同属代码：不包进 script 块时，`i < arr.length` 之类的比较会被误判成标签）
   return out.sort()
     .map((f) => {
       const c = fs.readFileSync(f, 'utf8');
-      return /\.js$|\.css$/.test(f) ? '<script>' + c + '</script>' : c;
+      return /\.m?js$|\.css$/.test(f) ? '<script>' + c + '</script>' : c;
     })
     .join('\n');
 }
@@ -90,6 +91,17 @@ assert.match(html, /形态命中<\/span><strong class="pos">\{\{ poolFilterStats
 assert.match(html, /const isPoolItemBusy = \(code, action\) => action \? poolItemBusy\.value\[code\] === action : Boolean\(poolItemBusy\.value\[code\]\)/);
 assert.match(html, /:aria-busy="isPoolItemBusy\(r\.code, 'move'\)"/);
 assert.match(html, /:aria-busy="isPoolItemBusy\(r\.code, 'remove'\)"/);
+assert.match(html, /:aria-busy="isPoolItemBusy\(r\.code, 'add'\)"/, '扫股结果的行内入池按钮必须提供逐行忙碌态');
+assert.match(html, /:aria-busy="isPoolItemBusy\(r\.code, 'watch'\)"/, '扫股结果的行内自选按钮必须提供逐行忙碌态');
+assert.match(html, /v-show="poolMsg" class="status" :class="poolMsgError \? 'error' : ''" role="status" aria-live="polite"/, '扫股页必须就地显示入池结果');
+// 入池是写操作：写入后的整池刷新必须强制执行，否则会被 loadPool() 的 5 秒只读节流吞掉，
+// 表现为“点了按钮没反应、多点几次才生效”。
+const postPoolSource = scanStoreSource.slice(scanStoreSource.indexOf('async function postPool('), scanStoreSource.indexOf('async function addToPool('));
+assert.match(postPoolSource, /await loadPool\(true\);/, '入池写入后必须强制刷新候选池');
+assert.doesNotMatch(postPoolSource, /await loadPool\(\);/);
+// 行内操作按钮的禁用条件包含 poolBusy 与逐条忙碌态：禁用态必须可见，且触控高度达到 44px 基线。
+assert.match(html, /\.watch-remove \{[^}]*min-height: 44px/, '行内操作按钮触控高度必须达到 44px 基线');
+assert.match(html, /\.watch-remove:disabled \{[^}]*cursor: not-allowed[^}]*\}/, '行内操作按钮必须定义可见的禁用态');
 assert.match(html, /class="pool-row-actions"/);
 assert.match(html, />转精选<\/span>/);
 assert.match(html, />加入观察<\/span>/);

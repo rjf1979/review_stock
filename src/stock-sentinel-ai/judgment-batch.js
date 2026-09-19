@@ -159,12 +159,15 @@ function closedMarketAlreadyJudged(last, prepared, phase) {
   return String(dates.klineDate || '') === klineDate && String(dates.snapshotDate || '') === snapshotDate;
 }
 
-async function classify(code, prepared, model, retryOnly) {
+async function classify(code, prepared, model, retryOnly, overrides = {}) {
   if (prepared.dataStatus === 'not_ready') return { type: 'notReady' };
-  const last = await getLastSuccessJudgment(code);
+  const last = overrides.last !== undefined ? overrides.last : await getLastSuccessJudgment(code);
   if (last && Number(last.finishedAt) > 0 && Date.now() - Number(last.finishedAt) < 60 * 60 * 1000) return { type: 'noChange' };
-  const phase = judgmentCore.detectMarketPhase(prepared.snapshotDate, prepared.read && prepared.read.klineDate);
-  if (last && phase === 'closed' && String(last.tradeDate || '') === String(prepared.snapshotDate || '')) return { type: 'noChange' };
+  const phase = overrides.phase || judgmentCore.detectMarketPhase(prepared.snapshotDate, prepared.read && prepared.read.klineDate);
+  // 闭市去重只能由 closedMarketAlreadyJudged 判定：它同时核对本次要用的 K 线日期与候选快照日期。
+  // 曾用「上次研判交易日 === 候选快照日」做捷径，但候选入池行情没有随扫描刷新时两者会一起停在旧日期，
+  // K 线已推进到新交易日也会被判为“无变化”而整只跳过：候选池状态列于是永远停在“待复核”，
+  // 与批量研判预览（按快照 + K 线双日期分类，显示“需更新”）互相矛盾。
   if (closedMarketAlreadyJudged(last, prepared, phase)) return { type: 'noChange' };
   if (last && judgmentCore.sameEvidenceAsLast(prepared, last, model)) return { type: 'noChange' };
   if (last) return { type: 'evidenceUpdate' };
@@ -361,4 +364,4 @@ function stop() {
   return { stopped: wasRunning, ...getStatus() };
 }
 
-module.exports = { start, stop, getStatus, run, preview, DEFAULT_GAP_MS, setEventSink: (fn) => { eventSink = typeof fn === 'function' ? fn : null; }, closedMarketAlreadyJudged };
+module.exports = { start, stop, getStatus, run, preview, classify, DEFAULT_GAP_MS, setEventSink: (fn) => { eventSink = typeof fn === 'function' ? fn : null; }, closedMarketAlreadyJudged };

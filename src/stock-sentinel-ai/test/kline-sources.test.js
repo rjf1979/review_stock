@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict');
 
+// 本用例只验证联网多源链的字段映射与深度选择，必须关闭本地通达信来源：
+// 否则本机配置了 tdxDir 后，本地真实序列会凭更新的尾日胜出，覆盖受控响应断言。
+process.env.STOCK_SENTINEL_TDX_DIR = '';
+
 const days = Array.from({ length: 10 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')}`);
 const baiduRows = days.map((date, i) => `${i},${date},10,${10 + i},${1000 + i},${11 + i},9,${100000 + i}`).join(';');
 const sohuRows = [...days].reverse().map((date, i) => [date, 10, 10 + i, 0, '0%', 9, 11 + i, 1000 + i]);

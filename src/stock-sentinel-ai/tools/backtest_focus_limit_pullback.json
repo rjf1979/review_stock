@@ -1,0 +1,10 @@
+{
+  "_comment": "v4 focus config for limit_pullback: entry keeps only deeply corrected limit-up pullbacks (60-trading-day return <= -30% AND 20-day relative strength vs HS300 <= -5pp), exit rides the position (first target 6R with no partial, measured target off, structural stop unchanged, max hold 20 days). Evidence: docs/rsi_low_turn与limit_pullback盈亏比优化报告-2021至2026.md, data/backtest/xingtaidu/focus/*.json.",
+  "patterns": ["limit_pullback"],
+  "params": {
+    "limit_pullback": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}

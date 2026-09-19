@@ -13,6 +13,7 @@ const { SELECTION_CONTRACT_VERSION, EVIDENCE_STATUS, EXCLUSION_REASONS, createBa
 const { buildInitialSelection } = require('./selection-policy');
 const { rulesFingerprint } = require('./recommendation-validity');
 const { isAdjustmentCorroborated } = require('./kline-source-contract');
+const { ensureBenchSeries, benchCloseLookup, benchCloseOnOrBefore, benchLookupSync } = require('./bench-series');
 
 let runtimePrescan = null;
 
@@ -20,7 +21,26 @@ let runtimePrescan = null;
 // 55 分适合观察池，不适合作为全市场自动入池门槛；70 分用于压缩
 // 候选规模，后续仍可通过形态复筛和 AI 综合评分继续收敛。
 const AUTO_POOL_MIN_SCORE = 70;
-const LOCAL_KLINE_CONFIRM_MIN_BARS = 60;
+// 本地 K 线形态复筛要求的最小根数，与回测样本口径对齐。
+// 2026-09-19 分桶复验（.runtime/bt60.py，2021-01-01~2026-09-18，同一套引擎）：
+// hist 60-99 桶里 limit_pullback v4 盈亏比 0.75（直接亏钱）、rsi_low_turn v4 盈亏比 1.84（基准 3.11）；
+// 100-149 桶只有 rsi 勉强持平且样本 66% 挤在两个信号日；150-249 桶两组形态均明显为正
+// （rsi 7.68 / lp 5.27，与≥250 桶同档），因此可复筛下限取 150 根，而不是 250 或 60。
+// 详见 docs/2026-09-19-60根口径回测支撑验证.md。
+const LOCAL_KLINE_MIN_BARS = 150;
+// 可交易范围：上证主板 + 深证主板 + 创业板。科创板 688/689 与北交所 4xx/8xx/92x
+// 不在这三档内，扫描阶段即按「超出可交易范围」排除，不占用候选配额。
+const TRADABLE_CODE_PREFIXES = Object.freeze([
+  '600', '601', '603', '605', // 上证主板
+  '000', '001', '002', '003', // 深证主板（含原中小板）
+  '300', '301',               // 创业板
+]);
+
+function isTradableCode(code) {
+  const value = String(code || '');
+  if (!/^\d{6}$/.test(value)) return false;
+  return TRADABLE_CODE_PREFIXES.some((prefix) => value.startsWith(prefix));
+}
 
 function clamp(value, lo, hi) {
   return Math.min(hi, Math.max(lo, value));
@@ -80,6 +100,17 @@ function volumeProfile(item) {
 function meetsAutoPoolGate(profile, minScore = AUTO_POOL_MIN_SCORE) {
   const score = Number(profile && profile.score);
   return Number.isFinite(score) && score >= minScore;
+}
+
+// 规则级量能分门槛覆盖：命中多条规则时取最宽松的一条（最小值）。
+// 没有规则显式声明 minVolumeScore 时等价于全局门槛，保持既有行为完全不变。
+function autoPoolThresholdFor(hitRules, fallback = AUTO_POOL_MIN_SCORE) {
+  const base = Number.isFinite(Number(fallback)) ? Number(fallback) : AUTO_POOL_MIN_SCORE;
+  const rules = Array.isArray(hitRules) ? hitRules : [];
+  const declared = rules
+    .map((rule) => Number(rule && rule.minVolumeScore))
+    .filter((value) => Number.isFinite(value));
+  return declared.length ? Math.min(base, ...declared) : base;
 }
 
 // 同一股票可属于多个行业或概念。题材内的龙头名次只比较同题材成分股，依次看
@@ -184,12 +215,126 @@ function volMa(candles, n) {
   return sma(candles.map((c) => c.volume), n);
 }
 
+// RSI 低位拐头证据（纯函数，只取信号日及以前的数据）：
+// 返回 rsi/prevRsi（Wilder RSI）、可选的前期跌幅 dropPct。
+// drop_days/drop_max 缺省时不计算跌幅，保持旧口径完全不变。
+// 窗口不足（样本比窗口短）时 dropPct 为 null，由调用方决定是「不命中」还是「放行」。
+function rsiLowTurnEvidence(candles, params = {}, index = null) {
+  const arr = Array.isArray(candles) ? candles : [];
+  const i = Number.isInteger(index) ? index : arr.length - 1;
+  const period = Math.max(2, Math.round(Number(params.period) || 14));
+  const low = Number.isFinite(Number(params.low)) ? Number(params.low) : 30;
+  const dropDays = Number.isFinite(Number(params.drop_days)) ? Math.round(Number(params.drop_days)) : 0;
+  const dropMax = Number.isFinite(Number(params.drop_max)) ? Number(params.drop_max) : null;
+  const needDrop = dropDays > 0 && dropMax != null;
+  const out = { index: i, period, low, dropDays, dropMax, needDrop, rsi: null, prevRsi: null, dropPct: null, minBars: 0 };
+  out.minBars = Math.max(30, period + 2, needDrop ? dropDays + 1 : 0);
+  if (i < 1 || i >= arr.length) return out;
+  const r = rsi(arr, period);
+  const cur = Number(r[i]);
+  const prev = Number(r[i - 1]);
+  out.rsi = Number.isFinite(cur) ? cur : null;
+  out.prevRsi = Number.isFinite(prev) ? prev : null;
+  if (needDrop && i - dropDays >= 0) {
+    const base = Number(arr[i - dropDays] && arr[i - dropDays].close);
+    const nowClose = Number(arr[i].close);
+    if (base > 0 && Number.isFinite(nowClose)) out.dropPct = (nowClose / base - 1) * 100;
+  }
+  return out;
+}
+
 // 涨幅限制（按代码推断，用于涨停识别）
 function limitPct(code) {
   if (/^30/.test(code)) return 0.2;
   if (/^68/.test(code)) return 0.2;
   if (/^(8|4|92)/.test(code)) return 0.3;
   return 0.1;
+}
+
+// 涨停判定：与回测 tools/indicators.py 的 is_limit_up 完全一致 ——
+// 涨幅达到 (涨跌停比例 × 100 − 0.8) 个百分点（容忍四舍五入到分位的误差），且收盘封在当日最高价。
+const LIMIT_UP_TOLERANCE_PP = 0.8;
+function isLimitUpBar(current, previous, limit) {
+  const close = Number(current && current.close);
+  const prevClose = Number(previous && previous.close);
+  const high = Number(current && current.high);
+  if (!(prevClose > 0) || !Number.isFinite(close) || !Number.isFinite(high)) return false;
+  const chgPct = (close / prevClose - 1) * 100;
+  const ratio = Number.isFinite(Number(limit)) ? Number(limit) : 0.1;
+  return chgPct >= ratio * 100 - LIMIT_UP_TOLERANCE_PP && close >= high - 1e-9;
+}
+
+// limit_pullback v4 证据（纯函数，只取信号日及以前的数据）：
+// 返回窗口内涨停、区间支撑、缩量比、前期跌幅 dropPct 与相对沪深300 强度 rsPct。
+// drop_days/drop_max 与 rs_days/rs_max 缺省时不启用对应过滤，保持旧口径完全不变。
+// 需要相对强度时必须显式传入 benchLookup（{dates,closes}）；判定不了时 rsPct 为 null，
+// 由调用方决定是「不命中」还是「放行」——生产链路选择不命中并给出可解释原因。
+function limitPullbackEvidence(candles, params = {}, index = null, benchLookup = null) {
+  const arr = Array.isArray(candles) ? candles : [];
+  const i = Number.isInteger(index) ? index : arr.length - 1;
+  const window = Math.max(2, Math.round(Number(params.window) || 15));
+  const volShrink = Number.isFinite(Number(params.vol_shrink)) ? Number(params.vol_shrink) : 0.9;
+  const dropDays = Number.isFinite(Number(params.drop_days)) ? Math.round(Number(params.drop_days)) : 0;
+  const dropMax = Number.isFinite(Number(params.drop_max)) ? Number(params.drop_max) : null;
+  const rsDays = Number.isFinite(Number(params.rs_days)) ? Math.round(Number(params.rs_days)) : 0;
+  const rsMax = Number.isFinite(Number(params.rs_max)) ? Number(params.rs_max) : null;
+  const needDrop = dropDays > 0 && dropMax != null;
+  const needRs = rsDays > 0 && rsMax != null;
+  const limit = limitPct(String(params.code || ''));
+  const out = {
+    index: i, window, volShrink, dropDays, dropMax, needDrop, rsDays, rsMax, needRs,
+    limit: limit.toFixed(2),
+    limitBarIndex: null, limitDaysAgo: null, limitDate: '',
+    support: null, low: null, volRatio: null, dropPct: null,
+    rsPct: null, benchMissing: false, benchDate: '', benchBaseDate: '',
+    minBars: 0,
+  };
+  out.minBars = Math.max(30, window + 2, needDrop ? dropDays + 1 : 0, needRs ? rsDays + 1 : 0);
+  if (i < 1 || i >= arr.length) return out;
+
+  // 涨停窗口 [i-window+1, i-1]：不含信号日本身（与回测 _win(lu, n)[:, :-1] 一致）。
+  for (let k = i - 1; k >= Math.max(1, i - (window - 1)); k--) {
+    if (isLimitUpBar(arr[k], arr[k - 1], limit)) {
+      out.limitBarIndex = k;
+      out.limitDaysAgo = i - k;
+      out.limitDate = String(arr[k] && arr[k].date || '');
+      break;
+    }
+  }
+
+  const lows = arr.slice(Math.max(0, i - window + 1), i + 1).map((c) => Number(c && c.low)).filter((v) => Number.isFinite(v));
+  out.support = lows.length ? Math.min(...lows) : null;
+  out.low = Number.isFinite(Number(arr[i] && arr[i].low)) ? Number(arr[i].low) : null;
+  const vma5 = volMa(arr, 5)[i];
+  const volume = Number(arr[i] && arr[i].volume);
+  if (Number.isFinite(vma5) && vma5 > 0 && Number.isFinite(volume)) out.volRatio = volume / vma5;
+
+  if (needDrop && i - dropDays >= 0) {
+    const base = Number(arr[i - dropDays] && arr[i - dropDays].close);
+    const nowClose = Number(arr[i] && arr[i].close);
+    if (base > 0 && Number.isFinite(nowClose)) out.dropPct = (nowClose / base - 1) * 100;
+  }
+
+  if (needRs) {
+    if (!benchLookup || !benchLookup.dates || !benchLookup.dates.length) {
+      out.benchMissing = true;
+    } else if (i - rsDays >= 0) {
+      const nowClose = Number(arr[i] && arr[i].close);
+      const baseClose = Number(arr[i - rsDays] && arr[i - rsDays].close);
+      const nowDate = String(arr[i] && arr[i].date || '');
+      const baseDate = String(arr[i - rsDays] && arr[i - rsDays].date || '');
+      const benchNow = benchCloseOnOrBefore(benchLookup, nowDate);
+      const benchBase = benchCloseOnOrBefore(benchLookup, baseDate);
+      if (baseClose > 0 && nowClose > 0 && benchNow != null && benchBase != null && benchBase > 0) {
+        const stockRet = (nowClose / baseClose - 1) * 100;
+        const benchRet = (benchNow / benchBase - 1) * 100;
+        out.rsPct = stockRet - benchRet;
+        out.benchDate = nowDate;
+        out.benchBaseDate = baseDate;
+      }
+    }
+  }
+  return out;
 }
 
 // ───────────────────────── 形态检测器（输入：升序K线数组） ─────────────────────────
@@ -339,23 +484,33 @@ const PATTERNS = {
   },
   limit_pullback(candles, params = {}) {
     const n = candles.length;
-    if (n < 30) return miss('样本不足');
-    const limit = limitPct(params.code || '');
-    const close = candles.map((c) => c.close);
-    let hadLimit = false;
-    for (let i = 2; i <= 15 && i < n; i++) {
-      const chg = (close[n - i] - close[n - i - 1]) / close[n - i - 1];
-      if (chg >= limit * 0.98) { hadLimit = true; break; }
+    // 显式传入 benchLookup（含 null）时以调用方为准：null 表示基准确实取不到，必须给出不命中原因，
+    // 不允许再用本地缓存静默顶替，否则选出来的票不是回测口径的那批。未传时才回落到本地同步兜底。
+    const bench = Object.prototype.hasOwnProperty.call(params, 'benchLookup') ? params.benchLookup : benchLookupSync();
+    const ev = limitPullbackEvidence(candles, params, n - 1, bench);
+    if (n < ev.minBars) return miss('样本不足');
+    if (ev.limitBarIndex == null) return miss(`近 ${ev.window} 日无涨停`);
+    if (ev.needDrop && ev.dropPct == null) return miss(`近 ${ev.dropDays} 日跌幅窗口不足`);
+    if (ev.needRs && ev.rsPct == null) {
+      return miss(ev.benchMissing ? '沪深300 基准序列不可用，相对强度无法核对' : `相对强度窗口不足（需近 ${ev.rsDays} 日）`);
     }
-    if (!hadLimit) return miss('近期无涨停');
-    const lastChg = (close[n - 1] - close[n - 2]) / close[n - 2];
-    if (lastChg > 0.02) return miss('当前已上攻而非回踩');
+    if (ev.volRatio == null) return miss('量能数据不足');
+    if (!(ev.volRatio < ev.volShrink)) return miss(`回踩未缩量（量比 ${(ev.volRatio * 100).toFixed(0)}% ≥ ${(ev.volShrink * 100).toFixed(0)}%）`);
+    if (ev.support == null || ev.low == null || !(ev.low >= ev.support * 0.98)) return miss('已跌破区间支撑');
+    if (ev.needDrop && !(ev.dropPct <= ev.dropMax)) return miss(`近 ${ev.dropDays} 日跌幅 ${ev.dropPct.toFixed(1)}% 未达 ${ev.dropMax}%`);
+    if (ev.needRs && !(ev.rsPct <= ev.rsMax)) return miss(`近 ${ev.rsDays} 日相对强度 ${ev.rsPct.toFixed(1)}pp 未弱于 ${ev.rsMax}pp`);
     const c = last(candles);
-    const low = Math.min(...candles.slice(n - 15).map((k) => k.low));
-    if (c.low < low * 0.98) return miss('已跌破支撑');
-    const ref = volMa(candles, 5)[n - 2] || 1;
-    const score = 65 + clamp((ref - c.volume) / ref * 60, 0, 30) + (isYang(c) ? 5 : 0);
-    return ok(Math.round(score), '涨停后缩量回踩重要支撑，不破企稳');
+    // 量比越低（回踩越缩量）、前期跌幅与相对走弱越深，分数越高；只做同形态内排序，不改变入围条件。
+    const score = 65
+      + clamp((1 - ev.volRatio) * 60, 0, 25)
+      + (ev.needDrop ? clamp(-ev.dropPct - 30, 0, 8) : 0)
+      + (isYang(c) ? 2 : 0);
+    const detail = `涨停日 ${ev.limitDate || '—'}（${ev.limitDaysAgo} 日前） · 量比 ${(ev.volRatio * 100).toFixed(0)}%`
+      + (ev.needDrop ? ` · 近 ${ev.dropDays} 日 ${ev.dropPct.toFixed(1)}%` : '')
+      + (ev.needRs ? ` · 近 ${ev.rsDays} 日相对强度 ${ev.rsPct.toFixed(1)}pp` : '');
+    const reason = `涨停后缩量回踩不破支撑，且近 ${ev.dropDays} 日跌幅 ${ev.dropPct != null ? ev.dropPct.toFixed(1) : '—'}% ≤ ${ev.dropMax}%`
+      + (ev.needRs ? `、近 ${ev.rsDays} 日相对沪深300 ${ev.rsPct != null ? ev.rsPct.toFixed(1) : '—'}pp ≤ ${ev.rsMax}pp（超跌弱于大盘）` : '');
+    return ok(Math.round(score), reason, detail);
   },
   fake_break_pack(candles) {
     const n = candles.length;
@@ -398,13 +553,27 @@ const PATTERNS = {
   },
   rsi_low_turn(candles, params = {}) {
     const n = candles.length;
-    if (n < 30) return miss('样本不足');
-    const r = rsi(candles, params.period || 14);
-    const i = n - 1, p = n - 2;
-    if (r[i] == null || r[p] == null) return miss('RSI 未形成');
-    if (!(r[p] < 30 && r[i] > r[p])) return miss('非 30 以下拐头向上');
-    const score = 60 + clamp((r[i] - 30) * 1.2, 0, 30) + (r[i] > 50 ? 10 : 0);
-    return ok(Math.round(score), 'RSI 低位（<30）拐头向上，超跌修复');
+    const ev = rsiLowTurnEvidence(candles, params, n - 1);
+    if (n < ev.minBars) return miss('样本不足');
+    if (ev.rsi == null || ev.prevRsi == null) return miss('RSI 未形成');
+    if (ev.needDrop && ev.dropPct == null) return miss('跌幅窗口不足');
+    if (!(ev.prevRsi < ev.low && ev.rsi > ev.prevRsi)) return miss(`非 ${ev.low} 以下拐头向上`);
+    if (ev.needDrop && !(ev.dropPct <= ev.dropMax)) return miss(`近 ${ev.dropDays} 日跌幅未达 ${ev.dropMax}%`);
+    const detail = `RSI ${ev.rsi.toFixed(1)}（前值 ${ev.prevRsi.toFixed(1)}）`
+      + (ev.needDrop ? ` · 近 ${ev.dropDays} 日 ${ev.dropPct.toFixed(1)}%` : '')
+      + ` · 周期 ${ev.period}`;
+    // 缺省口径（low=30 且无跌幅过滤）与历史实现逐分一致，避免改变既有规则排序。
+    if (!ev.needDrop && ev.low === 30) {
+      const legacy = 60 + clamp((ev.rsi - 30) * 1.2, 0, 30) + (ev.rsi > 50 ? 10 : 0);
+      return ok(Math.round(legacy), 'RSI 低位（<30）拐头向上，超跌修复', detail);
+    }
+    // 带参数口径：拐头前越超卖、前期跌幅越深，分数越高；拐头幅度给少量加分。
+    let score = 60 + clamp((ev.low - ev.prevRsi) * 1.5, 0, 20) + clamp((ev.rsi - ev.prevRsi) * 3, 0, 8);
+    if (ev.needDrop) score += clamp(-ev.dropPct - 30, 0, 12);
+    const reason = `RSI 低位（<${ev.low}）拐头向上`
+      + (ev.needDrop ? `，近 ${ev.dropDays} 日跌幅 ${ev.dropPct.toFixed(1)}% ≤ ${ev.dropMax}%` : '')
+      + '，超跌修复';
+    return ok(Math.round(score), reason, detail);
   },
   double_bottom(candles) {
     const n = candles.length;
@@ -635,7 +804,8 @@ function matchPrefilter(rule, p) {
 
 // 快照预筛后只读取少量命中股票的本地 K 线。证据完整时立即确认原策略；
 // 缺数据或口径不可核对时保留待补齐，不能把“无法判断”误作形态失败。
-function assessLocalKlinePrefilter(entry, cached, snapshotDate) {
+// benchLookup：沪深300 基准查询表（limit_pullback v4 的相对强度过滤用）；缺省时用本地磁盘缓存兜底。
+function assessLocalKlinePrefilter(entry, cached, snapshotDate, benchLookup = null) {
   const hitRules = Array.isArray(entry && entry.hitRules) ? entry.hitRules : [];
   const klineRules = hitRules.filter((rule) => rule.kind === 'kline');
   const scanRules = hitRules.filter((rule) => rule.kind !== 'kline');
@@ -646,26 +816,40 @@ function assessLocalKlinePrefilter(entry, cached, snapshotDate) {
   const candles = cached && Array.isArray(cached.kline) ? cached.kline : [];
   const tailDate = candles.length ? String(candles.at(-1).date || '') : '';
   let pendingReason = '';
+  // 结构性不可复核：与「数据还没补齐」严格区分，前者永远等不到可判定的证据。
+  let unverifiableReason = '';
+  let unverifiableCode = '';
   if (!cached || !candles.length) pendingReason = '本地K线缺失';
-  else if (String(cached.source || '') !== 'tencent' || !isAdjustmentCorroborated(cached.source, cached.adjustmentType) || cached.adjustmentType !== 'qfq') pendingReason = 'K线来源或前复权口径未验证';
-  else if (candles.length < LOCAL_KLINE_CONFIRM_MIN_BARS) pendingReason = `K线不足${LOCAL_KLINE_CONFIRM_MIN_BARS}根`;
+  // 可自证前复权的来源白名单：腾讯 fqkline 的 qfqday 节点、通达信本地 gbbq 推导序列。
+  // 两者都必须满足契约的 isAdjustmentCorroborated 判定与 adjustmentType==='qfq'，白名单只是前置快速过滤。
+  else if (!['tencent', 'tdx'].includes(String(cached.source || '')) || !isAdjustmentCorroborated(cached.source, cached.adjustmentType) || cached.adjustmentType !== 'qfq') {
+    unverifiableReason = 'K线来源或前复权口径未验证';
+    unverifiableCode = EXCLUSION_REASONS.KLINE_NOT_VERIFIABLE;
+  } else if (candles.length < LOCAL_KLINE_MIN_BARS) {
+    unverifiableReason = `上市/交易历史不足${LOCAL_KLINE_MIN_BARS}根，超出v4回测样本口径`;
+    unverifiableCode = EXCLUSION_REASONS.KLINE_LISTING_TOO_SHORT;
+  }
   else if (tailDate !== snapshotDate || String(cached.sourceLatestDate || '') !== snapshotDate) pendingReason = 'K线尾日与扫描交易日不一致';
   else if (cached.tailStatus !== 'confirmed') pendingReason = 'K线尾日尚未确认';
 
-  if (pendingReason) {
+  if (pendingReason || unverifiableReason) {
+    const status = unverifiableReason ? 'unverifiable' : 'pending_kline';
+    const reason = unverifiableReason || pendingReason;
     return {
-      status: 'pending_kline',
-      reason: pendingReason,
+      status,
+      reason,
+      exclusionReason: unverifiableCode,
       entry: {
         ...entry,
-        localKlineConfirmation: { status: 'pending_kline', reason: pendingReason, source: String(cached && cached.source || ''), adjustmentType: String(cached && cached.adjustmentType || ''), depth: candles.length, tailDate },
+        localKlineConfirmation: { status, reason, source: String(cached && cached.source || ''), adjustmentType: String(cached && cached.adjustmentType || ''), depth: candles.length, tailDate },
       },
     };
   }
 
   const matched = [];
+  const bench = benchLookup || benchLookupSync();
   for (const rule of klineRules) {
-    const result = matchKlinePattern(rule.patternId, candles, { ...rule.params, code: entry.profile && entry.profile.code });
+    const result = matchKlinePattern(rule.patternId, candles, { ...rule.params, code: entry.profile && entry.profile.code, benchLookup: bench });
     if (result.matched) matched.push({ rule, result });
   }
   const confirmedRules = [...scanRules, ...matched.map((item) => item.rule)];
@@ -692,18 +876,30 @@ async function confirmPrefilterEntriesWithLocalKline(entries, snapshotDate) {
   const exclusions = [];
   let confirmed = 0;
   let pending = 0;
+  let patternRejected = 0;
+  let unverifiable = 0;
+  // 只取一次基准序列，供本批全部 limit_pullback v4 复筛共用（不可用时为 null，形态会给出明确 miss 原因）。
+  const benchSeries = await ensureBenchSeries();
+  const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
   for (const entry of entries || []) {
     const cached = await readKline(entry.profile.code);
-    const assessment = assessLocalKlinePrefilter(entry, cached, snapshotDate);
+    const assessment = assessLocalKlinePrefilter(entry, cached, snapshotDate, benchLookup);
     if (assessment.status === 'rejected') {
+      patternRejected += 1;
       exclusions.push({ code: entry.profile.code, reason: EXCLUSION_REASONS.KLINE_PATTERN_NOT_CONFIRMED, detail: assessment.reason });
+      continue;
+    }
+    // 口径不可验证 / 上市历史不足：不进候选池，也不占用候选配额，但要作为排除原因可追溯。
+    if (assessment.status === 'unverifiable') {
+      unverifiable += 1;
+      exclusions.push({ code: entry.profile.code, reason: assessment.exclusionReason || EXCLUSION_REASONS.KLINE_NOT_VERIFIABLE, detail: assessment.reason });
       continue;
     }
     retained.push(assessment.entry);
     if (assessment.status === 'confirmed') confirmed += 1;
     else pending += 1;
   }
-  return { retained, exclusions, confirmed, pending };
+  return { retained, exclusions, confirmed, pending, patternRejected, unverifiable };
 }
 
 // ───────────────────────── 第一段：快照初筛 → 候选池 ─────────────────────────
@@ -736,7 +932,7 @@ async function scanByMarkets({ markets = [], ruleId = '', limit = 100, accountSt
   entries.sort((a, b) => b.profile.score - a.profile.score);
   // 业务口径：未命中启用规则、或量能分低于自动入池门槛的股票不作为扫描命中。
   // 用户在观察主题下的人工保留属于候选池「人工保留」路径，不走全市扫描命中。
-  const autoEntries = entries.filter((e) => meetsAutoPoolGate(e.profile, autoPoolMinScore));
+  const autoEntries = entries.filter((e) => meetsAutoPoolGate(e.profile, autoPoolThresholdFor(e.hitRules, autoPoolMinScore)));
   const top = autoEntries.slice(0, Math.max(1, Number(limit) || 1));
   const marketLabel = (markets.length ? markets : Object.keys(MARKETS)).map((k) => (MARKETS[k] ? MARKETS[k].label : k));
   const hasKline = rules.some((r) => r.kind === 'kline');
@@ -751,7 +947,10 @@ async function scanByMarkets({ markets = [], ruleId = '', limit = 100, accountSt
     snapshotDate: snapshot.snapshotDate,
     byMarket: snapshot.byMarket || [],
     autoPool: {
-      minScore: autoPoolMinScore,
+      // 展示口径必须与真实生效门槛一致：命中多条规则时取最宽松的规则级门槛，
+      // 否则会出现「显示 70、实际按 0 放行」的误导（v4 规则 minVolumeScore=0 即属此类）。
+      minScore: autoPoolThresholdFor(rules, autoPoolMinScore),
+      configuredMinScore: autoPoolMinScore,
       hitTotal: entries.length,
       eligible: autoEntries.length,
     },
@@ -899,12 +1098,23 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
 
   const scopedRows = snapshot.records.filter((row) => scopeCodes.has(row.code));
   const oldByCode = new Map(scopedRows.map((row) => [row.code, row]));
-  const effectiveScopeCodes = [...scopeCodes].filter((code) => oldByCode.has(code));
+  // 可交易范围过滤：题材成分股里会有科创板/北交所标的，它们拿不到本系统的形态统计支撑，
+  // 也不在用户可下单范围内，先按原因排除，再进入行情与形态流程。
+  // 先于「快照是否覆盖该代码」判定，这样即使快照只抓了主板+创业板，范围外标的也有明确计数。
+  const universeExclusions = [];
+  const effectiveScopeCodes = [...scopeCodes].filter((code) => {
+    if (!isTradableCode(code)) {
+      universeExclusions.push({ code, reason: EXCLUSION_REASONS.OUT_OF_TRADABLE_UNIVERSE });
+      return false;
+    }
+    return oldByCode.has(code);
+  });
+  const outOfTradableUniverse = universeExclusions.length;
   const quoteStartedAt = Date.now();
   const quoteBatch = await fetchQuotesDetailed(effectiveScopeCodes);
   const quoteByCode = new Map(quoteBatch.quotes.map((quote) => [quote.code, quote]));
   const allRankable = [];
-  const exclusions = [];
+  const exclusions = [...universeExclusions];
   for (const code of effectiveScopeCodes) {
     const old = oldByCode.get(code) || { code, market: '' };
     const quote = quoteByCode.get(code);
@@ -929,7 +1139,7 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
     const profile = ranked.profile;
     const hitRules = strategyRules.filter((rule) => rule.kind === 'kline' ? matchPrefilter(rule, profile) : matchScanRule(rule, profile));
     if (!hitRules.length) { exclusions.push({ code: profile.code, reason: EXCLUSION_REASONS.RULE_NOT_MATCHED }); continue; }
-    if (!meetsAutoPoolGate(profile, autoPoolMinScore)) { exclusions.push({ code: profile.code, reason: EXCLUSION_REASONS.SCORE_TOO_LOW }); continue; }
+    if (!meetsAutoPoolGate(profile, autoPoolThresholdFor(hitRules, autoPoolMinScore))) { exclusions.push({ code: profile.code, reason: EXCLUSION_REASONS.SCORE_TOO_LOW }); continue; }
     entries.push({ profile, hitRules, boardLeaderRanks: boardRanksByCode.get(profile.code) || [] });
   }
   const prefilterMatched = entries.length;
@@ -996,9 +1206,16 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
   const dataInsufficientCount = exclusions.filter((item) => [EXCLUSION_REASONS.QUOTE_MISSING, EXCLUSION_REASONS.QUOTE_INCOMPLETE, EXCLUSION_REASONS.QUOTE_STALE].includes(item.reason)).length + initialSelection.dataInsufficient.length;
   const funnel = {
     scope: quoteBatch.requested,
+    // 题材成分股里被可交易范围（沪主板/深主板/创业板）挡在门外的只数。
+    outOfUniverse: outOfTradableUniverse,
     validQuotes: allRankable.length,
     excluded: exclusions.length + initialSelection.dataInsufficient.length,
     prefilterMatched,
+    // 预筛命中后在本地 K 线层被形态否决的只数：漏斗里必须能看见这一层，
+    // 否则「预筛 1488 → 候选 16」看起来像全靠配额压缩。
+    patternRejected: localConfirmation.patternRejected,
+    // 结构性不可复核（来源/复权不可验证、上市历史不足）的只数，与「待补 K 线」分开计数。
+    unverifiable: localConfirmation.unverifiable,
     potential: initialSelection.selected.length,
     strongWatch: strongWatch.length,
     overQuota: overQuota.length,
@@ -1026,8 +1243,21 @@ async function scanByMarketContext({ markets = [], limit = 100, accountSt = fals
     byMarket: snapshot.byMarket || [],
     refineStage: 'local_kline',
     prescan: { fetchedAt: context.fetchedAt, isFinal: context.isFinal },
-    prefilter: { matched: prefilterMatched, klineMissing: localConfirmation.pending, confirmed: localConfirmation.confirmed },
-    autoPool: { minScore: autoPoolMinScore, hitTotal: prefilterMatched, eligible: candidates.length, observationOnly: false },
+    prefilter: {
+      matched: prefilterMatched,
+      klineMissing: localConfirmation.pending,
+      confirmed: localConfirmation.confirmed,
+      patternRejected: localConfirmation.patternRejected,
+      unverifiable: localConfirmation.unverifiable,
+      outOfUniverse: outOfTradableUniverse,
+    },
+    autoPool: {
+      minScore: autoPoolThresholdFor(strategyRules, autoPoolMinScore),
+      configuredMinScore: autoPoolMinScore,
+      hitTotal: prefilterMatched,
+      eligible: candidates.length,
+      observationOnly: false,
+    },
   };
 }
 
@@ -1045,6 +1275,8 @@ async function getKlineForScan(code, dataSource, snapshotDate) {
 
 async function refineWithKline(entries, enabledRules, dataSource, snapshotDate) {
   const matched = [];
+  const benchSeries = await ensureBenchSeries();
+  const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
   for (const entry of entries) {
     const profile = entry.profile;
     const klineRules = (entry.hitRules || []).filter((r) => r.kind === 'kline');
@@ -1054,7 +1286,7 @@ async function refineWithKline(entries, enabledRules, dataSource, snapshotDate) 
       if (klineRules.length) {
         const kline = await getKlineForScan(profile.code, dataSource, snapshotDate);
         for (const rule of klineRules) {
-          const res = matchKlinePattern(rule.patternId, kline, { ...rule.params, code: profile.code });
+          const res = matchKlinePattern(rule.patternId, kline, { ...rule.params, code: profile.code, benchLookup });
           if (res.matched && (!best || res.score > best.patternScore)) {
             best = { pattern: res.reason, patternScore: res.score, ruleLabel: rule.label, patternId: rule.patternId };
           }
@@ -1076,20 +1308,23 @@ async function refineWithKline(entries, enabledRules, dataSource, snapshotDate) 
 // ───────────────────────── 个股级证据：对单只票跑全部启用形态规则 ─────────────────────────
 // 供 AI 研判组装证据使用：返回命中形态明细（含 label/reason/score/detail 与 ruleLabel），
 // 单个维度命中由外部决定如何呈现。非候选进入详情也仍可用本地 K 线直接判断。
-function detectSinglePatterns(candles, { code = '', accountSt = false, rules: ruleSnapshot = null } = {}) {
+function detectSinglePatterns(candles, { code = '', accountSt = false, rules: ruleSnapshot = null, benchLookup = null } = {}) {
   const rules = (ruleSnapshot || listEnabledRules()).filter((r) => r.enabled !== false && r.kind !== 'scan');
   const hits = [];
   if (!Array.isArray(candles) || candles.length < 2) return { hits, rules };
+  // 只在确有规则需要相对强度时才读本地基准缓存，避免无谓 IO。
+  const bench = benchLookup || (rules.some((r) => r.params && r.params.rs_days) ? benchLookupSync() : null);
   // detail 字段由各形态 detector 的 ok() 返回；此处收集 label 与证据。
   for (const rule of rules) {
     try {
-      const res = matchKlinePattern(rule.patternId, candles, { ...rule.params, code });
+      const res = matchKlinePattern(rule.patternId, candles, { ...rule.params, code, benchLookup: bench });
       if (res && res.matched) {
         hits.push({
           ruleId: rule.id,
           patternId: rule.patternId,
           label: rule.label,
           ruleLabel: rule.label,
+          params: { ...rule.params },
           reason: res.reason || '',
           score: res.score || 0,
           detail: res.detail || '',
@@ -1106,6 +1341,7 @@ module.exports = {
   PATTERNS,
   AUTO_POOL_MIN_SCORE,
   meetsAutoPoolGate,
+  autoPoolThresholdFor,
   shanghaiDate,
   listRules,
   listEnabledRules,
@@ -1121,5 +1357,7 @@ module.exports = {
   refineWithKline,
   matchKlinePattern,
   detectSinglePatterns,
-  sma, ema, macd, rsi, volMa, limitPct,
+  sma, ema, macd, rsi, volMa, limitPct, rsiLowTurnEvidence,
+  isLimitUpBar, limitPullbackEvidence,
+  LOCAL_KLINE_MIN_BARS, TRADABLE_CODE_PREFIXES, isTradableCode,
 };

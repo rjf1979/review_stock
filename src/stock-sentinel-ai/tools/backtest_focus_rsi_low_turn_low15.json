@@ -1,0 +1,10 @@
+{
+  "_comment": "rsi_low_turn 阈值收紧档 B：RSI14 < 15 且近 60 交易日跌幅 ≤ -30%，退出保持 v4（6R 起跟踪、不减仓、关测量目标）。用于与 low=20 / low=18 做全市场分段取证。",
+  "patterns": ["rsi_low_turn"],
+  "params": {
+    "rsi_low_turn": { "low": 15.0, "drop_days": 60, "drop_max": -30.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}

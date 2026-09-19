@@ -7,6 +7,7 @@ const { readKline, readKlineStats, recentTradingDates } = require('./storage');
 const { shanghaiClock, isAfterCnMarketClose, marketSession } = require('./market-session');
 const { assessKlineCoverage } = require('./kline-quality');
 const { effectiveTailStatus, TAIL_STATUS } = require('./kline-tail-status');
+const { isAdjustmentCorroborated } = require('./kline-source-contract');
 const taskMarkers = require('./task-markers');
 
 const DEFAULT_LMT = 250;
@@ -32,6 +33,15 @@ const state = {
   errorsList: [],
   statusByCode: {},
 };
+
+// 深度/日期完整不代表可用于严格复核：百度、搜狐、东财、新浪的响应无法验证复权口径，
+// 这类序列会被候选复核判为「K线前复权口径未验证」。若补齐流程把它们当作已完成跳过，
+// 「重新严格复核」就会永久停在同一结论，因此只有口径可核对的来源才算补齐完成。
+function isKlineMetaReviewable(record, stat) {
+  const source = String((record && record.source) || (stat && stat.source) || '');
+  const adjustmentType = String((record && record.adjustmentType) || (stat && stat.adjustmentType) || '');
+  return Boolean(source) && isAdjustmentCorroborated(source, adjustmentType);
+}
 
 // 可被 stop 打断的睡眠：分片检查 running。
 async function sleepInterruptible(ms) {
@@ -118,8 +128,16 @@ async function run(codesInput, { lmt = DEFAULT_LMT, gapMs = DEFAULT_GAP_MS } = {
         now,
       });
       const tailFinal = cachedTailStatus === TAIL_STATUS.CONFIRMED;
-      if ((beforeQuality.complete || beforeQuality.listingHistoryComplete) && (!closed || (meta && meta.latestDate === today && savedDay === today && savedHour >= 15 && tailFinal))) {
-        state.statusByCode[code] = { ...beforeQuality, tailStatus: cachedTailStatus };
+      const metaReviewable = isKlineMetaReviewable(cachedBefore, meta);
+      if ((beforeQuality.complete || beforeQuality.listingHistoryComplete) && metaReviewable
+        && (!closed || (meta && meta.latestDate === today && savedDay === today && savedHour >= 15 && tailFinal))) {
+        state.statusByCode[code] = {
+          ...beforeQuality,
+          tailStatus: cachedTailStatus,
+          source: String((cachedBefore && cachedBefore.source) || (meta && meta.source) || ''),
+          adjustmentType: String((cachedBefore && cachedBefore.adjustmentType) || (meta && meta.adjustmentType) || ''),
+          metaReviewable,
+        };
         state.skipped += 1;
         state.done += 1;
         continue;
@@ -142,6 +160,7 @@ async function run(codesInput, { lmt = DEFAULT_LMT, gapMs = DEFAULT_GAP_MS } = {
           tailStatus,
           source: (cachedAfter && cachedAfter.source) || '',
           adjustmentType: (cachedAfter && cachedAfter.adjustmentType) || '',
+          metaReviewable: isKlineMetaReviewable(cachedAfter, null),
           tailConfirmedAt: (cachedAfter && cachedAfter.tailConfirmedAt) || '',
         };
         if (quality.complete) state.ok += 1;

@@ -13,6 +13,8 @@
       --accent-hover: #d2d7db;
       --accent-soft: rgba(174, 182, 189, 0.13);
       --accent-soft-strong: rgba(174, 182, 189, 0.2);
+      /* --accent-soft 的不透明等价色：冻结列必须用实色，否则横向滚动时下一列内容会透出 */
+      --accent-soft-solid: #38393a;
       --accent-text: #1c1c1c;
       --up: #ff4545;
       --down: #20b7c7;
@@ -56,6 +58,7 @@
         --accent-hover: #2b7df5;
         --accent-soft: rgba(31, 111, 235, 0.1);
         --accent-soft-strong: rgba(31, 111, 235, 0.16);
+        --accent-soft-solid: #e8f0fd;
         --accent-text: #ffffff;
         --danger: #d63c3c;
         --danger-soft: rgba(214, 60, 60, 0.1);
@@ -245,6 +248,8 @@
     .status.loading { border-color: var(--accent); border-left-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
     .status.empty { border-left-color: var(--text-faint); color: var(--text-muted); }
     .status.concentration-warning { border-left-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+    .status.stale-warning { border-left-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+    .status.kline-warning { border-left-color: var(--accent); color: var(--text); background: var(--accent-soft); }
     .progress-bar-wrap { margin-top: var(--space-2); height: 14px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.4); }
     .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 999px; transition: width 0.3s ease; }
     .progress-label { margin-top: var(--space-1); font-size: 12px; color: var(--text-muted); }
@@ -254,9 +259,24 @@
     thead th { position: sticky; top: 0; z-index: 2; background: var(--bg-elevated); border-bottom: 1px solid var(--border-strong); color: var(--text-muted); font-weight: 600; font-size: 12px; letter-spacing: 0.4px; }
     td:first-child, th:first-child { text-align: left; }
     tbody tr { cursor: pointer; }
-    tbody tr:nth-child(even) td { background: transparent; }
+    /* 偶数行条纹只做“去背”，不得作用于横向滚动的冻结列：
+       冻结列若变透明，横滚后后面的列会从「代码 / 名称」下面透出来。 */
+    tbody tr:nth-child(even) td:not(.pool-pin-code):not(.pool-pin-name) { background: transparent; }
     tbody tr:hover td { background: var(--accent-soft); }
     tbody tr:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+    /* 候选池冻结列：横向滚动时“代码 / 名称”吸左，表头所在层必须高于普通单元格与其余表头。
+       第二列的偏移由 PoolSection 实测首列宽度写入 --pool-pin-name-left；未测量到时用 6 位代码的近似宽度兜底。 */
+    .pool-pin-code { position: sticky; left: 0; }
+    .pool-pin-name { position: sticky; left: var(--pool-pin-name-left, 84px); }
+    /* 冻结列底色固定为不透明面板色，选择器带上 tr 以保证不会被任何行级规则盖成透明。 */
+    tbody tr td.pool-pin-code, tbody tr td.pool-pin-name { z-index: 1; background: var(--bg-elevated); }
+    thead th.pool-pin-code, thead th.pool-pin-name { z-index: 4; }
+    tbody tr:hover td.pool-pin-code, tbody tr:hover td.pool-pin-name { background: var(--accent-soft-solid); }
+    /* 固定列盖住整行焦点环的内侧描边，这里按左右外沿补齐，保持键盘焦点可见。 */
+    tbody tr:focus-visible td.pool-pin-code { box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+    tbody tr:focus-visible td.pool-pin-name { box-shadow: inset -2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+    /* 横滚后给固定列右侧加一条分隔线；用伪元素避免与焦点环的 box-shadow 相互覆盖。 */
+    .pool-table-wrap.is-scrolled-x .pool-pin-name::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: var(--border-strong); }
     tbody tr:last-child td { border-bottom: none; }
     .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
     td.pat { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
@@ -552,8 +572,14 @@
     .settings-section[open] > summary::after { content: '−'; }
     .settings-section > summary:focus-visible { outline: none; box-shadow: var(--focus-ring); position: relative; z-index: 1; }
     .settings-section-body { padding: var(--space-4); }
-    .settings-section-body .toolbar { margin-bottom: var(--space-3); }
-    .settings-section-body .toolbar:last-child { margin-bottom: 0; }
+   .settings-section-body .toolbar { margin-bottom: var(--space-3); }
+   .settings-section-body .toolbar:last-child { margin-bottom: 0; }
+    /* 本地数据目录是长路径，输入框给足可读宽度并允许收缩，避免撑破设置面板。 */
+    .settings-section-body .field-group.tdx-dir-group > input {
+      min-width: 0; flex: 1 1 320px; max-width: 460px; min-height: 38px; padding: 0 10px;
+      font-size: 13px; font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+    }
+    .settings-section-body .field-group.tdx-dir-group > .summary { flex: 1 1 100%; }
     input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-active); box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); }
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-elevated); box-shadow: var(--shadow-sm); cursor: pointer; transition: background 0.16s ease, transform 0.16s ease; }
     input[type="range"]::-webkit-slider-thumb:hover { background: var(--accent-hover); transform: scale(1.08); }
@@ -571,10 +597,14 @@
     .market-stats .stat strong { font-size: 22px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
     .market-stats .stat strong.time { font-size: 13px; font-family: var(--mono); }
     .mono-strong { font-family: var(--mono); font-size: 15px; font-weight: 700; }
-    .watch-remove { border: 1px solid var(--border-strong); background: var(--btn-grad); color: var(--text-muted); cursor: pointer; min-height: 40px; min-width: 72px; padding: 0 var(--space-2); border-radius: var(--radius-sm); box-shadow: var(--btn-shadow); font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease; }
+    .watch-remove { border: 1px solid var(--border-strong); background: var(--btn-grad); color: var(--text-muted); cursor: pointer; min-height: 44px; min-width: 72px; padding: 0 var(--space-2); border-radius: var(--radius-sm); box-shadow: var(--btn-shadow); font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease; }
     .watch-remove:hover { color: var(--danger); border-color: var(--danger); }
     .watch-remove:active { transform: translateY(0); }
     .watch-remove.added { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+    /* 行内操作按钮的禁用条件包含整池写入（poolBusy）与逐条忙碌态：没有可见禁用外观时，
+       按钮看起来能点却毫无反应，正是“点了没反应”的同一类错觉来源。复用 .btn:disabled 的 token 写法，
+       并显式压掉 :hover 的红色，否则鼠标悬停仍会“亮起来”。 */
+    .watch-remove:disabled { opacity: 0.5; cursor: not-allowed; filter: saturate(0.4); box-shadow: none; transform: none; color: var(--text-muted); border-color: var(--border-strong); }
 
     /* 设置页 · 选股规则热插拔 */
     .rules-list { display: grid; gap: var(--space-3); margin: var(--space-3) 0 var(--space-4); }

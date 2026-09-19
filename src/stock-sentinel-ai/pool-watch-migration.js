@@ -16,21 +16,18 @@ function primaryTheme(candidate = {}) {
   return theme ? { code: String(theme.code || theme.name || ''), name: String(theme.name || theme.code || '') } : { code: '', name: '未分类' };
 }
 
+// 只统计主要题材：candidate-review 的 maxSelectedPerTheme 是按 result.primaryThemeCode 计数的，
+// 把 QFII重仓、机构重仓这类宽口径概念一并累加会产生“假集中”，与实际选股约束对不上。
 function concentrationWarnings(watchItems = []) {
   const counts = new Map();
   for (const item of watchItems) {
     const evidence = item.selectionEvidence || {};
     const candidate = { ...item, candidateThemeRanks: evidence.candidateThemeRanks, themeEvidence: evidence.themeEvidence || item.themeEvidence };
     const primary = primaryTheme(candidate);
-    const themes = Array.isArray(candidate.themeEvidence) ? candidate.themeEvidence : [];
-    const exposures = new Map(themes.map((theme) => [String(theme.code || theme.name || ''), String(theme.name || theme.code || '')]));
-    if (primary.code) exposures.set(primary.code, primary.name);
-    for (const [code, name] of exposures) {
-      if (!code) continue;
-      const current = counts.get(code) || { name, count: 0 };
-      current.count++;
-      counts.set(code, current);
-    }
+    if (!primary.code) continue;
+    const current = counts.get(primary.code) || { name: primary.name, count: 0 };
+    current.count++;
+    counts.set(primary.code, current);
   }
   return [...counts.values()].filter((item) => item.count > 2).map((item) => `${item.name}已有${item.count}只，题材集中度超过建议线2只`);
 }

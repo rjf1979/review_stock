@@ -1,31 +1,43 @@
 // D14-01 / D14-03：数据源能力契约与单源字段映射隔离测试。
 // 断言依据来自受控响应结构，不引用请求参数推断复权口径。
 const assert = require('node:assert/strict');
+// 本用例用受控 fetch 逐一隔离各来源的字段映射，必须关闭本地通达信来源：
+// 否则本机配置了 tdxDir 后，本地真实序列会插进多源链并凭更新尾日胜出，破坏「单源隔离」前提。
+process.env.STOCK_SENTINEL_TDX_DIR = '';
 const {
   ADJUSTMENT, SOURCE_IDS, SOURCE_CONTRACTS, sourceVolumeScale, normalizeKlineVolumeByContract,
   resolveSourceAdjustment, isAdjustmentCorroborated, decideKlineWrite, canSafelyRebuildUnverifiedSeries, describeSourceCapabilities,
 } = require('../kline-source-contract');
 
 // ── 契约声明 ─────────────────────────────
-assert.deepEqual([...SOURCE_IDS].sort(), ['baidu', 'em', 'sina', 'sohu', 'tencent']);
+assert.deepEqual([...SOURCE_IDS].sort(), ['baidu', 'em', 'sina', 'sohu', 'tdx', 'tencent']);
 for (const id of SOURCE_IDS) {
   const contract = SOURCE_CONTRACTS[id];
   assert.ok([ADJUSTMENT.QFQ, ADJUSTMENT.UNADJUSTED, ADJUSTMENT.UNKNOWN].includes(contract.adjustment.declared), `${id} 必须声明复权口径`);
   assert.ok(['share', 'lot'].includes(contract.volumeUnit), `${id} 必须声明成交量单位`);
   for (const field of ['date', 'open', 'high', 'low', 'close', 'volume']) assert.ok(contract.fields[field], `${id} 缺少 ${field} 字段映射`);
-  assert.equal(contract.amountField, null, `${id} 未从响应验证成交额字段时不得声明`);
-  assert.equal(contract.covered.includes('amount'), false, `${id} 不得声明未验证的成交额覆盖`);
+  if (id === 'tdx') {
+    // 通达信本地 .day 是定长二进制记录，成交额（record[5]）与成交量同在一条记录里，属可验证覆盖。
+    assert.equal(contract.amountField, 'record[5]', '通达信本地记录带成交额字段，应显式声明');
+    assert.equal(contract.covered.includes('amount'), true, '本地记录可验证成交额覆盖');
+  } else {
+    assert.equal(contract.amountField, null, `${id} 未从响应验证成交额字段时不得声明`);
+    assert.equal(contract.covered.includes('amount'), false, `${id} 不得声明未验证的成交额覆盖`);
+  }
 }
 assert.equal(SOURCE_CONTRACTS.tencent.adjustment.declared, ADJUSTMENT.QFQ);
 assert.equal(SOURCE_CONTRACTS.tencent.adjustment.verifiedFromResponse, true, '腾讯节点名可验证复权口径');
+assert.equal(SOURCE_CONTRACTS.tdx.adjustment.declared, ADJUSTMENT.QFQ);
+assert.equal(SOURCE_CONTRACTS.tdx.adjustment.verifiedFromResponse, true, '通达信 gbbq 本地推导可自证前复权口径');
 for (const id of ['baidu', 'sohu', 'em', 'sina']) {
   assert.equal(SOURCE_CONTRACTS[id].adjustment.declared, ADJUSTMENT.UNKNOWN, `${id} 响应无法验证复权口径，必须记 unknown`);
   assert.equal(SOURCE_CONTRACTS[id].adjustment.verifiedFromResponse, false);
 }
 const capabilities = describeSourceCapabilities();
-assert.equal(capabilities.length, 5);
-assert.equal(capabilities.filter((item) => item.adjustmentType === 'qfq').map((item) => item.id).join(','), 'tencent');
+assert.equal(capabilities.length, 6);
+assert.equal(capabilities.filter((item) => item.adjustmentType === 'qfq').map((item) => item.id).join(','), 'tencent,tdx');
 assert.equal(sourceVolumeScale('tencent'), 100);
+assert.equal(sourceVolumeScale('tdx'), 1, '通达信本地成交量已是股，不再缩放');
 assert.equal(sourceVolumeScale('baidu'), 1);
 assert.equal(sourceVolumeScale('sohu'), 100);
 assert.equal(sourceVolumeScale('em'), 100);
@@ -37,11 +49,16 @@ assert.equal(resolveSourceAdjustment('tencent', { node: 'qfqday' }), ADJUSTMENT.
 assert.equal(resolveSourceAdjustment('tencent', { node: 'day' }), ADJUSTMENT.UNADJUSTED, '去掉复权参数返回的 day 节点是未复权序列');
 assert.equal(resolveSourceAdjustment('tencent', {}), ADJUSTMENT.UNKNOWN, '拿不到节点名时不得冒充 qfq');
 assert.equal(resolveSourceAdjustment('tencent', { node: 'qzday' }), ADJUSTMENT.UNKNOWN);
+assert.equal(resolveSourceAdjustment('tdx', { adjustmentMethod: 'gbbq-derived' }), ADJUSTMENT.QFQ, '只有 gbbq 推导成功才算可自证前复权');
+assert.equal(resolveSourceAdjustment('tdx', { adjustmentMethod: 'none' }), ADJUSTMENT.UNKNOWN, '本地文件缺失或 gbbq 不可用时只能记 unknown');
+assert.equal(resolveSourceAdjustment('tdx', {}), ADJUSTMENT.UNKNOWN, '拿不到推导证据时不得冒充 qfq');
 for (const id of ['baidu', 'sohu', 'em', 'sina']) {
   assert.equal(resolveSourceAdjustment(id, { node: 'qfqday', requested: 'qfq' }), ADJUSTMENT.UNKNOWN, `${id} 只有请求参数时必须记 unknown`);
 }
 assert.equal(isAdjustmentCorroborated('tencent', 'qfq'), true);
 assert.equal(isAdjustmentCorroborated('tencent', 'unadjusted'), true, '腾讯 day 节点同样能从响应验证为未复权');
+assert.equal(isAdjustmentCorroborated('tdx', 'qfq'), true, '通达信 gbbq 推导序列属可自证前复权');
+assert.equal(isAdjustmentCorroborated('tdx', 'unadjusted'), false, '本地未复权原始价不可自证口径，不得放行');
 assert.equal(isAdjustmentCorroborated('sina', 'qfq'), false, '旧库把新浪序列写成 qfq 属不可验证口径');
 
 // ── 成交量单位归一 ─────────────────────────────

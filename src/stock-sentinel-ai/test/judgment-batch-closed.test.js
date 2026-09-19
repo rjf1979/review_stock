@@ -8,7 +8,7 @@ const fs = require('fs');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'vi-closed-'));
 process.env.VOLUME_INSIGHT_DATA_DIR = TMP;
 
-const { closedMarketAlreadyJudged } = require('../judgment-batch');
+const { closedMarketAlreadyJudged, classify } = require('../judgment-batch');
 
 const prepared = (klineDate, snapshotDate) => ({ read: { klineDate }, snapshotDate });
 const last = (klineDate, snapshotDate) => ({ evidence: { evidenceDates: { klineDate, snapshotDate } } });
@@ -56,3 +56,33 @@ assert.strictEqual(
 );
 
 console.log('judgment-batch closed-market rule passed');
+
+// 回归：候选入池行情未刷新（候选快照日与上次研判交易日相同），但本地 K 线已推进到新交易日。
+// 旧实现用「上次研判交易日 === 候选快照日」做闭市捷径，会把这类候选整只判为“无变化”跳过，
+// 候选池状态列因此永远停在“待复核”，而批量研判预览却按双日期算出“需更新”。
+const lastJudged = (klineDate, snapshotDate) => ({
+  tradeDate: klineDate, finishedAt: 1, model: 'test-model', evidenceHash: 'hash-old',
+  evidence: { evidenceDates: { klineDate, snapshotDate } },
+});
+
+(async () => {
+  assert.strictEqual(
+    (await classify('300806', { read: { klineDate: '2026-09-16' }, snapshotDate: '2026-09-15' }, 'test-model', false, {
+      phase: 'closed', last: lastJudged('2026-09-15', '2026-09-15'),
+    })).type,
+    'evidenceUpdate', '候选快照未刷新但 K 线已推进时必须重新研判'
+  );
+  assert.strictEqual(
+    (await classify('300806', { read: { klineDate: '2026-09-16' }, snapshotDate: '2026-09-16' }, 'test-model', false, {
+      phase: 'closed', last: lastJudged('2026-09-16', '2026-09-16'),
+    })).type,
+    'noChange', '同一份快照 + K 线在闭市期间仍只研判一次'
+  );
+  assert.strictEqual(
+    (await classify('300806', { read: { klineDate: '2026-09-16' }, snapshotDate: '2026-09-15' }, 'test-model', false, {
+      phase: 'closed',
+    })).type,
+    'first', '无上次成功记录时按首次研判处理'
+  );
+  console.log('judgment-batch classify 回归用例 passed');
+})().catch((e) => { console.error(e); process.exit(1); });

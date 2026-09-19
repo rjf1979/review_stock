@@ -10,6 +10,8 @@ const rulesStore = require('./rules-store');
 const crypto = require('crypto');
 const priceLevels = require('./price-levels');
 const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans } = require('./storage');
+// 本地通达信数据源探针：只读检查目录/除权文件是否可用，供设置页与巡检使用。
+const { tdxStatus } = require('./tdx-vipdoc');
 const watchlist = require('./watchlist');
 const candidatePool = require('./candidate-pool');
 const poolPrefetch = require('./pool-prefetch');
@@ -29,6 +31,7 @@ const { assessKlineCoverage } = require('./kline-quality');
 const { evaluateTailStatus, effectiveTailStatus } = require('./kline-tail-status');
 const taskRecovery = require('./task-recovery');
 const selectionObservation = require('./selection-observation');
+const { ensureBenchSeries, benchCloseLookup } = require('./bench-series');
 
 const DEFAULT_PORT = 3110;
 const MARKETS_DEFAULTS = ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'];
@@ -317,6 +320,10 @@ function createServer(port = DEFAULT_PORT) {
         const markets = String(url.searchParams.get('markets') || '').split(',').map((s) => s.trim()).filter(Boolean);
         return send(res, 200, snapshotStatus(markets));
       }
+      // 本地通达信来源状态：只返回目录/文件是否可用，不回显其它磁盘内容。
+      if (pathname === '/api/tdx/status' && req.method === 'GET') {
+        return send(res, 200, { ok: true, status: tdxStatus() });
+      }
       if (pathname === '/api/data-integrity') {
         const defaultMarkets = ['sh_main', 'sz_main', 'chuangye'];
         const snap = snapshotStatus(defaultMarkets);
@@ -539,11 +546,14 @@ function createServer(port = DEFAULT_PORT) {
         if (poolPatternsCache.value && poolPatternsCache.key === cacheKey && Date.now() - poolPatternsCache.at < 10000) {
           return send(res, 200, { patterns: poolPatternsCache.value, cached: true });
         }
+        // 只取一次沪深300 基准，供本批 limit_pullback v4 复筛共用（取不到则形态给出明确 miss）。
+        const benchSeries = await ensureBenchSeries();
+        const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
         const entries = await Promise.all(items.map(async (item) => {
           const code = String((item && item.code) || '').trim();
           if (!/^\d{6}$/.test(code)) return null;
           const rec = await readKline(code);
-          const result = detectSinglePatterns(rec && rec.kline, { code });
+          const result = detectSinglePatterns(rec && rec.kline, { code, benchLookup });
           return [code, { hits: result.hits, checkedRules: result.rules.length }];
         }));
         const patterns = Object.fromEntries(entries.filter(Boolean));
@@ -676,10 +686,27 @@ function createServer(port = DEFAULT_PORT) {
         const code = String((body && body.code) || '').trim();
         if (!/^\d{6}$/.test(code)) return send(res, 400, { error: 'code 必须为 6 位数字' });
         const local = await readKline(code);
-        const bars = local && Array.isArray(local.kline) ? local.kline : [];
+        const localBars = local && Array.isArray(local.kline) ? local.kline : [];
+        // 详情页常规只传 code（按本地最新 K 线算并落库）；验收/回放可透传截断到信号日的 K 线，
+        // 此时按传入序列现算、只读返回，避免把非最新的证据哈希写进价位集。
+        const supplied = Array.isArray(body && body.kline) ? body.kline : [];
+        const persist = supplied.length < 30;
+        const bars = persist ? localBars : supplied;
         if (bars.length < 30) return send(res, 400, { ok: false, error: 'K 线样本不足，无法计算价位' });
         const lastBar = bars[bars.length - 1];
         const levels = priceLevels.computeLevels(bars, { code });
+        // 命中 v4 形态（rsi_low_turn / limit_pullback）时，可执行价位改用形态自带退出计划（v4 口径），
+        // 与研判落库保持同一套数字。
+        const benchSeries = await ensureBenchSeries();
+        const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
+        const hits = detectSinglePatterns(bars, { code, benchLookup }).hits;
+        const patternPlan = judgmentCore.selectPatternPlan(hits, bars, code, benchLookup);
+        const effective = patternPlan
+          ? (patternPlan.patternId === 'limit_pullback'
+            ? priceLevels.withLimitPullbackPlan(levels, patternPlan)
+            : priceLevels.withRsiLowTurnPlan(levels, patternPlan))
+          : levels;
+        if (!persist) return send(res, 200, { ok: true, code, levels: { ...effective, available: true } });
         const evidenceHash = 'auto-' + crypto.createHash('sha256').update(bars.map((b) => b.date + ':' + b.close).join('|')).digest('hex').slice(0, 24);
         await writePriceLevelSet({
           code,
@@ -688,22 +715,35 @@ function createServer(port = DEFAULT_PORT) {
           algorithmVersion: 'levels-v1',
           adjustmentType: 'qfq',
           klineDate: String(lastBar.date || ''),
-          entryTriggers: levels.entryTriggers || [],
-          invalidationLevel: levels.invalidationLevel || null,
-          exitWatchZones: levels.exitWatchZones || [],
-          riskReward: levels.riskReward || null,
+          entryTriggers: effective.entryTriggers || [],
+          invalidationLevel: effective.invalidationLevel || null,
+          exitWatchZones: effective.exitWatchZones || [],
+          riskReward: effective.riskReward || null,
           supportZones: levels.supportZones || [],
           resistanceZones: levels.resistanceZones || [],
         });
         const stored = await getPriceLevelSet(code, evidenceHash, 'levels-v1');
-        return send(res, 200, { ok: true, code, levels: stored ? { ...stored, available: true } : null });
+        const payload = stored ? { ...stored, available: true } : null;
+        // price_level_sets 只落库可复算的价位字段；形态自带的退出计划（patternExitVersion /
+        // patternExitPlan / takeProfit / atr14）属于本次实际生效的口径，读回时按 effective 回填，
+        // 避免详情页看到「价位已按 v4 口径计算但版本字段为空」的错位状态。
+        if (payload && effective !== levels) {
+          payload.patternId = effective.patternId;
+          payload.patternExitVersion = effective.patternExitVersion;
+          payload.patternExitPlan = effective.patternExitPlan;
+          payload.takeProfit = effective.takeProfit || [];
+          payload.atr14 = effective.atr14;
+        }
+        return send(res, 200, { ok: true, code, levels: payload });
       }
       if (pathname === '/api/kline/patterns' && req.method === 'POST') {
         const body = await readBody(req);
         const code = String((body && body.code) || '').trim();
         const kline = Array.isArray(body && body.kline) ? body.kline : [];
         if (!/^\d{6}$/.test(code)) return send(res, 400, { error: 'code 必须为 6 位数字' });
-        const result = detectSinglePatterns(kline, { code });
+        const benchSeries = await ensureBenchSeries();
+        const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
+        const result = detectSinglePatterns(kline, { code, benchLookup });
         return send(res, 200, { code, hits: result.hits, checkedRules: result.rules.length });
       }
       if (pathname === '/api/ai/analyze' && req.method === 'POST') {
@@ -712,13 +752,15 @@ function createServer(port = DEFAULT_PORT) {
         if (!/^\d{6}$/.test(code)) return send(res, 400, { ok: false, error: 'code 必须为 6 位数字' });
         // 详情页已拉到前复权日 K，直接透传避免二次联网；后端据此复跑全部启用形态规则做证据。
         const kline = Array.isArray(body && body.kline) ? body.kline : [];
+        const benchSeries = await ensureBenchSeries();
+        const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
         const r = await aiAssist.analyze({
           code,
           name: String((body && body.name) || ''),
           market: String((body && body.market) || ''),
           snapshot: (body && body.snapshot && typeof body.snapshot === 'object') ? body.snapshot : null,
           kline,
-          patterns: detectSinglePatterns(kline, { code }).hits,
+          patterns: detectSinglePatterns(kline, { code, benchLookup }).hits,
           ruleLabel: String((body && body.ruleLabel) || ''),
         });
         return send(res, r.ok ? 200 : 200, r);

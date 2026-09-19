@@ -3,6 +3,8 @@
 import { defineStore } from 'pinia';
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import * as echarts from 'echarts';
+import { isQuoteExpiredRecommendation, isKlineMetaUnverifiedRecommendation } from './recommendation-state';
+import { rsiLowTurnScan, rsiZoneLabel } from '../lib/rsi.mjs';
 
 export const useAppStore = defineStore('app', () => {
 const markets = ref({});
@@ -26,6 +28,8 @@ const statusText = ref('');
 const detail = reactive({
   open: false, code: '', name: '', loading: false, pattern: '', patternHits: [], checkedPatternRules: 0, error: '', changePct: 0,
   priceText: '—', changeText: '—', openText: '—', highText: '—', lowText: '—',
+  // RSI 副图显示偏好（详情弹框局部状态，默认开启；选择逻辑本身依赖 RSI，默认让证据可见）。
+  showRsi: true,
   volumeText: '—', amountText: '—', turnoverText: '—', volumeRatioText: '—',
   // AI 辅助研判状态
   row: null, kline: [], klineDate: '', evidence: [], aiBusy: false, aiText: '', aiRun: false,
@@ -42,21 +46,35 @@ let detailSessionId = 0;
 let detailChart = null;
 let detailChartObserver = null;
 const resizeDetailChart = () => { if (detailChart) detailChart.resize({ animation: false }); };
-function repaintPriceLevels(levels) {
-  if (!detailChart || !levels) return;
-  const dates = detail.kline || [];
-  const first = dates[0] && dates[0].date;
-  const last = dates[dates.length - 1] && dates[dates.length - 1].date;
-  detailChart.setOption({ graphic: [] });
+// 详情 RSI 副图开关：偏好写在本地，避免每次打开详情都要重新点一次。
+const DETAIL_RSI_PREF_KEY = 'sentinel.detail.rsi';
+try {
+  const savedRsiPref = window.localStorage.getItem(DETAIL_RSI_PREF_KEY);
+  if (savedRsiPref === '0') detail.showRsi = false;
+  else if (savedRsiPref === '1') detail.showRsi = true;
+} catch { /* 隐私模式或无 localStorage 时保持默认值 */ }
+// 价格位标注（建仓 / 止损 / 止盈）的数据构造集中在这里：
+// 详情图主体重绘会用 replaceMerge 清掉多余的坐标轴与系列，因此标注必须由主体自带，
+// 否则盘中每次刷新都会把 AI 价格位连线抹掉。
+function priceLevelMarks(levels) {
   const areaData = [], lineData = [];
+  if (!levels) return { areaData, lineData };
   (levels.entryTriggers || []).forEach((x) => { const v = Number(x.confirmAbove || (x.zone && x.zone.high) || x.value || x.price); if (Number.isFinite(v)) lineData.push({ yAxis: v, name: '建仓价位', lineStyle: { color: '#f7d451', type: 'dashed' } }); });
   const stop = Number(levels.invalidationLevel && (levels.invalidationLevel.value || levels.invalidationLevel.price));
   if (Number.isFinite(stop)) lineData.push({ yAxis: stop, name: '止损价位', lineStyle: { color: '#ff6262', type: 'dashed' } });
   (levels.exitWatchZones || []).forEach((x) => { const v = Number(x.value || x.price || (x.zone && x.zone.low)); if (Number.isFinite(v)) lineData.push({ yAxis: v, name: '止盈价位', lineStyle: { color: '#62d9d0', type: 'dashed' } }); });
+  return { areaData, lineData };
+}
+function repaintPriceLevels(levels) {
+  if (!detailChart || !levels) return;
+  const { areaData, lineData } = priceLevelMarks(levels);
+  detailChart.setOption({ graphic: [] });
   detailChart.setOption({ series: [{ type: 'candlestick', name: '日K', markArea: { silent: true, data: areaData }, markLine: { silent: true, symbol: ['none', 'none'], data: lineData, label: { show: true, position: 'insideEndTop' } } }] });
 }
 const integrity = reactive({ loading: false, needsData: false, firstRun: false, missing: [], snapshot: {}, kline: {} });
 const klineGaps = reactive({ loading: false, total: 0, complete: 0, incomplete: 0, missingRows: 0, windowSize: 0, examples: [], worst: [] });
+// 本地通达信数据源探针：只读检查目录/除权文件是否存在，不解析、不取数。
+const tdxStatus = reactive({ loading: false, checked: false, configured: false, root: '', vipdocAvailable: false, gbbqAvailable: false, gbbqBytes: 0, markets: [], error: '' });
 
 // 工作模式：候选池 / 盯盘 / 选股扫描 / 设置
 const mode = ref((() => {
@@ -82,7 +100,7 @@ const poolPatternFilter = ref('all');
 const poolPatterns = ref({});
 const poolKlineDepths = ref({});
 const poolKlineLatestDates = ref({});
-const poolPrefetch = reactive({ running: false, done: 0, total: 0, ok: 0, listingComplete: 0, strategyReady: 0, incomplete: 0, failed: 0, skipped: 0, current: '', startedAt: 0, finishedAt: 0, lmt: 250 });
+const poolPrefetch = reactive({ running: false, done: 0, total: 0, ok: 0, listingComplete: 0, strategyReady: 0, incomplete: 0, failed: 0, skipped: 0, current: '', startedAt: 0, finishedAt: 0, lmt: 250, statusByCode: {} });
 const poolBusy = ref(false);
 const poolItemBusy = ref({});
 const poolMsg = ref('');
@@ -126,7 +144,7 @@ function cnAfterMarketClose(now = new Date()) {
 }
 
 // 设置：K 线天数 / 自动补全间隔 + AI 配置（本地持久化于 /api/settings）
- const settings = reactive({ fetchDays: 250, klineSyncIntervalSec: 300, scanMarkets: ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'], scanLimit: 500, ai: { enabled: false, provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, concurrency: 3, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000, first: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, second: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, prompt: '' } });
+const settings = reactive({ fetchDays: 250, klineSyncIntervalSec: 300, tdxDir: '', scanMarkets: ['sh_main', 'sz_main', 'chuangye', 'kechuang', 'beijiao'], scanLimit: 500, ai: { enabled: false, provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, concurrency: 3, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000, first: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, second: { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 }, prompt: '' } });
  // 先建立两组响应式对象，避免设置接口尚未返回时模板访问 undefined。
  settings.ai.first = settings.ai.first || { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 };
  settings.ai.second = settings.ai.second || { provider: 'openai-compatible', baseURL: '', apiKey: '', model: '', temperature: 0.7, maxTokens: 8192, reasoningEffort: 'medium', timeoutMs: 180000, contextTokens: 1000000 };
@@ -184,6 +202,16 @@ const klineGapsSummary = computed(() => {
   if (klineGaps.loading) return '正在核对候选池 K 线日期索引…';
   if (!klineGaps.total) return '候选池为空：先扫描全市并纳入候选池，再回来核对缺失日。';
   return `候选池 ${klineGaps.total} 只中 ${klineGaps.complete} 只已齐（窗口 ${klineGaps.windowSize} 日），${klineGaps.incomplete} 只存在 ${klineGaps.missingRows} 个缺失日；候选池自动补全只补这些缺失日，已齐不再重扫。`;
+});
+// 本地通达信来源的可用性说明：只有日线目录与 gbbq 同时可用才可能给出可自证前复权序列。
+const tdxStatusSummary = computed(() => {
+  if (tdxStatus.loading) return '正在检测本地通达信数据源…';
+  if (tdxStatus.error) return `检测失败：${tdxStatus.error}`;
+  if (!tdxStatus.checked) return '尚未检测。填入通达信安装目录并保存后点「检测本地数据源」。';
+  if (!tdxStatus.configured) return '未配置：本地通达信来源已关闭，行情 K 线只走联网源。';
+  const markets = Array.isArray(tdxStatus.markets) && tdxStatus.markets.length ? tdxStatus.markets.join('/') : '未发现';
+  const size = tdxStatus.gbbqBytes ? `（${(tdxStatus.gbbqBytes / 1048576).toFixed(1)} MB）` : '';
+  return `已配置 ${tdxStatus.root}：日线目录${tdxStatus.vipdocAvailable ? '可用' : '缺失'}（市场 ${markets}），除权文件 gbbq ${tdxStatus.gbbqAvailable ? `可用${size}` : '缺失'}；${tdxStatus.gbbqAvailable ? '可本地推导前复权序列，用于补齐联网源拿不到前复权的证券。' : '缺少 gbbq 时只能给出未复权价，不会用于形态确认。'}`;
 });
 
 // 涨跌统计以本地 K 线库尾 bar 为准（与卡片价格同源）；无 K 线的代码不计入。
@@ -327,13 +355,45 @@ const candidateStateClass = (r) => {
   const s = candidateState(r);
   if (s.startsWith('研判失败')) return 'failed';
   if (s.startsWith('数据未就绪') || s === '待补 K 线') return 'pending';
+  // “待复核”= 研判证据已更新、上次结论已过期，属于待处理状态：
+  // 与“已研判”共用就绪色会让用户以为无需处理，也掩盖了“点了复核却仍停在待复核”的问题。
+  if (s === '待复核') return 'pending';
   return 'ready';
 };
+// 状态列只显示“待复核”时，用户无法知道原因与下一步动作。把两件事写进 tooltip：
+// 证据日期怎么变的，以及应该点“批量 AI 研判”（严格复核不改变研判状态）。
+const candidateStateHint = (r) => {
+  const st = poolJudgments.value[r.code];
+  if (!st || st.judgmentStatus !== 'success') return '';
+  const lastDates = (st.lastSuccess && st.lastSuccess.evidenceDates) || {};
+  const klineMoved = lastDates.klineDate && st.klineDate && lastDates.klineDate !== st.klineDate;
+  const snapshotMoved = lastDates.snapshotDate && st.snapshotDate && lastDates.snapshotDate !== st.snapshotDate;
+  if (!klineMoved && !snapshotMoved) return '';
+  const parts = [];
+  if (klineMoved) parts.push(`本地K线 ${lastDates.klineDate} → ${st.klineDate}`);
+  if (snapshotMoved) parts.push(`入池行情 ${lastDates.snapshotDate} → ${st.snapshotDate}`);
+  return `研判证据已更新（${parts.join('，')}），上次结论已过期：点击“批量 AI 研判”按新证据重新研判；“严格复核”不改变研判状态。`;
+};
 const hasFailedJudgments = computed(() => Object.values(poolJudgments.value).some((s) => s && (s.judgmentStatus === 'failed' || s.judgmentStatus === 'format_error')));
+// 候选自身行情过期时，重新严格复核只会再次判为数据不足：结论失效的原因是入池行情日期，
+// 不是复核规则。必须重新扫描刷新该票行情或移除候选，界面不能把两种失效原因混为一谈。
+const quoteExpiredPoolItems = computed(() => pool.value.filter((row) => isQuoteExpiredRecommendation(poolRecommendations.value[row.code])));
+const quoteExpiredPoolSummary = computed(() => quoteExpiredPoolItems.value
+  .map((row) => `${row.code} ${row.name}（入池行情 ${row.snapshotDate || '—'}）`).join('、'));
+// 第三种失效原因：本地 K 线的来源或前复权口径不可核对（补齐时退化到无法验证口径的来源）。
+// 这一类可以被修复——补齐流程会按可验证来源重取整段序列——所以既不能用“待重新复核”含混显示，
+// 也不能让用户对着同一个按钮反复点击却永远停在同一结论。
+const klineUnverifiedPoolItems = computed(() => pool.value.filter((row) => isKlineMetaUnverifiedRecommendation(poolRecommendations.value[row.code])));
+const klineUnverifiedPoolSummary = computed(() => klineUnverifiedPoolItems.value
+  .map((row) => `${row.code} ${row.name}`).join('、'));
 const recommendationLabel = (r) => {
   const recommendation = poolRecommendations.value[r.code] || {};
   if (recommendation.status === 'failed') return '复核失败';
-  if (recommendation.validity && recommendation.validity.current === false) return '待重新复核';
+  if (recommendation.validity && recommendation.validity.current === false) {
+    if (isQuoteExpiredRecommendation(recommendation)) return '行情过期 · 需重扫';
+    if (isKlineMetaUnverifiedRecommendation(recommendation)) return 'K线口径未验证 · 需补齐';
+    return '待重新复核';
+  }
   const selected = recommendation.evidenceJson?.selected || recommendation.evidence?.selected;
   if (recommendation.classification === 'passed') return selected ? '通过 · 本批精选' : '通过 · 未入精选';
   return ({ pending_confirmation: '待确认', not_passed: '不通过', insufficient: '数据不足', priority: '优先盯盘', confirm: '等待确认', not_recommended: '暂不推荐' }[recommendation.classification] || '待复核');
@@ -350,7 +410,14 @@ const recommendationReason = (r) => {
   const reasons = x && (Array.isArray(x.reasonCodesJson) ? x.reasonCodesJson : x.reasonCodes);
   if (!x) return '';
   if (x.status === 'failed' && Array.isArray(reasons) && reasons[0]) return reasons[0];
-  if (x.validity && x.validity.current === false) return (x.validity.reasons || []).join('；');
+  if (x.validity && x.validity.current === false) {
+    const advice = isQuoteExpiredRecommendation(x)
+      ? '处理：候选入池行情已过期，重新严格复核无法恢复；请到“选股扫描”重新扫描刷新该票行情，或直接移除该候选'
+      : isKlineMetaUnverifiedRecommendation(x)
+        ? '处理：本地K线来源或前复权口径不可核对；“重新严格复核”会先按可验证来源（腾讯前复权）整段重取该票K线再复核，仍失败请检查网络或重新扫描后入池'
+        : '处理：点击“重新严格复核”按当前规则、批次与K线重新生成结论';
+    return [...(x.validity.reasons || []), advice].join('；');
+  }
   if (!Array.isArray(reasons) || !reasons[0]) return '';
   const base = reasons[0];
   // 弱势市场的全局理由对所有票一致：补充该票自身的形态与量能依据，便于横向比较。
@@ -383,14 +450,26 @@ const primaryThemeName = (item) => {
   const fallback = themes.slice().sort((a, b) => Number(a.rank) - Number(b.rank))[0];
   return String((ranked && (ranked.name || ranked.code)) || (fallback && (fallback.name || fallback.code)) || '');
 };
+// 集中风险只统计“主要题材”，与 candidate-review 的 maxSelectedPerTheme 口径保持一致：
+// finalizeSelections 按 result.primaryThemeCode 计数并限制 2 只。若把所有题材标签都累加，
+// QFII重仓、机构重仓、长江三角这类宽口径概念会把正常持仓误报成题材集中风险。
+// 文案区分“自选已有”和“本批转入”，避免把存量持仓说成本次复核的预计结果。
 const concentrationPreview = computed(() => {
   const counts = new Map();
-  const items = [...watchlist.value, ...pool.value.filter(isSelectedRecommendation).slice(0, 5)];
-  for (const item of items) {
-    const name = primaryThemeName(item);
-    if (name) counts.set(name, (counts.get(name) || 0) + 1);
-  }
-  return [...counts.entries()].filter(([, count]) => count > 2).map(([name, count]) => `${name}预计${count}只，超过同题材建议线2只`);
+  const collect = (items, kind) => {
+    for (const item of items) {
+      const name = primaryThemeName(item);
+      if (!name) continue;
+      const current = counts.get(name) || { name, existing: 0, incoming: 0 };
+      current[kind] += 1;
+      counts.set(name, current);
+    }
+  };
+  collect(watchlist.value, 'existing');
+  collect(pool.value.filter(isSelectedRecommendation).slice(0, 5), 'incoming');
+  return [...counts.values()].filter((item) => item.existing + item.incoming > 2).map((item) => (item.incoming
+    ? `${item.name}预计${item.existing + item.incoming}只（自选${item.existing} + 本批转入${item.incoming}），超过建议线2只`
+    : `${item.name}已有${item.existing}只自选，超过建议线2只`));
 });
 const watchSourceStats = computed(() => ({
   selected: watchlist.value.filter((item) => item.source === 'pool_selected').length,
@@ -453,6 +532,11 @@ const fmtDuration = (ms) => {
 const zoneRange = (z) => (z && z.low != null && z.high != null) ? `${z.low}~${z.high}` : '—';
 const entryTriggerLabel = (t) => {
   if (!t) return '—';
+  // rsi_low_turn v4：信号在信号日收盘确认，入场参考价就是信号日收盘价。
+  if (t.type === 'close_signal') {
+    const st = t.status === 'confirmed' ? '信号日已确认' : '待确认';
+    return `收盘信号买入 · ${st}${t.confirmAbove != null ? `（参考价 ${t.confirmAbove}）` : ''}`;
+  }
   const kind = t.type === 'pullback' ? '首次买入' : t.type === 'breakout' ? '突破买入' : String(t.type || '入场观察');
   const st = t.status === 'achieved' ? '已达成' : t.status === 'confirmed' ? '已突破' : t.type === 'breakout' ? '待突破' : '待确认';
   let s = `${kind} · ${st}`;
@@ -461,6 +545,8 @@ const entryTriggerLabel = (t) => {
 };
 const exitWatchLabel = (z) => {
   if (!z) return '—';
+  // v4：6R 只是切换到跟踪止盈的启动线（不减仓），不是固定目标价。
+  if (z.type === 'trail_activation') return z.value != null ? `6R 跟踪启动线 ${z.value}` : '6R 跟踪启动线';
   if (z.type === 'trailing') return z.value != null ? `移动保护线 ${z.value}` : '移动保护线';
   return zoneRange(z);
 };
@@ -653,7 +739,7 @@ async function scan() {
       focusConcepts: Array.isArray(data.focusConcepts) ? data.focusConcepts : scanContext.value.focusConcepts,
       scanScope: data.scanScope || scanContext.value.scanScope,
       snapshotDate: data.snapshotDate || scanContext.value.snapshotDate,
-      prefilter: data.prefilter || { matched: 0, confirmed: 0, klineMissing: 0 },
+      prefilter: data.prefilter || { matched: 0, confirmed: 0, klineMissing: 0, patternRejected: 0, unverifiable: 0, outOfUniverse: 0 },
       strongWatch: strongWatchRows.value,
       funnel: scanFunnel.value,
     };
@@ -670,9 +756,19 @@ async function scan() {
     summary.value = '来源 ' + sourceLabel(data.dataSource) + ' · ' + scopeText + '扫描 ' + data.totalScanned + ' 只' + marketNote + '，快照预筛命中 ' + hitTotal + ' 只' + gateText + '，展示 ' + rows.value.length + ' 只，耗时 ' + (data.ms / 1000).toFixed(1) + 's' + (byMarketText ? '；各市场：' + byMarketText : '');
     if (!rows.value.length) {
       status.value = 'empty';
-      statusText.value = hitTotal > 0
-        ? `快照预筛命中 ${hitTotal} 只，但当前扫描数量上限未展示任何结果。`
-        : '当前市场环境和重点行业范围内没有通过量价预筛的股票。';
+      const patternRejected = Number(prefilter.patternRejected) || 0;
+      const unverifiable = Number(prefilter.unverifiable) || 0;
+      const pendingKline = Number(prefilter.klineMissing) || 0;
+      const outOfUniverse = Number(prefilter.outOfUniverse) || 0;
+      if (patternRejected || unverifiable || pendingKline) {
+        // 零候选不等于「扫描坏了」：把三层原因拆开，用户才能判断是没信号还是缺数据。
+        const universeNote = outOfUniverse ? `另有 ${outOfUniverse} 只题材成分股不在可交易范围（科创板/北交所），已在扫描前排除；` : '';
+        statusText.value = `快照预筛命中 ${hitTotal} 只：形态未通过 ${patternRejected} 只、K 线口径不可验证 ${unverifiable} 只（前复权无法自证，或上市历史不足 150 根）、待补 K 线 ${pendingKline} 只；${universeNote}本轮没有通过形态确认的候选。`;
+      } else if (hitTotal > 0) {
+        statusText.value = `快照预筛命中 ${hitTotal} 只，但当前扫描数量上限未展示任何结果。`;
+      } else {
+        statusText.value = '当前市场环境和重点行业范围内没有通过量价预筛的股票。';
+      }
     } else {
       status.value = '';
       statusText.value = '';
@@ -717,14 +813,36 @@ const vma5 = mav(kline, 5), vma10 = mav(kline, 10);
 const lastVal = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]; return '-'; };
 const maLatest = { MA5: lastVal(ma5), MA10: lastVal(ma10), MA20: lastVal(ma20), MA60: lastVal(ma60) };
 detail.klineDate = lastK.date || '';
+const volData = kline.map(k => ({ value: k.volume, itemStyle: { color: k.close >= k.open ? UP : DOWN } }));
+const ln = (c) => ({ color: c, width: 1.2, opacity: 0.9 });
+// RSI 副图证据：阈值与跌幅口径直接取当前 rsi_low_turn 规则参数，
+// 计算统一走 frontend/src/lib/rsi.mjs —— 与 screener-core.js 逐点同一公式，
+// 保证图上的「拐头」就是后端选股认的「拐头」。
+const rsiRule = enabledRules.value.find(r => r.kind === 'kline' && r.patternId === 'rsi_low_turn')
+  || rules.value.find(r => r.kind === 'kline' && r.patternId === 'rsi_low_turn');
+const rsiParams = Object.assign({ period: 14, low: 18, drop_days: 60, drop_max: -30 }, (rsiRule && rsiRule.params) || {});
+const rsiScan = rsiLowTurnScan(kline, rsiParams);
+const rsiRuleEnabled = !!rsiRule && rsiRule.enabled !== false;
+const showRsi = detail.showRsi !== false;
+const levelMarks = priceLevelMarks(detail.aiPriceLevels);
+const hitIndexes = new Set(rsiScan.hits.map(p => p.index));
+const turnIndexes = new Set(rsiScan.turns.map(p => p.index));
+const turnPoints = rsiScan.turns.filter(p => !hitIndexes.has(p.index));
+const gridIndexes = showRsi ? [0, 1, 2] : [0, 1];
+const lastRsi = Number(rsiScan.latest);
+const lastHit = hitIndexes.has(kline.length - 1);
 detail.evidence = [
   { label: '最新日 K', value: `${lastK.date || '—'} · 收 ${fmtPrice(lastK.close)}`, tone: Number(lastK.close) >= Number(lastK.open) ? 'pos' : 'neg' },
   { label: '均线结构', value: `MA5 ${maLatest.MA5} · MA20 ${maLatest.MA20}` },
+  {
+    label: `RSI${rsiScan.period} 状态`,
+    value: Number.isFinite(lastRsi)
+      ? `${lastRsi.toFixed(1)} · ${rsiZoneLabel(lastRsi, rsiScan.low)}${lastHit ? ' · 形态命中' : (turnIndexes.has(kline.length - 1) ? ' · 拐头未过跌幅过滤' : '')}`
+      : '样本不足，RSI 未形成',
+  },
   { label: '量比 / 换手', value: `${detail.volumeRatioText} / ${detail.turnoverText}` },
   { label: 'K 线样本', value: `${kline.length} 根前复权日 K` },
 ];
-const volData = kline.map(k => ({ value: k.volume, itemStyle: { color: k.close >= k.open ? UP : DOWN } }));
-const ln = (c) => ({ color: c, width: 1.2, opacity: 0.9 });
 detailChart.setOption({
   backgroundColor: '#202020',
   animation: false,
@@ -744,26 +862,74 @@ detailChart.setOption({
       if (!item) return '';
       const change = item.open ? ((item.close - item.open) / item.open) * 100 : 0;
       const fv = (x) => (x == null ? '—' : fmtVolume(x));
-      return `${item.date}<br/>开 ${fmtPrice(item.open)}　高 ${fmtPrice(item.high)}　低 ${fmtPrice(item.low)}　收 <b>${fmtPrice(item.close)}</b><br/>涨幅 <b style="color:${change >= 0 ? UP : DOWN}">${fmtPct(change)}</b>　成交量 ${fmtVolume(item.volume)}<br/>量能　VMA5 ${fv(vma5[index])}　VMA10 ${fv(vma10[index])}`;
+      // RSI 行同时给出「前值 → 当前值」，因为 rsi_low_turn 判定的是拐头而不是低位本身。
+      const rsiNow = Number(rsiScan.values[index]);
+      const rsiPrev = index > 0 ? Number(rsiScan.values[index - 1]) : NaN;
+      let rsiLine = '';
+      if (Number.isFinite(rsiNow)) {
+        const mark = hitIndexes.has(index)
+          ? ' · <b style="color:#3fb950">形态命中</b>'
+          : (turnIndexes.has(index) ? ' · 拐头但未过跌幅过滤' : '');
+        rsiLine = `<br/>RSI${rsiScan.period} <b>${rsiNow.toFixed(1)}</b>`
+          + (Number.isFinite(rsiPrev) ? `（前值 ${rsiPrev.toFixed(1)}）` : '')
+          + ` · ${rsiZoneLabel(rsiNow, rsiScan.low)}${mark}`;
+      }
+      return `${item.date}<br/>开 ${fmtPrice(item.open)}　高 ${fmtPrice(item.high)}　低 ${fmtPrice(item.low)}　收 <b>${fmtPrice(item.close)}</b><br/>涨幅 <b style="color:${change >= 0 ? UP : DOWN}">${fmtPct(change)}</b>　成交量 ${fmtVolume(item.volume)}<br/>量能　VMA5 ${fv(vma5[index])}　VMA10 ${fv(vma10[index])}${rsiLine}`;
     },
   },
   axisPointer: { link: [{ xAxisIndex: 'all' }], lineStyle: { color: '#7a8390' } },
-  grid: [{ left: 54, right: 18, top: 34, height: '55%' }, { left: 54, right: 18, top: '74%', height: '14%' }],
-  xAxis: [
-    { type: 'category', data: dates, boundaryGap: false, axisLine: { lineStyle: { color: BORDER } }, axisLabel: { color: AXIS, fontSize: 11 }, axisTick: { show: false } },
-    { type: 'category', gridIndex: 1, data: dates, boundaryGap: false, axisLabel: { show: false }, axisLine: { lineStyle: { color: BORDER } }, axisTick: { show: false } },
-  ],
+  // 三栏布局：价格 / 成交量 / RSI14。关闭副图时回落到原两栏比例，不留空洞。
+  grid: showRsi
+    ? [
+      { left: 54, right: 18, top: 34, height: '44%' },
+      { left: 54, right: 18, top: '56%', height: '11%' },
+      { left: 54, right: 18, top: '71%', height: '14%' },
+    ]
+    : [{ left: 54, right: 18, top: 34, height: '55%' }, { left: 54, right: 18, top: '74%', height: '14%' }],
+  // 日期标签只画在最底部那一栏，避免多栏之间插一条日期轴挤占纵向空间。
+  xAxis: gridIndexes.map((gridIndex) => ({
+    type: 'category', gridIndex, data: dates, boundaryGap: false,
+    axisLine: { lineStyle: { color: BORDER } }, axisTick: { show: false },
+    axisLabel: gridIndex === (showRsi ? 2 : 1)
+      ? { color: AXIS, fontSize: 11 }
+      : { show: false },
+  })),
   yAxis: [
     { scale: true, splitLine: { lineStyle: { color: GRIDL } }, axisLabel: { color: AXIS, fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
     { gridIndex: 1, name: '成交量（股）', nameTextStyle: { color: AXIS, fontSize: 10, padding: [0, 0, 0, -4] }, splitLine: { show: false }, axisLabel: { color: AXIS, fontSize: 10, formatter: (value) => fmtVolume(value) }, axisLine: { show: false }, axisTick: { show: false } },
+    ...(showRsi ? [{
+      gridIndex: 2,
+      name: `RSI${rsiScan.period}`,
+      nameTextStyle: { color: AXIS, fontSize: 10, padding: [0, 0, 0, -4] },
+      min: 0, max: 100, splitNumber: 2, splitLine: { show: false },
+      axisLabel: { color: AXIS, fontSize: 10 },
+      axisLine: { show: false }, axisTick: { show: false },
+    }] : []),
   ],
   dataZoom: [
     // moveOnMouseMove 关闭：窗口右缘恒定钉在最新 K 线（见 detailChart dataZoom 监听），拖动平移无意义。
-    { type: 'inside', xAxisIndex: [0, 1], start: 58, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: false },
-    { type: 'slider', xAxisIndex: [0, 1], start: 58, end: 100, bottom: 8, height: 18, borderColor: BORDER, fillerColor: 'rgba(174,182,189,0.18)', handleStyle: { color: '#aeb6bd' }, textStyle: { color: AXIS } },
+    { type: 'inside', xAxisIndex: gridIndexes, start: 58, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: false },
+    { type: 'slider', xAxisIndex: gridIndexes, start: 58, end: 100, bottom: 8, height: 18, borderColor: BORDER, fillerColor: 'rgba(174,182,189,0.18)', handleStyle: { color: '#aeb6bd' }, textStyle: { color: AXIS } },
   ],
   series: [
-    { type: 'candlestick', name: '日K', data: kline.map(k => [k.open, k.close, k.low, k.high]), itemStyle: { color: UP, color0: DOWN, borderColor: UP, borderColor0: DOWN } },
+    {
+      type: 'candlestick', name: '日K', data: kline.map(k => [k.open, k.close, k.low, k.high]),
+      itemStyle: { color: UP, color0: DOWN, borderColor: UP, borderColor0: DOWN },
+      // 命中日在最低价下方打绿色箭头：直接回答「这一笔为什么被选中」。
+      // repaintPriceLevels 之后追加的是 markLine，不会覆盖这里的 markPoint。
+      markPoint: {
+        silent: true, symbol: 'arrow', symbolSize: 9, symbolOffset: [0, 12],
+        itemStyle: { color: '#3fb950' }, label: { show: false },
+        data: rsiScan.hits.map(p => ({ name: 'RSI 命中', coord: [p.index, Number(kline[p.index] && kline[p.index].low)], value: p.date })),
+      },
+      // AI 价格位随主体一起重绘（见 priceLevelMarks 注释），markPoint 与 markLine 互不覆盖。
+      markArea: { silent: true, data: levelMarks.areaData },
+      markLine: {
+        silent: true, symbol: ['none', 'none'],
+        data: levelMarks.lineData,
+        label: { show: true, position: 'insideEndTop' },
+      },
+    },
     { type: 'line', name: 'MA5', data: ma5, smooth: true, symbol: 'none', connectNulls: false, lineStyle: ln('#f7d451'), emphasis: { disabled: true } },
     { type: 'line', name: 'MA10', data: ma10, smooth: true, symbol: 'none', connectNulls: false, lineStyle: ln('#ff8ab0'), emphasis: { disabled: true } },
     { type: 'line', name: 'MA20', data: ma20, smooth: true, symbol: 'none', connectNulls: false, lineStyle: ln('#66d9ff'), emphasis: { disabled: true } },
@@ -771,10 +937,49 @@ detailChart.setOption({
     { type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volData, barWidth: '60%' },
     { type: 'line', xAxisIndex: 1, yAxisIndex: 1, name: 'VMA5', data: vma5, smooth: true, symbol: 'none', connectNulls: false, lineStyle: ln('rgba(247,212,81,0.8)') },
     { type: 'line', xAxisIndex: 1, yAxisIndex: 1, name: 'VMA10', data: vma10, smooth: true, symbol: 'none', connectNulls: false, lineStyle: ln('rgba(255,138,176,0.8)') },
+    ...(showRsi ? [
+      {
+        type: 'line', name: `RSI${rsiScan.period}`, xAxisIndex: 2, yAxisIndex: 2, data: rsiScan.values,
+        symbol: 'none', connectNulls: false, z: 3,
+        lineStyle: { color: '#e6e8eb', width: 1.2, opacity: 0.95 },
+        // 超卖带底色 + 超卖阈值/70 两条参考线：低于 low 才算「低位」，与规则文字一致。
+        markArea: { silent: true, itemStyle: { color: 'rgba(255,98,98,0.08)' }, data: [[{ yAxis: 0 }, { yAxis: rsiScan.low }]] },
+        markLine: {
+          silent: true, symbol: 'none',
+          label: { color: AXIS, fontSize: 10, position: 'insideEndTop', formatter: (p) => p.name },
+          data: [
+            { yAxis: rsiScan.low, name: `超卖阈值 ${rsiScan.low}`, lineStyle: { color: '#ff6262', type: 'dashed', width: 1 } },
+            { yAxis: 70, name: '70', lineStyle: { color: '#7a8390', type: 'dashed', width: 1 } },
+          ],
+        },
+        emphasis: { disabled: true },
+      },
+      {
+        type: 'scatter', name: '超卖拐头', xAxisIndex: 2, yAxisIndex: 2,
+        data: turnPoints.map(p => [p.index, +p.rsi.toFixed(2)]),
+        symbolSize: 6, itemStyle: { color: 'rgba(0,0,0,0)', borderColor: '#9b9b9b', borderWidth: 1 },
+        emphasis: { disabled: true }, z: 4,
+      },
+      {
+        type: 'scatter', name: '形态命中', xAxisIndex: 2, yAxisIndex: 2,
+        data: rsiScan.hits.map(p => [p.index, +p.rsi.toFixed(2)]),
+        symbol: 'triangle', symbolSize: 8, itemStyle: { color: '#3fb950' },
+        emphasis: { disabled: true }, z: 5,
+      },
+    ] : []),
   ],
-});
+  // 必须用 replaceMerge：ECharts 默认按索引合并数组型组件，会把关闭副图后多出来的
+  // grid[2] / yAxis[2] / RSI 系列保留在画布上（实测残留在 74%~85% 高度区）。
+}, { replaceMerge: ['series', 'grid', 'xAxis', 'yAxis'] });
 detailChart.resize();
   }
+
+  // RSI 副图开关：只切换详情图布局，不影响选股口径。
+  // 偏好写入本地供下次打开沿用；组件直接改 detail.showRsi，由这里统一负责持久化与重绘。
+  watch(() => detail.showRsi, (value) => {
+    try { window.localStorage.setItem(DETAIL_RSI_PREF_KEY, value === false ? '0' : '1'); } catch { /* 忽略写入失败 */ }
+    if (detail.open && klineCache.length) renderDetailChart();
+  });
 
   // 盘中实时刷新详情头部报价文本，并将实时值合并到当日最后一根 K 线。
   // 首个周期必刷拿到最新报价，其后仅盘中轮询（午间休市与闭市暂停）。
@@ -1432,16 +1637,20 @@ async function toggleWatchPin(code) {
 }
 
 async function toggleWatchFromScan(r) {
-  if (isWatched(r.code)) { await removeWatch(r.code); return; }
-  try {
-    const q = new URLSearchParams({ code: r.code, name: r.name, market: r.market });
-    await fetchJson('/api/watchlist?' + q.toString(), { method: 'POST' });
-    await loadWatchlist();
-    await refreshWatch();
-  } catch (e) {
-    watchAddMsg.value = '添加失败：' + e.message;
-    watchAddMsgError.value = true;
-  }
+  // 自选写入同样要等行情与主题补齐，给出逐按钮忙碌态，避免看起来“点了没反应”。
+  if (isPoolItemBusy(r.code)) return;
+  return withPoolItemBusy(r.code, 'watch', async () => {
+    if (isWatched(r.code)) { await removeWatch(r.code); return; }
+    try {
+      const q = new URLSearchParams({ code: r.code, name: r.name, market: r.market });
+      await fetchJson('/api/watchlist?' + q.toString(), { method: 'POST' });
+      await loadWatchlist();
+      await refreshWatch();
+    } catch (e) {
+      watchAddMsg.value = '添加失败：' + e.message;
+      watchAddMsgError.value = true;
+    }
+  });
 }
 
 // ══════════ 候选池 ══════════
@@ -1687,7 +1896,27 @@ async function loadPoolKlineState() {
     poolPrefetch.startedAt = Number(st.startedAt) || 0;
     poolPrefetch.finishedAt = Number(st.finishedAt) || 0;
     poolPrefetch.lmt = Number(st.lmt) || 250;
+    poolPrefetch.statusByCode = st.statusByCode || {};
   } catch { /* 未就绪忽略 */ }
+}
+
+// 复核只读本地 K 线，不做取数：口径不可核对的候选必须先按可验证来源整段重取，否则点多少次都是同一结论。
+// 复用候选池补齐端点，逐秒读取任务状态；返回本次真正恢复“口径可核对”的代码。
+async function repairKlineMetaForReview(codes) {
+  const res = await fetchJson('/api/pool/kline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codes, lmt: settings.fetchDays || 250 }),
+  });
+  if (!res || !res.started) throw new Error((res && res.reason) || '补齐任务未能启动');
+  poolPrefetch.running = true;
+  for (let i = 0; i < 600; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await loadPoolKlineState();
+    if (!poolPrefetch.running) break;
+  }
+  const status = poolPrefetch.statusByCode || {};
+  return codes.filter((code) => status[code] && status[code].metaReviewable === true);
 }
 
 async function startPoolKline() {
@@ -1727,7 +1956,9 @@ async function postPool(items) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     });
-    await loadPool();
+    // 入池是写操作，必须强制刷新本地候选池：loadPool() 的 5 秒节流会把它当只读轮询直接跳过，
+    // 导致股票其实已入池、界面按钮却仍显示“＋ 候选”，用户只能反复点击。
+    await loadPool(true);
     const extra = res && res.updated ? `，更新 ${res.updated}` : '';
     poolMsg.value = `已纳入候选池（新增 ${res ? res.added : 0}${extra}，当前 ${pool.value.length}）`;
     return res;
@@ -1740,9 +1971,11 @@ async function postPool(items) {
 }
 
 async function addToPool(r) {
-  if (r.autoPool === false) { poolMsg.value = '弱势退潮结果仅作观察，不能直接纳入候选池'; return; }
+  if (r.autoPool === false) { poolMsg.value = '弱势退潮结果仅作观察，不能直接纳入候选池'; poolMsgError.value = true; return; }
   if (isInPool(r.code)) { poolMsg.value = r.name ? r.name + ' 已在候选池' : '该股票已在候选池'; return; }
-  return postPool([poolSnapshot(r)]);
+  // 同一只票入池期间不接受第二次点击，避免重复提交与重复整池刷新。
+  if (isPoolItemBusy(r.code)) return;
+  return withPoolItemBusy(r.code, 'add', () => postPool([poolSnapshot(r)]));
 }
 
 async function addAllToPool() {
@@ -1792,9 +2025,27 @@ async function startRecommendations(retryOnly = false) {
   retryOnly = retryOnly === true;
   poolMsg.value = ''; poolMsgError.value = false;
   try {
+    // 「重新严格复核」必须真的能把结论往前推：先把口径不可核对的候选按可验证来源重取，
+    // 再在同一个按钮流程里复核。重取仍失败时如实复核，不伪造通过，也不静默改口径。
+    let repairNote = '';
+    const repairCodes = retryOnly ? [] : klineUnverifiedPoolItems.value.map((row) => row.code);
+    if (repairCodes.length) {
+      poolMsg.value = `检测到 ${repairCodes.length} 只候选K线口径不可核对，正在按可验证来源（腾讯前复权）重取…`;
+      try {
+        const repaired = await repairKlineMetaForReview(repairCodes);
+        repairNote = repaired.length === repairCodes.length
+          ? `复核前已按可验证来源重取 ${repaired.length} 只候选K线并核对口径。`
+          : `复核前按可验证来源重取 ${repaired.length}/${repairCodes.length} 只候选K线，其余口径仍无法核对。`;
+        await loadPool();
+        loadPoolKlineState();
+      } catch (e) {
+        repairNote = `复核前重取K线失败（${e.message}），本次仍按现有K线如实复核。`;
+        poolMsgError.value = true;
+      }
+    }
     const result = await fetchJson('/api/pool/recommendations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ retryOnly }) });
     Object.assign(recommendationBatch, result);
-    poolMsg.value = retryOnly ? '已启动失败项重试，历史结果会保留。' : '已启动候选池严格复核，结论仅供人工复核。';
+    poolMsg.value = (retryOnly ? '已启动失败项重试，历史结果会保留。' : '已启动候选池严格复核，结论仅供人工复核。') + (repairNote ? ' ' + repairNote : '');
     ensureRecommendationPolling();
   }
   catch (e) { poolMsg.value = '启动复核失败：' + e.message; poolMsgError.value = true; }
@@ -1938,6 +2189,27 @@ function stopPoolKlinePolling() {
 }
 
 let klineGapsLoadedAt = 0;
+async function loadTdxStatus() {
+  tdxStatus.loading = true;
+  try {
+    const data = await fetchJson('/api/tdx/status');
+    const s = (data && data.status) || {};
+    Object.assign(tdxStatus, {
+      loading: false,
+      checked: true,
+      configured: s.configured === true,
+      root: String(s.root || ''),
+      vipdocAvailable: s.vipdocAvailable === true,
+      gbbqAvailable: s.gbbqAvailable === true,
+      gbbqBytes: Number(s.gbbqBytes) || 0,
+      markets: Array.isArray(s.markets) ? s.markets : [],
+      error: '',
+    });
+  } catch (e) {
+    Object.assign(tdxStatus, { loading: false, checked: true, configured: false, markets: [], error: String(e && e.message || '后端未就绪').slice(0, 120) });
+  }
+}
+
 async function loadKlineGaps(force = false) {
   if (!force && klineGapsLoadedAt && Date.now() - klineGapsLoadedAt < 30000) return;
   klineGaps.loading = true;
@@ -1994,6 +2266,8 @@ function normalizeSettings(s) {
   return {
     fetchDays: Math.min(Math.max(Math.round(Number(src.fetchDays) || 250), 20), 500),
     klineSyncIntervalSec: Math.min(Math.max(Math.round(Number(src.klineSyncIntervalSec) || 300), 30), 3600),
+    // 本地通达信数据目录：留空表示关闭本地来源；后端按原样保存并 trim，不做路径改写。
+    tdxDir: typeof src.tdxDir === 'string' ? src.tdxDir.trim() : '',
     tradingStyle: ['short', 'medium', 'long'].includes(src.tradingStyle) ? src.tradingStyle : '',
     scanMarkets: [...new Set((Array.isArray(src.scanMarkets) ? src.scanMarkets : []).filter((x) => typeof x === 'string' && x))],
     scanLimit: Math.min(Math.max(Math.round(Number(src.scanLimit) || 500), 1), 500),
@@ -2309,5 +2583,5 @@ document.addEventListener('visibilitychange', () => {
 });
   }
 
-  return { clearPool, removeFromPool, bootstrap, marketClock, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, klineGaps, klineGapsSummary, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, loadIntegrity, loadKlineGaps, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
+  return { clearPool, removeFromPool, bootstrap, marketClock, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, klineGaps, klineGapsSummary, tdxStatus, tdxStatusSummary, loadTdxStatus, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, loadIntegrity, loadKlineGaps, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, candidateStateHint, concentrationPreview, quoteExpiredPoolItems, quoteExpiredPoolSummary, klineUnverifiedPoolItems, klineUnverifiedPoolSummary, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
 });

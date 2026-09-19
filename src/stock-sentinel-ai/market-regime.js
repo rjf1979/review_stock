@@ -4,7 +4,9 @@ const REGIMES = {
   strong_trend: { label: '强势主升', strategyLabel: '突破与趋势跟随', ruleIds: ['volume_breakout', 'platform_breakout', 'box_breakout', 'ascending_triangle', 'n_shape', 'strong_sideways'] },
   range_strong: { label: '震荡偏强', strategyLabel: '回踩确认与趋势转强', ruleIds: ['pullback_ma20', 'ma_bullish', 'ma_golden_start', 'limit_pullback', 'second_test'] },
   rotation: { label: '轮动震荡', strategyLabel: '板块轮动与低位启动', ruleIds: ['ma_golden_start', 'yang_engulf', 'platform_breakout'] },
-  recovery: { label: '恐慌修复', strategyLabel: '超跌修复与反包确认', ruleIds: ['fake_break_pack', 'long_lower_shadow', 'double_bottom', 'second_test', 'rsi_low_turn'] },
+  // limit_pullback v4 与 rsi_low_turn v4 同属「超跌修复」口径（近 60 日跌幅 ≤ -30%），因此一并放进 recovery；
+  // 否则市场判为恐慌修复时，启用中的 limit_pullback 会被策略层过滤掉，永远扫不到。
+  recovery: { label: '恐慌修复', strategyLabel: '超跌修复与反包确认', ruleIds: ['fake_break_pack', 'long_lower_shadow', 'double_bottom', 'second_test', 'rsi_low_turn', 'limit_pullback'] },
   weak: { label: '弱势退潮', strategyLabel: '防守观察，降低自动入池', ruleIds: ['dry_price_bottom', 'shrink_stabilize'] },
 };
 

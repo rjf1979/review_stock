@@ -23,6 +23,9 @@
       </section>
 
       <div v-if="status" class="status" :class="status" role="status" aria-live="polite">{{ statusText }}</div>
+      <!-- 入池/自选的逐条结果必须在本页可见：写操作成功前用户不应只靠按钮文案变化判断。
+           常驻 aria-live 区域，内容为空时不占位。 -->
+      <div v-show="poolMsg" class="status" :class="poolMsgError ? 'error' : ''" role="status" aria-live="polite">{{ poolMsg }}</div>
 
       <section v-if="scanContext" class="panel" aria-label="本次扫描策略上下文">
         <div class="panel-head">
@@ -90,8 +93,11 @@
         <div class="panel-head"><div><h2>本次扫描漏斗</h2><span class="summary">各阶段按股票代码去重，门槛不因目标数量自动放宽</span></div></div>
         <div class="market-stats">
           <div class="stat"><span>题材范围</span><strong>{{ scanContext.funnel.scope }}</strong></div>
+          <div class="stat"><span>超出可交易范围</span><strong class="neg">{{ scanContext.funnel.outOfUniverse || 0 }}</strong></div>
           <div class="stat"><span>有效行情</span><strong>{{ scanContext.funnel.validQuotes }}</strong></div>
           <div class="stat"><span>预筛命中</span><strong>{{ scanContext.funnel.prefilterMatched }}</strong></div>
+          <div class="stat"><span>形态未通过</span><strong>{{ scanContext.funnel.patternRejected }}</strong></div>
+          <div class="stat"><span>口径不可验证</span><strong class="neg">{{ scanContext.funnel.unverifiable }}</strong></div>
           <div class="stat"><span>潜力候选</span><strong class="pos">{{ scanContext.funnel.potential }}</strong></div>
           <div class="stat"><span>强势观察</span><strong>{{ scanContext.funnel.strongWatch }}</strong></div>
           <div class="stat"><span>超配额</span><strong>{{ scanContext.funnel.overQuota }}</strong></div>
@@ -148,8 +154,8 @@
               <td class="pat" :title="r.ruleLabel || ''">待补 K 线复筛</td>
               <td class="hide-mobile" :title="(r.riskFlags || []).map(x => x.label).join('；')">{{ (r.riskFlags || []).length ? (r.riskFlags || []).map(x => x.label).join('；') : '—' }}</td>
               <td>
-                <button class="watch-remove" :class="{ added: isInPool(r.code) }" :disabled="r.autoPool === false" :aria-pressed="isInPool(r.code)" @click.stop="addToPool(r)">{{ r.autoPool === false ? '仅观察' : (isInPool(r.code) ? '✓ 在池' : '＋ 候选') }}</button>
-                <button class="watch-remove" :class="{ added: isWatched(r.code) }" :aria-pressed="isWatched(r.code)" @click.stop="toggleWatchFromScan(r)">{{ isWatched(r.code) ? '★ 已加' : '＋ 自选' }}</button>
+                <button class="watch-remove" :class="{ added: isInPool(r.code) }" :disabled="r.autoPool === false || poolBusy || isPoolItemBusy(r.code)" :aria-pressed="isInPool(r.code)" :aria-busy="isPoolItemBusy(r.code, 'add')" :title="r.autoPool === false ? '弱势退潮结果仅作观察' : (isInPool(r.code) ? '已在候选池' : '纳入候选池')" @click.stop="addToPool(r)"><span v-if="isPoolItemBusy(r.code, 'add')" class="loading-spinner" aria-hidden="true"></span><span v-else>{{ r.autoPool === false ? '仅观察' : (isInPool(r.code) ? '✓ 在池' : '＋ 候选') }}</span></button>
+                <button class="watch-remove" :class="{ added: isWatched(r.code) }" :disabled="poolBusy || isPoolItemBusy(r.code)" :aria-pressed="isWatched(r.code)" :aria-busy="isPoolItemBusy(r.code, 'watch')" :title="isWatched(r.code) ? '从自选移除' : '加入自选盯盘'" @click.stop="toggleWatchFromScan(r)"><span v-if="isPoolItemBusy(r.code, 'watch')" class="loading-spinner" aria-hidden="true"></span><span v-else>{{ isWatched(r.code) ? '★ 已加' : '＋ 自选' }}</span></button>
               </td>
             </tr>
           </tbody>
@@ -164,8 +170,8 @@ import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, statusInfo, lastSnapDate, localStatus, selectedMarkets, settings, summary, scanning, hasValidPrescan, rows, poolBusy, status, statusText, scanContext } = storeToRefs(app);
-const { scan, marketLabel, preScan, addAllToPool, fmtPct, fmtNum, fmtDateTime, openDetail, isInPool, addToPool, isWatched, toggleWatchFromScan } = app;
+const { mode, statusInfo, lastSnapDate, localStatus, selectedMarkets, settings, summary, scanning, hasValidPrescan, rows, poolBusy, status, statusText, scanContext, poolMsg, poolMsgError } = storeToRefs(app);
+const { scan, marketLabel, preScan, addAllToPool, fmtPct, fmtNum, fmtDateTime, openDetail, isInPool, addToPool, isWatched, toggleWatchFromScan, isPoolItemBusy } = app;
 const focusBoards = computed(() => [
   ...(scanContext.value?.focusThemes || []),
   ...(scanContext.value?.focusConcepts || []),

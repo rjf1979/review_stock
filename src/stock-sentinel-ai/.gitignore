@@ -2,16 +2,10 @@ node_modules/
 release/
 .runtime/
 .backups/
-data/*.db
-data/*.json
-data/*.jsonl
-data/snapshots/
-data/kline/
-data/kline-archive/
-data/market-prescan-archive/
-data/selection-archive/
-data/task-markers/
-data/*.backup*
+# 本地行情库、快照、回测产物与运行态配置一律不入库（10GB+，按需本地重建）
+data/
+__pycache__/
+*.pyc
 *.log
 npm-debug.log*
 

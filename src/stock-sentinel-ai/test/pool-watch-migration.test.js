@@ -35,7 +35,16 @@ const adapters = {
   latestWatchRecommendations: async (codes) => Object.fromEntries(codes.map((code) => [code, recommendations[code]]).filter(([, value]) => value)),
   readKlineStats: async (codes) => codes.map((code) => ({ code, klineHash: 'same', latestDate: '2026-09-11' })), ruleVersion: 'candidate-review-v2',
 };
-assert.ok(concentrationWarnings(Array.from({ length: 3 }, (_, index) => ({ code: String(index), themeEvidence: [{ code: 'BKX', name: '重叠概念', kind: 'concept' }] }))).some((text) => text.includes('重叠概念已有3只')), '所有重叠概念都应参与集中风险统计');
+// 集中风险与 candidate-review 的 maxSelectedPerTheme 同口径：只数主要题材。
+// 无 candidateThemeRanks 时回落到第一条题材证据（与选股引擎 primaryTheme 一致）。
+assert.ok(concentrationWarnings(Array.from({ length: 3 }, (_, index) => ({ code: String(index), themeEvidence: [{ code: 'BKX', name: '重叠概念', kind: 'concept' }] }))).some((text) => text.includes('重叠概念已有3只')), '主要题材重叠3只必须计入集中风险');
+// QFII重仓、机构重仓这类宽口径概念标签只是附带标签，不能把正常持仓误报成题材集中。
+const broadTagItems = Array.from({ length: 3 }, (_, index) => ({
+  code: `6001${index + 1}`,
+  themeEvidence: [{ code: `BK10${index}`, name: `行业${index + 1}`, kind: 'industry' }, { code: 'BK0535', name: 'QFII重仓', kind: 'concept' }],
+}));
+assert.equal(concentrationWarnings(broadTagItems).length, 0, '非主要题材的宽口径概念不应触发集中风险');
+assert.ok(concentrationWarnings(broadTagItems.map((item) => ({ ...item, selectionEvidence: { candidateThemeRanks: [{ code: 'BK0535', name: 'QFII重仓', rank: 1 }] } }))).some((text) => text.includes('QFII重仓已有3只')), '主要题材确实是 QFII重仓 时仍须告警');
 
 (async () => {
   for (const codes of [[], ['bad-code']]) {

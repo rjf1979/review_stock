@@ -33,6 +33,32 @@
                 <div class="field-group"><label>放量倍数 volFactor</label><input type="number" v-model.number="ruleEditor.draft.params.volFactor" min="0" step="0.1" /></div>
                 <div class="field-group"><label>周期 period</label><input type="number" v-model.number="ruleEditor.draft.params.period" min="0" /></div>
               </div>
+              <!-- rsi_low_turn v4：RSI 低位拐头 + 前期超跌，参数与回测口径一一对应。 -->
+              <div v-if="ruleEditor.draft.patternId === 'rsi_low_turn'" class="rule-params">
+                <div class="field-group"><label for="ruleParamLow">RSI 阈值 low（拐头前须低于）</label><input id="ruleParamLow" type="number" v-model.number="ruleEditor.draft.params.low" min="1" max="99" /></div>
+                <div class="field-group"><label for="ruleParamDropDays">跌幅回看天数 drop_days</label><input id="ruleParamDropDays" type="number" v-model.number="ruleEditor.draft.params.drop_days" min="0" /></div>
+                <div class="field-group"><label for="ruleParamDropMax">跌幅上限% drop_max（负数）</label><input id="ruleParamDropMax" type="number" v-model.number="ruleEditor.draft.params.drop_max" max="0" step="1" /></div>
+              </div>
+              <!-- limit_pullback v4：涨停后缩量回踩 + 前期超跌 + 相对沪深300 走弱，参数与回测口径一一对应。 -->
+              <div v-if="ruleEditor.draft.patternId === 'limit_pullback'" class="rule-params">
+                <div class="field-group"><label for="ruleParamVolShrink">缩量倍数 vol_shrink（量 &lt; 5日均量 ×）</label><input id="ruleParamVolShrink" type="number" v-model.number="ruleEditor.draft.params.vol_shrink" min="0" step="0.05" /></div>
+                <div class="field-group"><label for="ruleParamLimitDropDays">跌幅回看天数 drop_days</label><input id="ruleParamLimitDropDays" type="number" v-model.number="ruleEditor.draft.params.drop_days" min="0" /></div>
+                <div class="field-group"><label for="ruleParamLimitDropMax">跌幅上限% drop_max（负数）</label><input id="ruleParamLimitDropMax" type="number" v-model.number="ruleEditor.draft.params.drop_max" max="0" step="1" /></div>
+                <div class="field-group"><label for="ruleParamRsDays">相对强度天数 rs_days</label><input id="ruleParamRsDays" type="number" v-model.number="ruleEditor.draft.params.rs_days" min="0" /></div>
+                <div class="field-group"><label for="ruleParamRsMax">相对强度上限 pp rs_max（负数）</label><input id="ruleParamRsMax" type="number" v-model.number="ruleEditor.draft.params.rs_max" max="0" step="0.5" /></div>
+              </div>
+              <div class="rule-params">
+                <div class="field-group">
+                  <label for="ruleMinVolumeScore">量能分入池门槛 minVolumeScore</label>
+                  <input id="ruleMinVolumeScore" type="number" v-model.number="ruleEditor.draft.minVolumeScore" min="0" max="100" placeholder="留空沿用全局门槛" />
+                </div>
+              </div>
+              <div v-if="ruleEditor.draft.patternId === 'rsi_low_turn'" class="summary">
+                超跌修复口径：命中当天的量能分天然偏低，默认把该规则门槛设为 0，入池由「快照粗筛 + 本地 K 线复筛」决定；量能分仍照常展示。
+              </div>
+              <div v-if="ruleEditor.draft.patternId === 'limit_pullback'" class="summary">
+                超跌修复口径：入场需「涨停后缩量回踩不破支撑」且「近 drop_days 日跌幅 ≤ drop_max%」且「近 rs_days 日相对沪深300 ≤ rs_max pp」三条同时成立；相对强度依赖本地沪深300 基准序列，取不到时该规则不命中。默认门槛设为 0，入池由复筛决定；量能分仍照常展示。
+              </div>
               <div class="rule-params">
                 <div class="field-group"><label>粗筛 最小涨%</label><input type="number" v-model.number="ruleEditor.draft.prefilter.minChangePct" /></div>
                 <div class="field-group"><label>粗筛 最大涨%</label><input type="number" v-model.number="ruleEditor.draft.prefilter.maxChangePct" /></div>

@@ -89,6 +89,18 @@
             缺失最多：{{ klineGaps.worst.slice(0, 6).map((x) => x.code + '（缺' + x.missing + '）').join('、') }}…
           </div>
         </div>
+
+        <div class="toolbar" aria-label="本地通达信数据源">
+          <div class="field-group tdx-dir-group">
+            <label for="tdxDir">本地通达信数据目录</label>
+            <input id="tdxDir" v-model.trim="settings.tdxDir" placeholder="例如 D:\new_tdx（留空则关闭）" autocomplete="off" spellcheck="false" />
+            <span class="summary">留空则关闭本地通达信来源，只走联网源。填写通达信安装目录后，可直接读取 <code>vipdoc</code> 日线并用 <code>T0002\hq_cache\gbbq</code> 本地推导前复权，用于补齐联网源拿不到前复权的证券（如 688 段、部分次新）。</span>
+          </div>
+          <div class="settings-save-row">
+            <span class="summary" :class="{ err: tdxStatus.error }" role="status">{{ tdxStatusSummary }}</span>
+            <button class="btn mini" :disabled="tdxStatus.loading" :aria-busy="tdxStatus.loading" @click="loadTdxStatus">检测本地数据源</button>
+          </div>
+        </div>
           </div>
         </details>
 
@@ -186,8 +198,8 @@
                 <button class="btn mini danger" @click="removeRule(i)">删除</button>
               </div>
               <div class="summary">
-                <template v-if="r.kind === 'kline'">形态 {{ r.patternId }}<template v-if="r.params && r.params.window"> · 窗口 {{ r.params.window }}</template> · 快照粗筛后入池复筛</template>
-                <template v-if="mode==='settings'">快照阈值规则，参与全市扫描预筛</template>
+                <template v-if="r.kind === 'kline'">形态 {{ r.patternId }}<template v-if="r.params && r.params.window != null"> · 窗口 {{ r.params.window }}</template><template v-if="r.patternId === 'rsi_low_turn'"> · RSI&lt;{{ r.params && r.params.low != null ? r.params.low : 20 }} 低位拐头 · 近 {{ r.params && r.params.drop_days != null ? r.params.drop_days : 60 }} 日跌幅 ≤ {{ r.params && r.params.drop_max != null ? r.params.drop_max : -30 }}% · 结构止损 + 6R 跟踪启动（最长 20 日）</template><template v-if="r.patternId === 'limit_pullback'"> · 涨停后缩量回踩 &lt; {{ r.params && r.params.vol_shrink != null ? r.params.vol_shrink : 0.9 }}× · 近 {{ r.params && r.params.drop_days != null ? r.params.drop_days : 60 }} 日跌幅 ≤ {{ r.params && r.params.drop_max != null ? r.params.drop_max : -30 }}% · 相对沪深300 ≤ {{ r.params && r.params.rs_max != null ? r.params.rs_max : -5 }}pp · 结构止损 + 6R 跟踪启动（最长 20 日）</template> · 快照粗筛后入池复筛<template v-if="r.minVolumeScore != null"> · 量能分门槛 {{ r.minVolumeScore }}</template></template>
+                <template v-else-if="mode==='settings'">快照阈值规则，参与全市扫描预筛</template>
               </div>
             </div>
           </div>
@@ -206,6 +218,6 @@
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, summary, settings, status, markets, integrity, scanning, settingsMsgError, settingsMsg, klineGapsSummary, klineGaps, showFirstApiKey, showSecondApiKey, rows, savingSettings, enabledRules, rules, savingRules, rulesMsgError, rulesMsg } = storeToRefs(app);
-const { scan, loadKlineGaps, saveSettings, addRule, resetRules, openRuleEditor, removeRule, saveRules } = app;
+const { mode, summary, settings, status, markets, integrity, scanning, settingsMsgError, settingsMsg, klineGapsSummary, klineGaps, tdxStatus, tdxStatusSummary, showFirstApiKey, showSecondApiKey, rows, savingSettings, enabledRules, rules, savingRules, rulesMsgError, rulesMsg } = storeToRefs(app);
+const { scan, loadKlineGaps, loadTdxStatus, saveSettings, addRule, resetRules, openRuleEditor, removeRule, saveRules } = app;
 </script>

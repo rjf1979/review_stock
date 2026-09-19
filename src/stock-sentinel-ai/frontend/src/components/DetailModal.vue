@@ -32,11 +32,14 @@
         </div>
         <div class="detail-workspace">
           <section class="detail-chart-panel" aria-label="行情与 K 线证据">
-            <div class="chart-toolbar"><b>日 K · MA5 / 10 / 20 / 60</b></div>
+            <div class="chart-toolbar">
+              <b>日 K · MA5 / 10 / 20 / 60<template v-if="detail.showRsi !== false"> · RSI14 副图</template></b>
+              <button type="button" class="btn mini" :aria-pressed="detail.showRsi !== false" @click="detail.showRsi = detail.showRsi === false">{{ detail.showRsi !== false ? '隐藏 RSI 副图' : '显示 RSI 副图' }}</button>
+            </div>
             <div v-if="detail.loading" class="status loading" aria-live="polite">正在加载 K 线…</div>
             <div v-else-if="detail.error" class="status error" role="status">{{ detail.error }}</div>
             <div v-else class="chart-wrap"><div id="chart"></div></div>
-            <p class="detail-note">拖动底部滑块查看历史区间；悬停 K 线可查看当日开高低收与成交量。数据来自公开行情，仅作研究参考。</p>
+            <p class="detail-note">拖动底部滑块查看历史区间；悬停 K 线可查看当日开高低收、成交量与 RSI。RSI14 副图按当前规则的阈值与跌幅口径标注：空心圆为超卖拐头，绿色三角与价格下方箭头为完整命中（形态选股依据）。数据来自公开行情，仅作研究参考。</p>
           </section>
           <aside class="insight-panel" aria-label="个股数据与 AI 辅助研判">
             <div class="insight-head">

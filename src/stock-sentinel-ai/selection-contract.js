@@ -17,6 +17,15 @@ const EXCLUSION_REASONS = Object.freeze({
   RULE_NOT_MATCHED: 'rule_not_matched',
   SCORE_TOO_LOW: 'score_too_low',
   KLINE_PATTERN_NOT_CONFIRMED: 'kline_pattern_not_confirmed',
+  // K 线来源/复权口径无法从响应验证（当前腾讯对科创板 688 段与部分次新股只返回未复权 `day`），
+  // 这类票永远无法按 v4 口径复核，必须与「仅缺 K 线、可补齐」的 pending 区分开。
+  KLINE_NOT_VERIFIABLE: 'kline_not_verifiable',
+  // 上市或交易历史不足回测样本下限（tools/xingtaidu_backtest.py min_list_days=250），
+  // 统计上不可外推，不作为扫描候选。
+  KLINE_LISTING_TOO_SHORT: 'kline_listing_too_short',
+  // 超出可交易范围：用户实际只能交易上证主板 / 深证主板 / 创业板，
+  // 科创板 688/689 与北交所 4xx/8xx/92x 在扫描阶段即排除，不占用候选配额。
+  OUT_OF_TRADABLE_UNIVERSE: 'out_of_tradable_universe',
 });
 
 function createBatchId(kind, at = new Date()) {

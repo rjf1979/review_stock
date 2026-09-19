@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const selectionPolicy = require('./selection-policy');
 const candidateReview = require('./candidate-review');
 const { matchKlinePattern } = require('./screener-core');
+const { benchLookupSync } = require('./bench-series');
 const priceLevels = require('./price-levels');
 const { rulesFingerprint } = require('./recommendation-validity');
 const { validDate, validBar } = require('./kline-quality');
@@ -140,7 +141,9 @@ function detectRulePatterns(candles, { code = '', rules = [] } = {}) {
   for (const rule of Array.isArray(rules) ? rules : []) {
     if (!rule || rule.enabled === false || rule.kind === 'scan' || !rule.patternId) continue;
     try {
-      const result = matchKlinePattern(rule.patternId, candles, { ...(rule.params || {}), code });
+      // 相对强度过滤（limit_pullback v4）用本地基准缓存复算；取不到时形态会明确判为未命中。
+      const benchLookup = rule.params && rule.params.rs_days ? benchLookupSync() : null;
+      const result = matchKlinePattern(rule.patternId, candles, { ...(rule.params || {}), code, benchLookup });
       if (result && result.matched) hits.push({ ruleId: rule.id, patternId: rule.patternId, label: rule.label || rule.id, score: Number(result.score) || 0 });
     } catch (error) { throw new Error(`历史规则${rule.id}执行失败：${error.message}`); }
   }

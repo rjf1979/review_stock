@@ -3,7 +3,7 @@
 //   支撑区 / 压力区 / 入场观察条件 / 结构失效位 / 退出观察区 / 观察空间比。
 // AI 只解释价位依据，不得自行生成、移动或补全价格。
 
-const { sma } = require('./screener-core');
+const { sma, rsiLowTurnEvidence, limitPullbackEvidence } = require('./screener-core');
 const { atr, adx, boll, obv, linSlope, relativeStrength } = require('./indicators');
 
 const ALGORITHM_VERSION = 'levels-v1';
@@ -344,6 +344,336 @@ function exitWatchZones(zones, candles = [], atrValue = null) {
   return out;
 }
 
+// ───────── rsi_low_turn v4：形态自带退出计划（与回测口径一一对应）─────────
+// 依据 docs/rsi_low_turn与limit_pullback盈亏比优化报告-2021至2026.md 与 tools/pattern_exits.py 的 rsi_low_turn 规格：
+//   入场：RSI14 拐头前值 < low（默认 20）且当前值 > 前值，且近 drop_days（60）个交易日跌幅 ≤ drop_max（-30%）。
+//   止损：max( min(近 10 根低点 × 0.99, 买点 − 2 × ATR14), 买点 × (1 − 8%) )，风险上限 8%。
+//   目标：不做固定目标止盈，也不做 1R 减半；6R 只是「切换跟踪」的启动线（不减仓）。
+//   跟踪：启动后 max(MA10 前一根 × 0.92, 期间最高价 × 0.92, 买点保本)。
+//   时间止损：最长持有 20 个交易日。
+// 该口径只使用信号日及以前的数据；纯函数，无 IO、无联网。
+const RSI_LOW_TURN_VERSION = 'rsi-low-turn-v4';
+const RSI_LOW_TURN_EXIT = {
+  version: RSI_LOW_TURN_VERSION,
+  lowLookback: 10,
+  stopBuf: 0.01,
+  atrMult: 2,
+  riskCapPct: 8,
+  firstRMultiple: 6,
+  trailMa: 10,
+  trailPct: 0.08,
+  maxHoldDays: 20,
+};
+
+const RSI_LOW_TURN_EXIT_TEXT = '结构止损（近10根低点下方1% 与 买点−2×ATR14 取更近者，风险上限8%）'
+  + '；6R 只切换到跟踪止盈（MA10 前一根×0.92 / 期间最高价×0.92 / 保本价），不减仓、不设固定目标；'
+  + `最长持有 ${RSI_LOW_TURN_EXIT.maxHoldDays} 个交易日`;
+
+function rsiLowTurnPlan(candles, { code = '', params = {} } = {}) {
+  const cfg = RSI_LOW_TURN_EXIT;
+  const out = {
+    code: String(code || ''),
+    patternId: 'rsi_low_turn',
+    algorithmVersion: cfg.version,
+    klineDate: '',
+    matched: false,
+    available: false,
+    reason: null,
+    evidence: null,
+    price: null,
+    atr14: null,
+    entryTriggers: [],
+    stopLoss: null,
+    takeProfit: [],
+    exitWatchZones: [],
+    riskReward: { value: null, state: null, available: false },
+    exitRule: {
+      version: cfg.version,
+      kind: 'pattern_native',
+      maxHoldDays: cfg.maxHoldDays,
+      partialExitFraction: 0,
+      firstRMultiple: cfg.firstRMultiple,
+      trailMa: cfg.trailMa,
+      trailPct: cfg.trailPct,
+      text: RSI_LOW_TURN_EXIT_TEXT,
+    },
+  };
+  if (!candlesOk(candles)) { out.reason = 'no_kline'; return out; }
+  const arr = candles;
+  const n = arr.length;
+  out.klineDate = String(arr[n - 1] && arr[n - 1].date || '');
+  const ev = rsiLowTurnEvidence(arr, params || {}, n - 1);
+  out.evidence = {
+    period: ev.period,
+    low: ev.low,
+    rsi: round(ev.rsi),
+    prevRsi: round(ev.prevRsi),
+    dropDays: ev.dropDays,
+    dropMax: ev.dropMax,
+    dropPct: round(ev.dropPct),
+  };
+  if (n < ev.minBars) { out.reason = 'sample_too_short'; return out; }
+  if (ev.rsi == null || ev.prevRsi == null) { out.reason = 'rsi_unavailable'; return out; }
+  if (!(ev.prevRsi < ev.low && ev.rsi > ev.prevRsi)) { out.reason = 'no_signal'; return out; }
+  if (ev.needDrop && ev.dropPct == null) { out.reason = 'drop_window_short'; return out; }
+  if (ev.needDrop && !(ev.dropPct <= ev.dropMax)) { out.reason = 'drop_not_met'; return out; }
+
+  const s = series(arr);
+  const buy = num(s.closes[n - 1]);
+  if (!(buy > 0)) { out.reason = 'close_unavailable'; return out; }
+  // ATR 与结构位都取「信号日之前」的已完成数据，与回测 _plan_pattern 一致。
+  const atrSeries = atr(arr, 14);
+  let atrPrev = null;
+  for (let i = n - 2; i >= 0; i--) {
+    const v = num(atrSeries[i]);
+    if (v != null && v > 0) { atrPrev = v; break; }
+  }
+  const atrUsed = atrPrev != null ? atrPrev : buy * 0.03;
+  const lowWindow = s.lows.slice(Math.max(0, n - 1 - cfg.lowLookback), n - 1).filter((v) => v != null);
+  const structural = lowWindow.length ? Math.min(...lowWindow) * (1 - cfg.stopBuf) : null;
+  const floorStop = buy - cfg.atrMult * atrUsed;
+  const capStop = buy * (1 - cfg.riskCapPct / 100);
+  let stop = structural == null ? floorStop : Math.min(structural, floorStop);
+  stop = Math.max(stop, capStop);
+  if (!(stop < buy)) stop = capStop;
+  const risk = buy - stop;
+  const firstTarget = buy + risk * cfg.firstRMultiple;
+  const riskPct = (risk / buy) * 100;
+
+  out.price = round(buy);
+  out.atr14 = round(atrUsed);
+  out.matched = true;
+  out.available = true;
+  out.entryTriggers = [{
+    type: 'close_signal',
+    status: 'confirmed',
+    confirmAbove: round(buy),
+    label: '信号日收盘确认（RSI 低位拐头 + 前期超跌），按信号日收盘价为可执行参考价',
+  }];
+  out.stopLoss = {
+    type: 'structure_stop',
+    value: round(stop),
+    price: round(stop),
+    label: `结构止损 ${round(stop)}（风险 ${round(riskPct)}%）`,
+    confirmation: 'close_below_stop',
+    source: 'max(min(近10根低点×0.99, 买点−2×ATR14), 买点×(1−8%))',
+    structural: round(structural),
+    floorStop: round(floorStop),
+    capStop: round(capStop),
+    riskPct: round(riskPct),
+  };
+  out.takeProfit = [{
+    type: 'trail_activation',
+    value: round(firstTarget),
+    label: `6R 跟踪止盈启动线 ${round(firstTarget)}（不减仓，突破后按 MA10×0.92 / 最高价×0.92 跟踪）`,
+    rMultiple: cfg.firstRMultiple,
+    trailMa: cfg.trailMa,
+    trailPct: cfg.trailPct,
+    note: '不设固定目标止盈；未启动跟踪前只受结构止损与 20 日时间止损约束。',
+  }];
+  out.exitWatchZones = out.takeProfit;
+  out.riskReward = {
+    value: cfg.firstRMultiple,
+    state: 'reasonable',
+    available: true,
+    referencePrice: round(buy),
+    basis: 'planned_6R_trailing',
+    stopDistancePct: round(risk / buy, 4),
+  };
+  return out;
+}
+
+// 用 v4 计划覆盖通用价位口径中的「可执行价位」（入场参考价 / 止损 / 止盈观察 / 观察空间比），
+// 支撑区与压力区仍保留通用口径，保证详情页原有结构信息不丢失。
+function withRsiLowTurnPlan(levels, plan) {
+  if (!levels || !plan || !plan.available) return levels;
+  return {
+    ...levels,
+    patternId: plan.patternId,
+    patternExitVersion: plan.algorithmVersion,
+    patternExitPlan: plan.exitRule,
+    // 与 v4 止损同源：一律显示信号日前一根的 ATR14，避免详情页出现两套 ATR 口径。
+    atr14: plan.atr14,
+    entryTriggers: plan.entryTriggers,
+    invalidationLevel: plan.stopLoss,
+    exitWatchZones: plan.exitWatchZones,
+    takeProfit: plan.takeProfit,
+    riskReward: plan.riskReward,
+  };
+}
+
+// ───────── limit_pullback v4：形态自带退出计划（与回测口径一一对应）─────────
+// 依据 docs/rsi_low_turn与limit_pullback盈亏比优化报告-2021至2026.md 与 tools/pattern_exits.py 的 limit_pullback 规格
+// （v4 覆盖 first_r_multiple=6.0 / first_exit_fraction=0.0 / no_target=true）：
+//   入场：近 window（15）日内有涨停（不含信号日）、末根缩量（量 < 5 日均量 × 0.9）、低点不破区间支撑；
+//         再叠加「近 drop_days（60）日跌幅 ≤ drop_max（-30%）」与「近 rs_days（20）日相对沪深300 ≤ rs_max（-5pp）」。
+//   止损：max( min(近 8 根低点 × 0.98, 买点 − 2 × ATR14), 买点 × (1 − 8%) )，风险上限 8%。
+//   目标：不做固定目标止盈，也不做 1R 减半；6R 只是「切换跟踪」的启动线（不减仓）。
+//   跟踪：启动后 max(MA5 前一根 × 0.94, 期间最高价 × 0.94, 买点保本)。
+//   时间止损：最长持有 20 个交易日。
+// 该口径只使用信号日及以前的数据；基准缺失时不做相对强度放行，直接给出不可执行原因。
+const LIMIT_PULLBACK_VERSION = 'limit-pullback-v4';
+const LIMIT_PULLBACK_EXIT = {
+  version: LIMIT_PULLBACK_VERSION,
+  lowLookback: 8,
+  stopBuf: 0.02,
+  atrMult: 2,
+  riskCapPct: 8,
+  firstRMultiple: 6,
+  trailMa: 5,
+  trailPct: 0.06,
+  maxHoldDays: 20,
+};
+
+const LIMIT_PULLBACK_EXIT_TEXT = '结构止损（近8根低点下方2% 与 买点−2×ATR14 取更近者，风险上限8%）'
+  + '；6R 只切换到跟踪止盈（MA5 前一根×0.94 / 期间最高价×0.94 / 保本价），不减仓、不设固定目标；'
+  + `最长持有 ${LIMIT_PULLBACK_EXIT.maxHoldDays} 个交易日`;
+
+function limitPullbackPlan(candles, { code = '', params = {}, benchLookup = null } = {}) {
+  const cfg = LIMIT_PULLBACK_EXIT;
+  const out = {
+    code: String(code || ''),
+    patternId: 'limit_pullback',
+    algorithmVersion: cfg.version,
+    klineDate: '',
+    matched: false,
+    available: false,
+    reason: null,
+    evidence: null,
+    price: null,
+    atr14: null,
+    entryTriggers: [],
+    stopLoss: null,
+    takeProfit: [],
+    exitWatchZones: [],
+    riskReward: { value: null, state: null, available: false },
+    exitRule: {
+      version: cfg.version,
+      kind: 'pattern_native',
+      maxHoldDays: cfg.maxHoldDays,
+      partialExitFraction: 0,
+      firstRMultiple: cfg.firstRMultiple,
+      trailMa: cfg.trailMa,
+      trailPct: cfg.trailPct,
+      text: LIMIT_PULLBACK_EXIT_TEXT,
+    },
+  };
+  if (!candlesOk(candles)) { out.reason = 'no_kline'; return out; }
+  const arr = candles;
+  const n = arr.length;
+  out.klineDate = String(arr[n - 1] && arr[n - 1].date || '');
+  const ev = limitPullbackEvidence(arr, { ...(params || {}), code }, n - 1, benchLookup);
+  out.evidence = {
+    window: ev.window,
+    volShrink: ev.volShrink,
+    limit: Number(ev.limit),
+    limitDate: ev.limitDate,
+    limitDaysAgo: ev.limitDaysAgo,
+    support: round(ev.support),
+    low: round(ev.low),
+    volRatio: round(ev.volRatio, 4),
+    dropDays: ev.dropDays,
+    dropMax: ev.dropMax,
+    dropPct: round(ev.dropPct),
+    rsDays: ev.rsDays,
+    rsMax: ev.rsMax,
+    rsPct: round(ev.rsPct),
+    benchMissing: ev.benchMissing,
+  };
+  if (n < ev.minBars) { out.reason = 'sample_too_short'; return out; }
+  if (ev.limitBarIndex == null) { out.reason = 'no_limit_up'; return out; }
+  if (ev.needDrop && ev.dropPct == null) { out.reason = 'drop_window_short'; return out; }
+  if (ev.needRs && ev.rsPct == null) { out.reason = ev.benchMissing ? 'bench_unavailable' : 'rs_window_short'; return out; }
+  if (ev.volRatio == null) { out.reason = 'volume_unavailable'; return out; }
+  if (!(ev.volRatio < ev.volShrink)) { out.reason = 'not_contracted'; return out; }
+  if (ev.support == null || ev.low == null || !(ev.low >= ev.support * 0.98)) { out.reason = 'support_broken'; return out; }
+  if (ev.needDrop && !(ev.dropPct <= ev.dropMax)) { out.reason = 'drop_not_met'; return out; }
+  if (ev.needRs && !(ev.rsPct <= ev.rsMax)) { out.reason = 'rs_not_met'; return out; }
+
+  const s = series(arr);
+  const buy = num(s.closes[n - 1]);
+  if (!(buy > 0)) { out.reason = 'close_unavailable'; return out; }
+  // ATR 与结构位都取「信号日之前」的已完成数据，与回测 _plan_pattern 一致。
+  const atrSeries = atr(arr, 14);
+  let atrPrev = null;
+  for (let i = n - 2; i >= 0; i--) {
+    const v = num(atrSeries[i]);
+    if (v != null && v > 0) { atrPrev = v; break; }
+  }
+  const atrUsed = atrPrev != null ? atrPrev : buy * 0.03;
+  const lowWindow = s.lows.slice(Math.max(0, n - 1 - cfg.lowLookback), n - 1).filter((v) => v != null);
+  const structural = lowWindow.length ? Math.min(...lowWindow) * (1 - cfg.stopBuf) : null;
+  const floorStop = buy - cfg.atrMult * atrUsed;
+  const capStop = buy * (1 - cfg.riskCapPct / 100);
+  let stop = structural == null ? floorStop : Math.min(structural, floorStop);
+  stop = Math.max(stop, capStop);
+  if (!(stop < buy)) stop = capStop;
+  const risk = buy - stop;
+  const firstTarget = buy + risk * cfg.firstRMultiple;
+  const riskPct = (risk / buy) * 100;
+
+  out.price = round(buy);
+  out.atr14 = round(atrUsed);
+  out.matched = true;
+  out.available = true;
+  out.entryTriggers = [{
+    type: 'close_signal',
+    status: 'confirmed',
+    confirmAbove: round(buy),
+    label: '信号日收盘确认（涨停后缩量回踩不破支撑，且超跌弱于大盘），按信号日收盘价为可执行参考价',
+  }];
+  out.stopLoss = {
+    type: 'structure_stop',
+    value: round(stop),
+    price: round(stop),
+    label: `结构止损 ${round(stop)}（风险 ${round(riskPct)}%）`,
+    confirmation: 'close_below_stop',
+    source: 'max(min(近8根低点×0.98, 买点−2×ATR14), 买点×(1−8%))',
+    structural: round(structural),
+    floorStop: round(floorStop),
+    capStop: round(capStop),
+    riskPct: round(riskPct),
+  };
+  out.takeProfit = [{
+    type: 'trail_activation',
+    value: round(firstTarget),
+    label: `6R 跟踪止盈启动线 ${round(firstTarget)}（不减仓，突破后按 MA5×0.94 / 最高价×0.94 跟踪）`,
+    rMultiple: cfg.firstRMultiple,
+    trailMa: cfg.trailMa,
+    trailPct: cfg.trailPct,
+    note: '不设固定目标止盈；未启动跟踪前只受结构止损与 20 日时间止损约束。',
+  }];
+  out.exitWatchZones = out.takeProfit;
+  out.riskReward = {
+    value: cfg.firstRMultiple,
+    state: 'reasonable',
+    available: true,
+    referencePrice: round(buy),
+    basis: 'planned_6R_trailing',
+    stopDistancePct: round(risk / buy, 4),
+  };
+  return out;
+}
+
+// 用 v4 计划覆盖通用价位口径中的「可执行价位」（入场参考价 / 止损 / 止盈观察 / 观察空间比），
+// 支撑区与压力区仍保留通用口径，保证详情页原有结构信息不丢失。
+function withLimitPullbackPlan(levels, plan) {
+  if (!levels || !plan || !plan.available) return levels;
+  return {
+    ...levels,
+    patternId: plan.patternId,
+    patternExitVersion: plan.algorithmVersion,
+    patternExitPlan: plan.exitRule,
+    // 与 v4 止损同源：一律显示信号日前一根的 ATR14，避免详情页出现两套 ATR 口径。
+    atr14: plan.atr14,
+    entryTriggers: plan.entryTriggers,
+    invalidationLevel: plan.stopLoss,
+    exitWatchZones: plan.exitWatchZones,
+    takeProfit: plan.takeProfit,
+    riskReward: plan.riskReward,
+  };
+}
+
 // 观察空间比：以当前价作为入场参考价，衡量到下一压力区下沿的潜在空间 vs 到结构失效位的风险距离。
 // （doc §5.3 rule10 的“入场确认价”在突破/回踩两种场景下不一致，统一以当前收盘价为可复算参考价，
 //   保证 reward/risk 均为正，且与示例空间比量级一致。）
@@ -453,7 +783,7 @@ function levelsSummary(levels) {
   if (!levels || !levels.available) {
     return { algorithmVersion: levels && levels.algorithmVersion || ALGORITHM_VERSION, available: false, reason: levels && levels.reason || 'unavailable' };
   }
-  return {
+  const out = {
     algorithmVersion: levels.algorithmVersion,
     available: true,
     atr14: levels.atr14,
@@ -465,6 +795,13 @@ function levelsSummary(levels) {
     exitWatchZones: levels.exitWatchZones,
     riskReward: levels.riskReward,
   };
+  // 命中 v4 形态（rsi_low_turn / limit_pullback）时附上形态自带退出计划
+  // （固定规则文本，供 AI 解释风险，不含新价格）；patternId 由 v4 计划写入。
+  if (levels.patternExitPlan) {
+    out.patternId = levels.patternId || 'rsi_low_turn';
+    out.patternExitPlan = levels.patternExitPlan;
+  }
+  return out;
 }
 
 module.exports = {
@@ -480,6 +817,12 @@ module.exports = {
   invalidationLevel,
   exitWatchZones,
   trailingProtectionLine,
+  RSI_LOW_TURN_EXIT,
+  rsiLowTurnPlan,
+  withRsiLowTurnPlan,
+  LIMIT_PULLBACK_EXIT,
+  limitPullbackPlan,
+  withLimitPullbackPlan,
   gapBoundaries,
   platformBoundaries,
   riskReward,

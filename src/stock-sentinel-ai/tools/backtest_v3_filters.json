@@ -1,0 +1,11 @@
+{
+  "_comment": "v3 filter config: apply one identical mid-term-oversold filter (60-trading-day return <= -20%) to the high-frequency patterns whose single-factor scan moved in the same direction. Other patterns stay untouched. Direction evidence: data/backtest/xingtaidu/filter_scan/scan_*.out.",
+  "params": {
+    "long_lower_shadow": { "drop_days": 60, "drop_max": -20.0 },
+    "second_test": { "drop_days": 60, "drop_max": -20.0 },
+    "consecutive_yang": { "drop_days": 60, "drop_max": -20.0 },
+    "limit_pullback": { "drop_days": 60, "drop_max": -20.0 },
+    "yang_engulf": { "drop_days": 60, "drop_max": -20.0 },
+    "dry_price_bottom": { "drop_days": 60, "drop_max": -20.0 }
+  }
+}

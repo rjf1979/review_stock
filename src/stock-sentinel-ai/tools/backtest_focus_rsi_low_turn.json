@@ -1,0 +1,10 @@
+{
+  "_comment": "v4 focus config for rsi_low_turn: entry keeps only deep-oversold reversals (RSI14 < 20 AND 60-trading-day return <= -30%), exit rides the position (first target 6R with no partial, measured target off, structural stop unchanged, max hold 20 days). Evidence: docs/rsi_low_turn与limit_pullback盈亏比优化报告-2021至2026.md, data/backtest/xingtaidu/focus/*.json.",
+  "patterns": ["rsi_low_turn"],
+  "params": {
+    "rsi_low_turn": { "low": 20.0, "drop_days": 60, "drop_max": -30.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}

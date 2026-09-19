@@ -16,6 +16,10 @@
 //   `push2his` 不可达（UND_ERR_SOCKET），无法从响应验证 ⇒ `unknown`。
 // - 新浪 getKLineData：响应只有 day/open/high/low/close/volume，不含复权标记 ⇒ `unknown`。
 //   代码注释曾写「返回未复权日K」，属于无法从响应验证的推断，按规则不写入契约。
+// - 通达信本地 vipdoc（tdx）：本地 `<market><code>.day` 是未复权原始价，但同一安装目录的
+//   `T0002/hq_cache/gbbq` 含完整除权除息事件，可按通达信除权公式本地推导前复权序列。
+//   与网络来源不同，这条口径证据来自本地文件本身（可离线复算），因此 `verifiedFromResponse`
+//   为 true，但只认「推导成功」的序列：gbbq 缺失或无法解析时只能给出未复权序列并记 `unknown`。
 
 const ADJUSTMENT = { QFQ: 'qfq', UNADJUSTED: 'unadjusted', UNKNOWN: 'unknown' };
 const ADJUSTMENT_LABEL = { qfq: '前复权', unadjusted: '未复权', unknown: '口径未知' };
@@ -35,6 +39,11 @@ const SOURCE_CONTRACTS = {
     id: 'tencent',
     label: '腾讯 fqkline',
     endpoint: 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+    // 同契约的等价入口：主站被 WAF 拦截（HTTP 501）时按顺序回退，响应结构与节点名一致。
+    endpoints: [
+      'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+      'https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get',
+    ],
     requestSignature: 'param=<prefix><code>,day,,,<lmt>,qfq',
     responseShape: 'data.<prefix><code>.[qfqday|day][]',
     dateField: 'k[0]',
@@ -48,7 +57,7 @@ const SOURCE_CONTRACTS = {
       declared: ADJUSTMENT.QFQ,
       corroborated: [ADJUSTMENT.QFQ, ADJUSTMENT.UNADJUSTED],
       verifiedFromResponse: true,
-      evidence: '数据节点名 data.<symbol>.qfqday（前复权序列）/ day（原始未复权序列）',
+      evidence: '数据节点名 data.<symbol>.qfqday（前复权序列）/ day（原始未复权序列）；两个入口同源同结构',
       fallback: ADJUSTMENT.UNKNOWN,
       // 由取数边界回传的节点名判定；无法判定时退回 unknown。
       resolve: (evidence) => {
@@ -57,6 +66,31 @@ const SOURCE_CONTRACTS = {
         if (node === 'day') return ADJUSTMENT.UNADJUSTED;
         return ADJUSTMENT.UNKNOWN;
       },
+    },
+  },
+  tdx: {
+    id: 'tdx',
+    label: '通达信本地日线',
+    endpoint: 'local://<tdxRoot>/vipdoc/<market>/lday/<market><code>.day',
+    requestSignature: 'STOCK_SENTINEL_TDX_DIR 或 settings.tdxDir 指向通达信安装目录',
+    responseShape: '<market><code>.day 32 字节定长记录（<IIIIIfII>）+ T0002/hq_cache/gbbq 除权除息事件',
+    dateField: 'record[0]',
+    fields: { date: 'record[0]', open: 'record[1]', high: 'record[2]', low: 'record[3]', close: 'record[4]', volume: 'record[6]' },
+    amountField: 'record[5]',
+    covered: ['date', 'open', 'high', 'low', 'close', 'volume', 'amount'],
+    volumeUnit: 'share',
+    volumeScale: 1,
+    dateFormat: 'YYYY-MM-DD',
+    adjustment: {
+      declared: ADJUSTMENT.QFQ,
+      corroborated: [ADJUSTMENT.QFQ],
+      verifiedFromResponse: true,
+      evidence: '本地 .day 是未复权原始价；前复权由同目录 gbbq 除权除息事件按通达信除权公式本地推导（离线可复算，非响应标记）。gbbq 缺失或无法解析时只返回未复权序列并记 unknown，不冒充前复权',
+      fallback: ADJUSTMENT.UNKNOWN,
+      // 取数边界只在「gbbq 推导成功」时回传 gbbq-derived；其余一律 unknown。
+      resolve: (evidence) => (String((evidence && evidence.adjustmentMethod) || '') === 'gbbq-derived'
+        ? ADJUSTMENT.QFQ
+        : ADJUSTMENT.UNKNOWN),
     },
   },
   baidu: {
@@ -260,6 +294,24 @@ function decideKlineWrite({ stored = null, source = '', adjustmentType = '' } = 
     };
   }
   if (incoming !== authoritative) {
+    // 唯一放行的「已验证口径冲突」：旧序列是可验证的未复权、新序列是可验证的前复权。
+    // 未复权 ⇒ 前复权是把历史价按除权因子折算到当前价基准，方向明确且只能提升可信度；
+    // 条件收紧到「旧序列确有数值序列可被整段替换」，避免在只有元数据时误判为可升级。
+    // 注意：这不等于允许增量混写，仍要求 canSafelyRebuildUnverifiedSeries 的完整覆盖判定通过后整段重建。
+    if (authoritative === ADJUSTMENT.UNADJUSTED && incoming === ADJUSTMENT.QFQ && hasStoredBars) {
+      return {
+        allowed: false,
+        status: 'adjustment-upgrade',
+        code: 'KLINE_ADJUSTMENT_UPGRADE_REQUIRED',
+        reason: `本地K线为已验证的${adjustmentLabel(authoritative)}（来源 ${storedSource || '未知'}），本次来源 ${incomingSource || '未知'} 给出可验证的${adjustmentLabel(incoming)}；口径方向明确，允许用完整覆盖的新序列整段替换`,
+        action: 'rebuild_required',
+        retryable: false,
+        storedAdjustment: authoritative,
+        storedSource,
+        incomingAdjustment: incoming,
+        incomingSource,
+      };
+    }
     return {
       allowed: false,
       status: 'adjustment-conflict',
@@ -280,10 +332,23 @@ function decideKlineWrite({ stored = null, source = '', adjustmentType = '' } = 
   };
 }
 
-// 旧序列没有来源证据时，只允许用可验证的完整前复权序列做原子整段替换。
+// 既有序列的复权口径不可核对时（缺来源，或来源无法从响应验证口径而被切换），
+// 只允许用可验证的完整前复权序列做原子整段替换。
 // 新序列不得缩短日期边界或有效交易日数量，避免把局部窗口误当成完整重建。
-function canSafelyRebuildUnverifiedSeries({ storedBars = [], incomingBars = [], source = '', adjustmentType = '', decisionStatus = '' } = {}) {
-  if (decisionStatus !== 'provenance-missing') return false;
+// 两种可自动重建的情形：
+//   1) provenance-missing：既有序列没有来源，谈不上口径声明冲突；
+//   2) provenance-conflict 且旧记录自身没有声明过具体口径（unknown/空）——记录未声称任何口径，
+//      用可验证前复权序列整段替换不会与既有声明冲突，这是候选池「补齐 K 线」修好口径的唯一通道。
+//   3) adjustment-upgrade：旧序列是**已验证的未复权**、新序列是**已验证的前复权**——两种口径都
+//      来自可验证的响应/本地推导，方向单向且明确（未复权折算到当前价基准），整段替换后不存在混写。
+//      这是本地通达信源把「腾讯只返回 day 未复权」的次新/688 段序列升级为前复权的唯一通道。
+// 旧库写死过 qfq/未复权等具体口径却无从验证的记录仍必须人工确认（D14-06），不在此列；
+// 其余已验证的口径冲突（例如前复权 → 未复权）同样不在豁免范围内。
+function canSafelyRebuildUnverifiedSeries({ storedBars = [], incomingBars = [], source = '', adjustmentType = '', decisionStatus = '', storedAdjustment = '' } = {}) {
+  const rebuildable = decisionStatus === 'provenance-missing'
+    || (decisionStatus === 'provenance-conflict' && normalizeAdjustment(storedAdjustment) === ADJUSTMENT.UNKNOWN)
+    || (decisionStatus === 'adjustment-upgrade' && normalizeAdjustment(storedAdjustment) === ADJUSTMENT.UNADJUSTED);
+  if (!rebuildable) return false;
   if (normalizeAdjustment(adjustmentType) !== ADJUSTMENT.QFQ || !isAdjustmentCorroborated(source, adjustmentType)) return false;
   const stored = Array.isArray(storedBars) ? storedBars.filter((bar) => bar && /^\d{4}-\d{2}-\d{2}$/.test(String(bar.date || ''))) : [];
   const incoming = Array.isArray(incomingBars) ? incomingBars.filter((bar) => bar && /^\d{4}-\d{2}-\d{2}$/.test(String(bar.date || ''))) : [];
@@ -301,6 +366,7 @@ function describeSourceCapabilities() {
       id,
       label: contract.label,
       endpoint: contract.endpoint,
+      endpoints: Array.isArray(contract.endpoints) ? contract.endpoints.slice() : [contract.endpoint],
       adjustmentType: normalizeAdjustment(contract.adjustment && contract.adjustment.declared),
       adjustmentVerifiedFromResponse: Boolean(contract.adjustment && contract.adjustment.verifiedFromResponse),
       adjustmentEvidence: String((contract.adjustment && contract.adjustment.evidence) || ''),

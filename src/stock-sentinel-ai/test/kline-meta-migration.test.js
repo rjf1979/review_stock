@@ -7,6 +7,8 @@ const path = require('node:path');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-kline-meta-'));
 process.env.VOLUME_INSIGHT_DATA_DIR = tempDir;
+// 同时关闭本地通达信来源，保证多源链只会尝试受控 fetch 里的联网源。
+process.env.STOCK_SENTINEL_TDX_DIR = '';
 
 const initSqlJs = require('sql.js/dist/sql-asm.js').default;
 

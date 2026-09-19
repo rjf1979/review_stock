@@ -21,10 +21,36 @@ const {
   saveStockRiskPlan,
 } = require('./storage');
 const { detectSinglePatterns } = require('./screener-core');
+const { ensureBenchSeries, benchCloseLookup } = require('./bench-series');
 const { todayStr } = require('./data');
 
 const MIN_BARS = 60;
 const ALGORITHM_VERSION = priceLevels.ALGORITHM_VERSION;
+
+// v4 形态 → 退出计划（入场参考价 / 结构止损 / 6R 跟踪启动线）。命中多条时按形态得分高者优先，
+// 保证「研判落库价位」与「详情页价位」「回测口径」同源；只有 available 的计划才会覆盖通用价位。
+const PATTERN_PLAN_BUILDERS = {
+  rsi_low_turn: (kline, code, params) => priceLevels.rsiLowTurnPlan(kline, { code, params }),
+  limit_pullback: (kline, code, params, benchLookup) => priceLevels.limitPullbackPlan(kline, { code, params, benchLookup }),
+};
+const PATTERN_PLAN_MERGERS = {
+  rsi_low_turn: priceLevels.withRsiLowTurnPlan,
+  limit_pullback: priceLevels.withLimitPullbackPlan,
+};
+
+// 在命中的启用规则里挑一条 v4 计划：按得分降序逐个尝试，首个可执行的计划生效。
+function selectPatternPlan(patterns, kline, code, benchLookup) {
+  const candidates = (patterns || [])
+    .filter((x) => PATTERN_PLAN_BUILDERS[String(x && x.patternId || '')])
+    .slice()
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  for (const hit of candidates) {
+    const pid = String(hit.patternId || '');
+    const plan = PATTERN_PLAN_BUILDERS[pid](kline, code, hit.params || {}, benchLookup);
+    if (plan && plan.available) return plan;
+  }
+  return null;
+}
 
 const SYSTEM_STRUCTURED = '你是智诊盯盘的 AI 辅助研判助手。你只依据用户提供的本机公开行情与量价形态证据做克制、客观、可核验的研究分析；绝不将任何信号或输出表述为确定收益、买卖指令、目标价、胜率或投资收益承诺；只能输出合法 JSON，不输出额外解释。';
 
@@ -114,10 +140,17 @@ async function prepareCode(code, { fetchDays = 250, calendar = null } = {}) {
   const name = String(poolItem.name || klineRec && klineRec.name || '');
   const market = String(poolItem.market || '');
   const snapshot = normalizeSnapshot(poolItem, todayStr());
-  const patterns = detectSinglePatterns(kline, { code: c }).hits;
+  // 冻结链路不允许联网：基准序列只读内存/磁盘/通达信兜底，取不到时 limit_pullback 会给出明确 miss。
+  const benchSeries = await ensureBenchSeries({ allowNetwork: false });
+  const benchLookup = benchSeries && benchSeries.available ? benchCloseLookup(benchSeries) : null;
+  const patterns = detectSinglePatterns(kline, { code: c, benchLookup }).hits;
   const ruleLabel = String(poolItem.ruleLabel || poolItem.pattern || '');
   const levels = priceLevels.computeLevels(kline, { code: c });
-  const levelsSummary = priceLevels.levelsSummary(levels);
+  // 命中 v4 形态（rsi_low_turn / limit_pullback）时改用形态自带退出计划：入场参考价 / 结构止损 /
+  // 6R 跟踪启动线按回测口径生成，支撑压力区仍保留通用口径；未命中则该股沿用通用价位，不影响其它规则。
+  const patternPlan = selectPatternPlan(patterns, kline, c, benchLookup);
+  const effectiveLevels = patternPlan ? PATTERN_PLAN_MERGERS[patternPlan.patternId](levels, patternPlan) : levels;
+  const levelsSummary = priceLevels.levelsSummary(effectiveLevels);
   // 题材/行业归属（东财 slist，按个股抓取并当日缓存；失败返回空结构，题材缺失允许研判降级）。
   const theme = await themeModule.getAttribution(c);
   const themeDate = theme && theme.fetchedAt ? String(theme.fetchedAt) : '';
@@ -140,18 +173,18 @@ async function prepareCode(code, { fetchDays = 250, calendar = null } = {}) {
       snapshotAt: read.snapshotDate || null,
       supportZones: levels.supportZones,
       resistanceZones: levels.resistanceZones,
-      entryTriggers: levels.entryTriggers,
-      invalidationLevel: levels.invalidationLevel,
-      exitWatchZones: levels.exitWatchZones,
-      riskReward: levels.riskReward,
+      entryTriggers: effectiveLevels.entryTriggers,
+      invalidationLevel: effectiveLevels.invalidationLevel,
+      exitWatchZones: effectiveLevels.exitWatchZones,
+      riskReward: effectiveLevels.riskReward,
       evidence: aiAssist.stableEvidence(evidence),
     });
     if (saved.ok) priceLevelSetId = saved.id;
     await saveStockRiskPlan({
       code: c, tradingStyle, evidenceHash,
-      entryTriggers: levels.entryTriggers,
-      stopLoss: levels.invalidationLevel,
-      takeProfit: levels.exitWatchZones,
+      entryTriggers: effectiveLevels.entryTriggers,
+      stopLoss: effectiveLevels.invalidationLevel,
+      takeProfit: effectiveLevels.exitWatchZones,
       sourceLevelSetId: priceLevelSetId,
     });
   } catch { /* 价位持久化失败不影响证据冻结，只记录为无价位引用 */ }
@@ -169,6 +202,9 @@ async function prepareCode(code, { fetchDays = 250, calendar = null } = {}) {
     evidenceHash,
     snapshotDate: read.snapshotDate,
     levels,
+    patternPlan,
+    rsiLowTurnPlan: patternPlan && patternPlan.patternId === 'rsi_low_turn' ? patternPlan : null,
+    limitPullbackPlan: patternPlan && patternPlan.patternId === 'limit_pullback' ? patternPlan : null,
     theme,
     priceLevelSetId,
     algorithmVersion: ALGORITHM_VERSION,
@@ -448,6 +484,7 @@ module.exports = {
   assessReadiness,
   normalizeSnapshot,
   prepareCode,
+  selectPatternPlan,
   statusForCode,
   judgePrepared,
   judgeOne,
