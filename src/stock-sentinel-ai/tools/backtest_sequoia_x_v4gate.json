@@ -1,0 +1,12 @@
+{
+  "_comment": "Sequoia-X 六策略「原形态 + v4 同等上下文过滤」，退出仍用各形态自己的 spec（配合 --exit-mode pattern）。过滤口径与 v4 上线规则一致：60 交易日跌幅 <= -30% 且 20 日相对沪深300 <= -5pp。参数只经 --config 注入，不改形态默认定义。",
+  "patterns": ["sqxm_ma_volume", "sqxm_turtle_trade", "sqxm_high_tight_flag", "sqxm_limit_up_shakeout", "sqxm_uptrend_limit_down", "sqxm_rps_breakout"],
+  "params": {
+    "sqxm_ma_volume": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_turtle_trade": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_high_tight_flag": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_limit_up_shakeout": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_uptrend_limit_down": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_rps_breakout": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 }
+  }
+}

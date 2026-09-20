@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""25 形态专用回测：每个形态一套结构止损、分批止盈与跟踪退出。
+"""形态专用回测：每个形态一套结构止损、分批止盈与跟踪退出。
+
+内置 25 个形态 + 2026-09-20 新增的 6 个 Sequoia-X 等价形态（``sqxm_*``）。
+其中 ``sqxm_rps_breakout`` 需要横截面分位阈值，引擎会在开跑前用
+``tools/rps_threshold.py`` 把「每个交易日全市场近 120 日涨幅的 90 分位」算好并
+按日期注入 ``ind['rps120_p90']``。
 
 信号在收盘确认，下一根开盘成交。日内同时触发止损和止盈时，采用保守的止损优先口径。
 
@@ -43,12 +48,14 @@ BENCH_FILE = os.path.normpath(os.path.join(
     HERE, '..', 'data', 'hsjday', 'sh', 'lday', 'sh000300.day'))
 
 TREND = {'ma_bullish', 'pullback_ma20', 'ma_golden_start', 'macd_water_golden',
-         'consecutive_yang', 'strong_sideways', 'limit_pullback', 'n_shape'}
+         'consecutive_yang', 'strong_sideways', 'limit_pullback', 'n_shape',
+         'sqxm_ma_volume', 'sqxm_limit_up_shakeout'}
 BREAKOUT = {'trendline_breakout', 'volume_breakout', 'shrink_stabilize',
             'double_bottom', 'arc_bottom', 'rising_w_bottom', 'head_shoulder_bottom',
-            'platform_breakout', 'box_breakout', 'ascending_triangle', 'gap_breakout'}
+            'platform_breakout', 'box_breakout', 'ascending_triangle', 'gap_breakout',
+            'sqxm_turtle_trade', 'sqxm_high_tight_flag', 'sqxm_rps_breakout'}
 REVERSAL = {'dry_price_bottom', 'fake_break_pack', 'yang_engulf', 'long_lower_shadow',
-            'rsi_low_turn', 'second_test'}
+            'rsi_low_turn', 'second_test', 'sqxm_uptrend_limit_down'}
 
 DEFAULT = {
     'patterns': patterns.ids(), 'start': '2000-01-01', 'end': '2099-12-31',
@@ -111,6 +118,16 @@ def _align_bench(bench, dates):
     out = np.full(len(dates), np.nan)
     ok = pos >= 0
     out[ok] = bc[pos[ok]]
+    return out
+
+
+def _align_rps(rps, dates):
+    """把横截面分位阈值对齐到个股 K 线日期；当日无阈值（如个股停牌）沿用上一个交易日。"""
+    rd, rv = rps
+    pos = np.searchsorted(rd, np.asarray(dates, dtype=np.int64), side='right') - 1
+    out = np.full(len(dates), np.nan)
+    ok = pos >= 0
+    out[ok] = rv[pos[ok]]
     return out
 
 
@@ -365,6 +382,10 @@ def _work_one(code, cfg, factors, dates_index, names):
     bench = cfg.get('_bench')
     if bench is not None:
         ind['bench_close'] = _align_bench(bench, bars['date'])
+    # 横截面形态（目前只有 sqxm_rps_breakout）需要按日期注入全市场分位阈值
+    if cfg.get('_rps') is not None and any(
+            patterns.get(pid).get('cross_section') for pid in cfg['patterns']):
+        ind['rps120_p90'] = _align_rps(cfg['_rps'], bars['date'])
     n = len(bars); s_int = int(cfg['start'].replace('-', '')); e_int = int(cfg['end'].replace('-', ''))
     gi = np.array([dates_index.get(int(x), -1) for x in bars['date']])
     out = []
@@ -449,6 +470,13 @@ def run(cfg):
     cfg['_bench'] = load_benchmark() if need_bench else None
     if need_bench and cfg['_bench'] is None:
         print('警告：未找到沪深300基准文件，相对强度/大盘环境过滤将不生效', file=sys.stderr)
+    # 横截面形态需要「每个交易日全市场分位阈值」；缓存缺失时先算一次再分片跑
+    cfg['_rps'] = None
+    if any(patterns.get(pid).get('cross_section') for pid in cfg['patterns']):
+        import rps_threshold
+        s_int = int(cfg['start'].replace('-', '')); e_int = int(cfg['end'].replace('-', ''))
+        cfg['_rps'] = rps_threshold.load_or_build(_WORK_MARKET, factors, s_int, e_int)
+        print(f'已注入横截面阈值：{len(cfg["_rps"][0])} 个交易日', file=sys.stderr)
     trades = []
     for no, code in enumerate(codes, 1):
         try: trades.extend(_work_one(code, cfg, factors.get(code), dates_index, names))

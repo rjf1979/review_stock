@@ -206,6 +206,13 @@ def compute_indicators(bars: np.ndarray, code: str = '', name: str = '') -> dict
     c = bars['close'].astype(np.float64)
     v = bars['volume'].astype(np.float64)
     n = len(c)
+    # 成交额（元）与换手率：BAR_DT 里就有，但只有部分形态（TurtleTrade）需要。
+    # 旧调用方可能传入缺少这些字段的数组，缺失时填 NaN，形态侧自行判空。
+    fields = bars.dtype.names or ()
+    amount = (bars['amount'].astype(np.float64) if 'amount' in fields
+              else np.full(n, np.nan))
+    turnover = (bars['turnover'].astype(np.float64) if 'turnover' in fields
+                else np.full(n, np.nan))
 
     prev_c = shift(c, 1)
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -230,6 +237,7 @@ def compute_indicators(bars: np.ndarray, code: str = '', name: str = '') -> dict
 
     return {
         'open': o, 'high': h, 'low': l, 'close': c, 'volume': v,
+        'amount': amount, 'turnover': turnover,
         'prev_close': prev_c, 'pct': pct, 'amp': amp,
         'body': body, 'upper': upper, 'lower': lower, 'is_yang': is_yang,
         'is_limit_up': is_up, 'is_limit_down': is_down,

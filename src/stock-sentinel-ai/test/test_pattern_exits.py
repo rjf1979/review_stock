@@ -153,7 +153,8 @@ def ind_for(closes, highs=None, lows=None, opens=None, ma10=None, ma20=None, atr
 class SpecTableTests(unittest.TestCase):
     def test_every_pattern_has_its_own_spec(self):
         self.assertEqual(set(pattern_exits.ids()), set(patterns.ids()))
-        self.assertEqual(len(pattern_exits.ids()), 25)
+        # 25 个内置形态 + 6 个 Sequoia-X 等价形态（sqxm_*）
+        self.assertEqual(len(pattern_exits.ids()), 31)
 
     def test_specs_are_not_duplicated(self):
         seen = {}

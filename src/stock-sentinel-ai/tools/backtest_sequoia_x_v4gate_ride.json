@@ -1,0 +1,15 @@
+{
+  "_comment": "同 tools/backtest_sequoia_x_v4gate.json 的过滤，但退出口径换成 v4 同一套（首目标 6R、不减仓、关闭测量目标），用于和 tools/backtest_v4_both.json 的 v4 基线直接对比。",
+  "patterns": ["sqxm_ma_volume", "sqxm_turtle_trade", "sqxm_high_tight_flag", "sqxm_limit_up_shakeout", "sqxm_uptrend_limit_down", "sqxm_rps_breakout"],
+  "params": {
+    "sqxm_ma_volume": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_turtle_trade": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_high_tight_flag": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_limit_up_shakeout": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_uptrend_limit_down": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_rps_breakout": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}

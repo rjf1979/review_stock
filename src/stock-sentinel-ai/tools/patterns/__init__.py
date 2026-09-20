@@ -21,12 +21,18 @@ REGISTRY: dict[str, dict] = {}
 
 
 def register(pid: str, name: str, category: str,
-             params: dict | None = None, desc: str = ''):
+             params: dict | None = None, desc: str = '',
+             cross_section: bool = False):
+    """
+    cross_section=True 表示该形态需要**横截面**信息（当天全市场的排名/分位），
+    回测引擎必须在跑之前算好逐日阈值并按日期注入 `ind`，否则形态只会返回全 False。
+    """
     def deco(fn: Callable):
         REGISTRY[pid] = {
             'id': pid, 'name': name, 'category': category,
             'params': dict(params or {}), 'desc': desc, 'fn': fn,
             'module': fn.__module__,
+            'cross_section': bool(cross_section),
         }
         return fn
     return deco
@@ -65,3 +71,4 @@ def detect_many(pids: list[str], ind: dict,
 
 
 from . import xingtaidu  # noqa: E402,F401  —— 内置形态库（量价形态选股图谱）
+from . import sequoia_x  # noqa: E402,F401  —— Sequoia-X 六个策略的等价形态定义

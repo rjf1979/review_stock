@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""25 个形态各自的退出规则表（结构止损 + 分形态止盈 + 分形态跟踪）。
+"""形态退出规则表（结构止损 + 分形态止盈 + 分形态跟踪）。
+
+前 25 条是 2026-09-18 定稿的内置形态；末尾 6 条是 2026-09-20 新增的
+Sequoia-X 等价形态（``sqxm_*``），只做回测口径对照，默认不进入任何生产规则。
 
 设计原则
 --------
@@ -232,6 +235,55 @@ EXIT_SPECS: dict[str, dict] = {
         trail_ma=10, trail_pct=0.08, max_hold=40,
         reason='N字突破：关键位=前高（前24根最高），失效=回调低点（前10根最低），'
                '目标=前高 + 1倍N字高度（等长上攻）'),
+
+    # ================= Sequoia-X 六个等价形态（2026-09-20，默认不启用） =================
+    # 只做「同一套结构止损/分批止盈/跟踪退出」下的口径对照。参数按各形态的
+    # 原语义给出，并与上面的同类形态保持差异，便于单独解释。
+    'sqxm_ma_volume': _spec(
+        ('ma', 20), ('low', 5), stop_buf=0.015, atr_mult=2.0, risk_cap=8.0,
+        partial=(1.0, 0.5), target=None, trail_ma=10, trail_pct=0.07, max_hold=45,
+        reason='均线放量金叉与 ma_golden_start 同属均线启动，但金叉当天就放量 1.5 倍，'
+               '量能已经替价格确认过一次，所以不做固定目标封顶，'
+               '跟踪回撤收紧到 7%、时间预算放到 45 日，给放量后的加速留出空间；'
+               '失效位仍是金叉附近的 MA20 与前5根低点'),
+    'sqxm_turtle_trade': _spec(
+        ('high', 20), ('low', 10), stop_buf=0.01, atr_mult=2.0, risk_cap=8.0,
+        partial=(1.0, 0.5), target=('measured', 0.8), height=('range', 20),
+        trail_ma=5, trail_pct=0.06, max_hold=20,
+        reason='海龟20日新高是纯追高型：突破位与前低只是入场理由，不构成安全边际，'
+               '所以把它当作短脉冲处理——目标只取20根振幅的0.8倍、'
+               '1R 减半后用 MA5 与6%回撤跟踪、20 日不走出趋势即时间止损。'
+               '注意：本形态与项目「防追高」的定稿方向冲突，回测结论不能直接用于'
+               '提升为正式规则'),
+    'sqxm_high_tight_flag': _spec(
+        ('high', 40), ('low', 10), stop_buf=0.012, atr_mult=2.0, risk_cap=8.0,
+        partial=(1.0, 0.5), target=('measured', 1.0), height=('range', 40),
+        trail_ma=10, trail_pct=0.08, max_hold=40,
+        reason='高旗形：关键位=40日动量区间上沿，失效位=近10日整理下沿下方1.2%——'
+               '旗形整理不破下沿才成立；形态高度用40日振幅（旗杆），'
+               '目标=上沿 + 1倍旗杆，风险上限 8%'),
+    'sqxm_limit_up_shakeout': _spec(
+        ('close', 1), ('low', 1), stop_buf=0.015, atr_mult=2.0, risk_cap=7.0,
+        partial=(1.0, 0.5), target=('level', ('high', 10)), trail_ma=5,
+        trail_pct=0.06, max_hold=10,
+        reason='涨停洗盘不破昨收：失效位=涨停当天的最低价（前1根低点），'
+               '跌破它说明涨停被完全吞掉；这仍是短线脉冲，'
+               '目标只到前10根高点、风险上限压到7%、10 日时间止损，'
+               '余仓用 MA5 与6%回撤跟踪'),
+    'sqxm_uptrend_limit_down': _spec(
+        ('ma', 20), ('low', 10), stop_buf=0.015, atr_mult=2.0, risk_cap=9.0,
+        partial=(1.0, 0.5), target=('level', ('high', 20)), trail_ma=10,
+        trail_pct=0.08, max_hold=20,
+        reason='上升趋势中的放量跌停是「错杀观察」，本质是接下跌的刀：'
+               '失效位放到前10根低点下方1.5%、风险上限放宽到9%（跌停次日常有'
+               '惯性下探），但只承认反弹到前20根高点这一段，20 日不修复即离场'),
+    'sqxm_rps_breakout': _spec(
+        ('high', 120), ('low', 20), stop_buf=0.01, atr_mult=2.0, risk_cap=8.0,
+        partial=(1.0, 0.5), target=('measured', 1.0), height=('range', 120),
+        trail_ma=10, trail_pct=0.10, max_hold=60,
+        reason='RPS 极强动量突破是全市场前10%的强势股：关键位=120日最高，'
+               '失效位=近20根低点；动量股波动大，跟踪回撤放宽到10%，'
+               '形态高度用120日振幅、目标=关键位 + 1倍高度，最长持有 60 日'),
 }
 
 

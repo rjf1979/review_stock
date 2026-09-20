@@ -1,0 +1,15 @@
+{
+  "_comment": "消融对照：只加 20 日相对沪深300 <= -5pp 这一条（不加跌幅），退出用 v4 同一套。与 dropgate 一起定位六策略缺的是哪一条腿。",
+  "patterns": ["sqxm_ma_volume", "sqxm_turtle_trade", "sqxm_high_tight_flag", "sqxm_limit_up_shakeout", "sqxm_uptrend_limit_down", "sqxm_rps_breakout"],
+  "params": {
+    "sqxm_ma_volume": { "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_turtle_trade": { "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_high_tight_flag": { "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_limit_up_shakeout": { "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_uptrend_limit_down": { "rs_days": 20, "rs_max": -5.0 },
+    "sqxm_rps_breakout": { "rs_days": 20, "rs_max": -5.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}

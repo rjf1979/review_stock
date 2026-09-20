@@ -1,0 +1,11 @@
+{
+  "_comment": "v4 两条上线规则的联合基线：参数与 tools/backtest_focus_rsi_low_turn.json、tools/backtest_focus_limit_pullback.json 完全一致，退出口径也一致，用于给 Sequoia-X 六策略提供同一次运行、同一退出口径的对照。",
+  "patterns": ["rsi_low_turn", "limit_pullback"],
+  "params": {
+    "rsi_low_turn": { "low": 20.0, "drop_days": 60, "drop_max": -30.0 },
+    "limit_pullback": { "drop_days": 60, "drop_max": -30.0, "rs_days": 20, "rs_max": -5.0 }
+  },
+  "first_r_multiple": 6.0,
+  "first_exit_fraction": 0.0,
+  "no_target": true
+}
