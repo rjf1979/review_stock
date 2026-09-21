@@ -758,6 +758,25 @@ async function listBtDecisions({ tradeDate = null, limit = 200 } = {}) {
 }
 
 // 实盘凭据命中率：只统计已回填 hit3 的记录，用于「回测 → 实盘」一致性核对。
+// 同时按 source 拆分通道：候选池（pool）与尾盘 14:40 分时反推（reverse-1440）的风险边界不同，
+// 界面上必须分开看，否则会把只允许纸面跟踪的通道混进实盘结论。
+function summarizeDecisionRows(values = []) {
+  return values.map((row) => {
+    const settled = Number(row[2]) || 0;
+    const hits = Number(row[3]) || 0;
+    return {
+      source: String(row[0] || 'unknown'),
+      total: Number(row[1]) || 0,
+      settled,
+      hits,
+      hit3Pct: settled ? Number(((hits / settled) * 100).toFixed(2)) : null,
+      avgExitRet: row[4] === null || row[4] === undefined ? null : Number(Number(row[4]).toFixed(3)),
+      firstDate: row[5] || null,
+      lastDate: row[6] || null,
+    };
+  });
+}
+
 async function btDecisionScorecard() {
   try {
     const d = await ensureDb();
@@ -768,14 +787,23 @@ async function btDecisionScorecard() {
     const total = Number(row[0]) || 0;
     const settled = Number(row[1]) || 0;
     const hits = Number(row[2]) || 0;
+    const bySourceRes = d.exec(`SELECT COALESCE(NULLIF(TRIM(source), ''), 'unknown') AS src,
+      COUNT(*), SUM(CASE WHEN hit3 IS NOT NULL THEN 1 ELSE 0 END),
+      SUM(CASE WHEN hit3 = 1 THEN 1 ELSE 0 END),
+      AVG(CASE WHEN hit3 IS NOT NULL THEN actualRetExit END), MIN(tradeDate), MAX(tradeDate)
+      FROM bt_decision GROUP BY src ORDER BY COUNT(*) DESC, src`);
     return {
       total, settled, hits,
       hit3Pct: settled ? Number(((hits / settled) * 100).toFixed(2)) : null,
       avgExitRet: row[3] === null || row[3] === undefined ? null : Number(Number(row[3]).toFixed(3)),
       firstDate: row[4] || null, lastDate: row[5] || null,
+      bySource: summarizeDecisionRows(bySourceRes.length ? bySourceRes[0].values : []),
     };
   } catch {
-    return { total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null, firstDate: null, lastDate: null };
+    return {
+      total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null,
+      firstDate: null, lastDate: null, bySource: [],
+    };
   }
 }
 

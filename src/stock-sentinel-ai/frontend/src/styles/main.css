@@ -721,6 +721,24 @@
     .backtest-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
     .backtest-note { display: block; margin: var(--space-3) 0 0; line-height: 1.6; }
     .backtest-run-chips { margin-bottom: var(--space-3); }
+    /* 实盘凭据：通道拆分与红线提示。反推通道只允许纸面跟踪，必须与普通统计卡在视觉上拉开。 */
+    .status.decision-redline {
+      border-left-color: var(--warn); background: var(--warn-soft); color: var(--text-muted);
+      line-height: 1.7; margin-bottom: var(--space-3);
+    }
+    .status.decision-redline strong { color: var(--warn); }
+    .status.decision-redline b { color: var(--text); }
+    .status.decision-redline code {
+      font-family: var(--mono); font-size: 12px; color: var(--text);
+      background: var(--accent-soft); border-radius: var(--radius-xs); padding: 0 4px;
+    }
+    .decision-source-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+    .decision-source-grid .stat { text-align: left; }
+    .decision-source-grid .stat small {
+      display: block; margin-top: var(--space-1);
+      font-size: 11px; color: var(--text-muted); font-family: var(--mono);
+    }
+    .decision-source-chips { margin-bottom: var(--space-3); }
     /* 维度与买入时点各 30+ 个按钮：限高滚动，避免把下面的表格顶出首屏。 */
     .backtest-dim-chips, .backtest-buy-chips { max-height: 180px; overflow-y: auto; margin-bottom: var(--space-3); padding-right: var(--space-1); }
     .backtest-h3 { margin: var(--space-4) 0 var(--space-2); font-size: 14px; font-weight: 700; }

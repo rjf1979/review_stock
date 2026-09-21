@@ -160,7 +160,7 @@ async function readKlineTableNames(SQL) {
 
   // ── 2. 实盘凭据表（kline.db）────────────────────────────────────
   const emptyScorecard = await storage.btDecisionScorecard();
-  assert.deepStrictEqual(emptyScorecard, { total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null, firstDate: null, lastDate: null });
+  assert.deepStrictEqual(emptyScorecard, { total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null, firstDate: null, lastDate: null, bySource: [] });
   assert.deepStrictEqual(await storage.listBtDecisions(), []);
 
   const saved = await storage.saveBtDecisions([
@@ -198,6 +198,28 @@ async function readKlineTableNames(SQL) {
   assert.strictEqual(scorecard.hit3Pct, 100);
   assert.strictEqual(scorecard.avgExitRet, 5.88);
   assert.strictEqual(scorecard.firstDate, 20260921);
+  assert.deepStrictEqual(scorecard.bySource, [{
+    source: 'unknown', total: 2, settled: 1, hits: 1, hit3Pct: 100,
+    avgExitRet: 5.88, firstDate: 20260921, lastDate: 20260921,
+  }], '未标注 source 的记录归入 unknown 通道');
+
+  // 通道拆分：候选池与尾盘 14:40 反推的风险边界不同，命中率必须分通道统计。
+  await storage.saveBtDecisions([
+    { tradeDate: 20260921, code: '600001', name: '样例一', source: 'reverse-1440', score: 80 },
+    { tradeDate: 20260921, code: '301001', name: '样例三', source: 'pool', score: 70 },
+  ]);
+  await storage.settleBtDecision({ tradeDate: 20260921, code: '600001', actualRetExit: 2.5, hit3: 0 });
+  const bySource = (await storage.btDecisionScorecard()).bySource;
+  assert.strictEqual(bySource.length, 3, '应按通道拆成 3 组');
+  const channel = Object.fromEntries(bySource.map((r) => [r.source, r]));
+  assert.strictEqual(channel['reverse-1440'].total, 1);
+  assert.strictEqual(channel['reverse-1440'].settled, 1);
+  assert.strictEqual(channel['reverse-1440'].hit3Pct, 0);
+  assert.strictEqual(channel['reverse-1440'].avgExitRet, 2.5);
+  assert.strictEqual(channel.pool.total, 1);
+  assert.strictEqual(channel.pool.settled, 0, '未回填的通道不进命中率分母');
+  assert.strictEqual(channel.pool.hit3Pct, null);
+  assert.strictEqual(channel.unknown.total, 1, '600001 改标通道后 unknown 只剩 300001');
 
   // 落盘检查：kline.db 里确有 bt_decision，且列数与 DDL 一致（32 列）。
   await storage.flush();

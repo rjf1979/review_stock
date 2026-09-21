@@ -478,6 +478,18 @@
             </div>
           </div>
           <div v-if="backtest.decisionsError" class="status error" role="status" aria-live="polite">{{ backtest.decisionsError }}</div>
+          <p class="status decision-redline" role="note">
+            <strong>能力边界：</strong>「尾盘 14:40 反推」通道的模型标记为 <code>usableForDecision = 0</code>：
+            样本仅 69 个交易日，最高十分位样本外预测 48.96% 对实际 42.32%，每日 Top-3 策略均值 −0.253%。
+            该通道<b>只做纸面跟踪，不作为下单依据</b>，置信度上限 medium；下单仍以人工确认的候选池为准。
+          </p>
+          <div v-if="decisionSources.length" class="market-stats decision-source-grid" aria-label="按通道统计">
+            <div v-for="s in decisionSources" :key="s.source" class="stat">
+              <span>{{ sourceCn(s.source) }}</span>
+              <strong :class="s.settled ? signClass(s.hit3Pct) : ''">{{ s.settled ? fmtPct(s.hit3Pct, 2) : '待回填' }}</strong>
+              <small>累计 {{ fmtCount(s.total) }} · 已回填 {{ fmtCount(s.settled) }} · 均收 {{ fmtPct(s.avgExitRet, 3) }}</small>
+            </div>
+          </div>
           <div class="market-stats">
             <div class="stat"><span>累计决策</span><strong>{{ fmtCount(scorecard.total) }}</strong></div>
             <div class="stat"><span>已回填</span><strong>{{ fmtCount(scorecard.settled) }}</strong></div>
@@ -496,8 +508,19 @@
               <p class="summary">按决策日倒序、评分降序，最多 200 条。</p>
             </div>
           </div>
-          <div v-if="!decisions.length" class="status empty" role="status" aria-live="polite">
-            尚无实盘凭据。等回测结论确认后，用 POST /api/decisions 写入当日候选，次日回填实际早盘最高与实际卖出价。
+          <div v-if="decisionSources.length" class="chips decision-source-chips" role="group" aria-label="按通道筛选凭据">
+            <button type="button" class="chip" :aria-pressed="backtest.decisionSource === 'all'" @click="selectDecisionSource('all')">
+              全部通道 <span class="num">{{ fmtCount(decisions.length) }}</span>
+            </button>
+            <button
+              v-for="s in decisionSources" :key="s.source" type="button" class="chip"
+              :aria-pressed="backtest.decisionSource === s.source" @click="selectDecisionSource(s.source)"
+            >{{ sourceCn(s.source) }} <span class="num">{{ fmtCount(s.total) }}</span></button>
+          </div>
+          <div v-if="!decisionRows.length" class="status empty" role="status" aria-live="polite">
+            {{ decisions.length
+              ? '当前通道筛选下没有凭据，切回「全部通道」可查看其余记录。'
+              : '尚无实盘凭据。等回测结论确认后，用 POST /api/decisions 写入当日候选，次日回填实际早盘最高与实际卖出价。' }}
           </div>
           <div v-else class="table-wrap">
             <table>
@@ -506,6 +529,7 @@
                 <tr>
                   <th scope="col">决策日</th>
                   <th scope="col">代码</th>
+                  <th scope="col">通道</th>
                   <th scope="col">名称</th>
                   <th scope="col">评分</th>
                   <th scope="col">≥+3% 概率</th>
@@ -524,9 +548,10 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="d in decisions" :key="d.tradeDate + '-' + d.code">
+                <tr v-for="d in decisionRows" :key="d.tradeDate + '-' + d.code">
                   <td class="num">{{ fmtDate(d.tradeDate) }}</td>
                   <td class="num">{{ d.code }}</td>
+                  <td>{{ sourceCn(d.source) }}</td>
                   <td>{{ d.name || '—' }}</td>
                   <td class="num">{{ fmtNum(d.score, 1) }}</td>
                   <td class="num">{{ fmtPct(d.up3Prob, 2) }}</td>
@@ -569,6 +594,9 @@ const TAB_LABELS = Object.fromEntries(TABS.map((t) => [t.key, t.cn]));
 
 const STABILITY_CN = { stable: '稳健', fragile: '脆弱', insufficient: '样本不足' };
 const CONFIDENCE_CN = { high: '高', medium: '中', low: '低' };
+// 凭据通道：source 由写入方决定，未知通道回退原始键，便于排查。
+const SOURCE_CN = { pool: '候选池入池', 'reverse-1440': '尾盘 14:40 反推', unknown: '未标注通道' };
+const sourceCn = (value) => SOURCE_CN[String(value || 'unknown')] || String(value || '未标注通道');
 
 const appStore = useAppStore();
 const { mode } = storeToRefs(appStore);
@@ -576,9 +604,9 @@ const { mode } = storeToRefs(appStore);
 const bt = useBacktestStore();
 const {
   backtest, runs, counts, dimensions, statRows, targets, deciles, topk, coefs, riskNotes,
-  gridBuys, gridSells, gridTop, legText,
+  gridBuys, gridSells, gridTop, legText, decisionSources, decisionRows,
 } = storeToRefs(bt);
-const { load, loadDecisions, switchTab, selectRun, selectDimension, selectGridBuy, selectTarget, setStatSort, dimLabel, fmtMinute } = bt;
+const { load, loadDecisions, switchTab, selectRun, selectDimension, selectGridBuy, selectTarget, selectDecisionSource, setStatSort, dimLabel, fmtMinute } = bt;
 
 const model = computed(() => backtest.value.model);
 

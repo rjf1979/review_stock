@@ -37,6 +37,13 @@ const TOPK_CN = {
 
 const TOPK_ORDER = ['top1', 'top2', 'top3', 'top5', 'top8', 'top10', 'top15', 'top20', 'top30', 'top10_comboB'];
 
+// 实盘凭据通道中文名。source 由写入方决定，未知通道回退原始键，便于排查。
+export const DECISION_SOURCE_CN = {
+  pool: '候选池入池',
+  'reverse-1440': '尾盘 14:40 反推',
+  unknown: '未标注通道',
+};
+
 // 1430 → 「14:30」；已经是 'HH:MM' 的字符串原样返回。
 export function fmtBacktestMinute(value) {
   if (value === null || value === undefined || value === '') return '—';
@@ -82,6 +89,7 @@ export const useBacktestStore = defineStore('backtest', () => {
     modelTarget: 'up3',
     scorecard: null,
     decisions: [],
+    decisionSource: 'all',
     decisionsError: '',
   });
 
@@ -154,6 +162,24 @@ export const useBacktestStore = defineStore('backtest', () => {
     .sort((a, b) => (Number(b.retMeanPct) || 0) - (Number(a.retMeanPct) || 0))
     .slice(0, 8)
     .map((r) => ({ ...r, buy: fmtBacktestMinute(r.buyMinute), sell: fmtBacktestMinute(r.sellMinute) })));
+  // 通道统计优先用服务端聚合（覆盖全部记录），后端不可用时按已取回的明细降级聚合。
+  const decisionSources = computed(() => {
+    const rows = (backtest.scorecard && backtest.scorecard.bySource) || [];
+    if (rows.length) return rows;
+    const seen = new Map();
+    for (const d of backtest.decisions || []) {
+      const key = String(d.source || 'unknown');
+      const cur = seen.get(key) || { source: key, total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null };
+      cur.total += 1;
+      seen.set(key, cur);
+    }
+    return [...seen.values()];
+  });
+  const decisionRows = computed(() => {
+    const rows = backtest.decisions || [];
+    if (backtest.decisionSource === 'all') return rows;
+    return rows.filter((d) => String(d.source || 'unknown') === backtest.decisionSource);
+  });
 
   function dimLabel(dim) { return dimCn.value[dim] || dim || '—'; }
 
@@ -255,6 +281,11 @@ export const useBacktestStore = defineStore('backtest', () => {
     if (key && key !== backtest.modelTarget) backtest.modelTarget = key;
   }
 
+  function selectDecisionSource(source) {
+    const next = String(source || 'all');
+    if (next !== backtest.decisionSource) backtest.decisionSource = next;
+  }
+
   function setStatSort(sort) {
     backtest.statSort = sort === 'lift3' ? 'lift3' : 'bucket';
   }
@@ -262,7 +293,8 @@ export const useBacktestStore = defineStore('backtest', () => {
   return {
     backtest, runs, counts, dimensions, dimCn, legText, statRows, targets, deciles, topk, coefs, riskNotes,
     gridBuys, gridSells, gridTop,
+    decisionSources, decisionRows,
     load, loadStats, loadDecisions, switchTab, selectRun, selectDimension, selectGridBuy,
-    selectTarget, setStatSort, dimLabel, fmtMinute: fmtBacktestMinute,
+    selectTarget, selectDecisionSource, setStatSort, dimLabel, fmtMinute: fmtBacktestMinute,
   };
 });
