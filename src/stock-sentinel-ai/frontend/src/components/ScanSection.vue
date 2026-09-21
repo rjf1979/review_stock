@@ -17,6 +17,7 @@
         <div class="actions">
           <button class="btn" :disabled="scanning" @click="preScan({ force: true })">扫描市场</button>
           <button class="btn primary" :disabled="scanning || !hasValidPrescan" @click="scan">扫描股票</button>
+          <button class="btn" :disabled="probabilityRefreshBusy" @click="refreshProbability">{{ probabilityRefreshBusy ? '概率打分中…' : '刷新次日概率' }}</button>
           <button class="btn" :disabled="scanning || !rows.filter(x => x.autoPool !== false).length || poolBusy" @click="addAllToPool">纳入可入池候选</button>
           <span class="summary">{{ summary }}</span>
         </div>
@@ -26,6 +27,7 @@
       <!-- 入池/自选的逐条结果必须在本页可见：写操作成功前用户不应只靠按钮文案变化判断。
            常驻 aria-live 区域，内容为空时不占位。 -->
       <div v-show="poolMsg" class="status" :class="poolMsgError ? 'error' : ''" role="status" aria-live="polite">{{ poolMsg }}</div>
+      <div v-show="probabilityMsg" class="status" role="status" aria-live="polite">{{ probabilityMsg }}</div>
 
       <section v-if="scanContext" class="panel" aria-label="本次扫描策略上下文">
         <div class="panel-head">
@@ -125,6 +127,7 @@
           <div>
             <h2>题材内强势股</h2>
             <span class="summary">仅在已预扫描题材成分股中筛选；题材内按涨停、涨跌幅、主力净流入和量能分排序。</span>
+            <span class="summary">{{ probabilitySummaryText }}</span>
           </div>
         </div>
         <div class="table-wrap">
@@ -134,12 +137,13 @@
               <th scope="col">代码</th><th scope="col">名称</th><th scope="col" class="hide-mobile">市场</th><th scope="col">现价</th>
               <th scope="col">涨跌幅</th><th scope="col" class="hide-mobile">换手%</th><th scope="col">量比</th>
               <th scope="col" class="hide-mobile">成交额(亿)</th><th scope="col" class="hide-mobile">主力净流入(亿)</th><th scope="col" class="hide-mobile">量能分</th>
+              <th scope="col" class="hide-mobile"><button type="button" class="sort-head" :class="{ asc: probSortDir === 1 }" :aria-pressed="probSortDir !== 0" @click="toggleProbSort" title="决策模型预测的次日（09:30~10:00）最高涨幅达到 +3% 的概率，点按切换排序；悬停单元格看明细">次日≥+3%</button></th>
               <th scope="col">板块 / 候选排名</th>
               <th scope="col">当前阶段</th><th scope="col" class="hide-mobile">风险提示</th><th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in rows" :key="r.code" tabindex="0" @click="openDetail(r)" @keydown.enter="openDetail(r)">
+            <tr v-for="r in displayRows" :key="r.code" tabindex="0" @click="openDetail(r)" @keydown.enter="openDetail(r)">
               <td class="num">{{ r.code }}</td>
               <td>{{ r.name }}</td>
               <td class="hide-mobile">{{ marketLabel(r.market) }}</td>
@@ -150,6 +154,7 @@
               <td class="num hide-mobile">{{ r.amountYi.toFixed(2) }}</td>
               <td class="num hide-mobile" :class="r.mainNetYi >= 0 ? 'pos' : 'neg'">{{ r.mainNetYi.toFixed(2) }}</td>
               <td class="num hide-mobile"><strong>{{ r.score }}</strong></td>
+              <td class="num hide-mobile" :title="probTitle(r)"><strong v-if="hasProb(r) && r.probability.up3 >= 50">{{ probText(r) }}</strong><template v-else>{{ probText(r) }}</template></td>
               <td class="pat theme-leader" :class="{ leader: r.isBoardLeader }" :title="themeLeaderText(r)">{{ themeLeaderText(r) }}</td>
               <td class="pat" :title="r.ruleLabel || ''">待补 K 线复筛</td>
               <td class="hide-mobile" :title="(r.riskFlags || []).map(x => x.label).join('；')">{{ (r.riskFlags || []).length ? (r.riskFlags || []).map(x => x.label).join('；') : '—' }}</td>
@@ -166,12 +171,62 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../stores/app';
 const app = useAppStore();
-const { mode, statusInfo, lastSnapDate, localStatus, selectedMarkets, settings, summary, scanning, hasValidPrescan, rows, poolBusy, status, statusText, scanContext, poolMsg, poolMsgError } = storeToRefs(app);
-const { scan, marketLabel, preScan, addAllToPool, fmtPct, fmtNum, fmtDateTime, openDetail, isInPool, addToPool, isWatched, toggleWatchFromScan, isPoolItemBusy } = app;
+const { mode, statusInfo, lastSnapDate, localStatus, selectedMarkets, settings, summary, scanning, hasValidPrescan, rows, poolBusy, status, statusText, scanContext, poolMsg, poolMsgError, probabilityMeta, probabilityRefreshBusy, probabilityMsg } = storeToRefs(app);
+const { scan, marketLabel, preScan, addAllToPool, fmtPct, fmtNum, fmtDateTime, openDetail, isInPool, addToPool, isWatched, toggleWatchFromScan, isPoolItemBusy, refreshProbability } = app;
+// 概率列排序只在展示层生效，rows 本身保持后端给的市场逻辑顺序（入池、K 线同步都依赖它）。
+const probSortDir = ref(0);
+const toggleProbSort = () => { probSortDir.value = probSortDir.value === -1 ? 1 : -1; };
+const probValue = (row) => {
+  const value = Number(row && row.probability && row.probability.up3);
+  return Number.isFinite(value) ? value : null;
+};
+const hasProb = (row) => probValue(row) !== null;
+const probText = (row) => {
+  const value = probValue(row);
+  return value === null ? '—' : value.toFixed(1) + '%';
+};
+const probTitle = (row) => {
+  const value = probValue(row);
+  if (value === null) return '本次批量打分未覆盖该股（次新或日线不足），点「刷新次日概率」可重算';
+  const p = row.probability;
+  const parts = [`次日≥+3% ${value.toFixed(2)}%`];
+  if (Number.isFinite(Number(p.up5))) parts.push(`≥+5% ${Number(p.up5).toFixed(2)}%`);
+  if (Number.isFinite(Number(p.limitUp))) parts.push(`涨停 ${Number(p.limitUp).toFixed(2)}%`);
+  if (p.support && Number.isFinite(Number(p.support.up3))) parts.push(`回测支撑 ${p.support.up3} 笔`);
+  if (p.sector && p.sector.name) parts.push(`行业 ${p.sector.name}${Number.isFinite(Number(p.sector.heat)) ? `（热度 ${Number(p.sector.heat).toFixed(2)}）` : ''}`);
+  if (p.caliber) parts.push(`口径 ${p.caliber}`);
+  const evidence = p.evidence && (p.evidence.up3 || Object.values(p.evidence)[0]);
+  if (evidence) parts.push(String(evidence).slice(0, 160));
+  return parts.join('；');
+};
+const displayRows = computed(() => {
+  if (!probSortDir.value) return rows.value;
+  const dir = probSortDir.value;
+  return [...rows.value].sort((a, b) => {
+    const av = probValue(a);
+    const bv = probValue(b);
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return (av - bv) * dir;
+  });
+});
+const probabilitySummaryText = computed(() => {
+  const meta = probabilityMeta.value;
+  if (!meta || !meta.available) return '次日概率：当日尚未生成，点「刷新次日概率」按最近一次预扫描范围批量打分。';
+  const base = meta.baseByTarget || {};
+  const parts = [`口径 ${meta.caliberNote || meta.caliber || '未标注'}`];
+  if (Number.isFinite(Number(base.up3))) parts.push(`基准 ≥+3% ${Number(base.up3).toFixed(2)}%`);
+  if (Number.isFinite(Number(base.up5))) parts.push(`≥+5% ${Number(base.up5).toFixed(2)}%`);
+  if (Number.isFinite(Number(base.limitUp))) parts.push(`涨停 ${Number(base.limitUp).toFixed(2)}%`);
+  parts.push(`覆盖 ${Number(meta.scored) || 0} 只 / 未覆盖 ${Number(meta.missing) || 0} 只`);
+  if (meta.job && meta.job.running) parts.push('后台补算中');
+  return '次日概率：' + parts.join(' · ');
+});
 const focusBoards = computed(() => [
   ...(scanContext.value?.focusThemes || []),
   ...(scanContext.value?.focusConcepts || []),

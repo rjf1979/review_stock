@@ -12,6 +12,8 @@ const priceLevels = require('./price-levels');
 const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans, saveBtDecisions, settleBtDecision, listBtDecisions, btDecisionScorecard } = require('./storage');
 // 回测库（data/backtest.db）只读访问：字段字典 / 形态字典 / 分档统计 / 时点网格。
 const backtestStore = require('./backtest-store');
+// 次日上涨概率（决策模型 v1）：Python 打分 + Node 侧缓存/挂载，扫描与入池共用同一份口径。
+const probabilityEngine = require('./probability-engine');
 // 本地通达信数据源探针：只读检查目录/除权文件是否可用，供设置页与巡检使用。
 const { tdxStatus } = require('./tdx-vipdoc');
 const watchlist = require('./watchlist');
@@ -223,7 +225,39 @@ async function handleScan(query) {
   // 复用最近一次有效市场扫描，在重点题材范围内更新实时行情并做快照预筛；
   // 仅对预筛小集合读取本地可信 K 线快速确认，不在扫描阶段联网批量抓 K 线。
   const forcePrescan = ['1', 'true', 'yes'].includes(String(query.get('force') || '').toLowerCase());
-  return scanByMarketContext({ markets, limit, dataSource: 'live', forcePrescan });
+  const result = await scanByMarketContext({ markets, limit, dataSource: 'live', forcePrescan });
+  // 把当日决策模型的次日概率挂到候选/强势观察/超配额三组上。
+  // 这里只读当日已落盘的打分结果，缺票交给后台补算，绝不阻塞扫描本身。
+  try {
+    await probabilityEngine.attachToScan(result, {
+      date: result && result.snapshotDate,
+      regime: result && result.marketRegime && result.marketRegime.status,
+    });
+  } catch (e) {
+    result.probabilityMeta = { available: false, error: String(e && e.message || e) };
+  }
+  return result;
+}
+
+// 入池即固化实盘凭据：把「当日尾盘特征 + 次日概率 + 口径」写进 data/kline.db 的 bt_decision，
+// 次日收盘后回填 actual*/hit3，就能拿实盘命中率和回测命中率做对照。
+async function recordPoolDecisions(items = []) {
+  const view = probabilityEngine.summaryView('', { top: 1 });
+  const tradeDate = view.date;
+  const regime = String((view.market && view.market.regime) || view.baseRegime || '');
+  const marketTemp = view.market && Number.isFinite(Number(view.market.tempScore)) ? Number(view.market.tempScore) : null;
+  const enriched = await probabilityEngine.attachToItems(items, { date: tradeDate, regime });
+  const base = view.available && Number.isFinite(Number(view.baseByTarget && view.baseByTarget.up3))
+    ? { value: Number(view.baseByTarget.up3), source: 'bt_stat.market_regime', regime }
+    : null;
+  const rows = probabilityEngine.decisionRows(enriched, { tradeDate, regime, marketTemp, base, source: 'pool' });
+  if (!rows.length) return { ok: true, saved: 0, rows: 0, note: '入池条目中没有可记录的有效代码' };
+  const saved = await saveBtDecisions(rows);
+  return {
+    ...saved, rows: rows.length,
+    withProbability: rows.filter((row) => Number.isFinite(row.up3Prob)).length,
+    tradeDate, regime, caliber: view.caliber,
+  };
 }
 
 async function handleMarketPrescan(query) {
@@ -310,6 +344,25 @@ function createServer(port = DEFAULT_PORT) {
       }
       if (pathname === '/api/backtest/decision-model') {
         return send(res, 200, await backtestStore.decisionModel());
+      }
+      // ── 次日上涨概率（决策模型 v1）：只读视图 + 手动批量打分 ──────────
+      if (pathname === '/api/probability' && req.method === 'GET') {
+        const date = url.searchParams.get('date') || '';
+        const code = String(url.searchParams.get('code') || '').trim();
+        if (code) {
+          const item = probabilityEngine.itemView(code, date);
+          if (!item) return send(res, 404, { ok: false, error: '当日暂无该股概率明细', code });
+          return send(res, 200, { ok: true, item });
+        }
+        return send(res, 200, { ok: true, ...probabilityEngine.summaryView(date, { top: Number(url.searchParams.get('top')) || 20 }) });
+      }
+      if (pathname === '/api/probability/refresh' && req.method === 'POST') {
+        let body = null;
+        try { body = await readBody(req); } catch { body = null; }
+        const date = String((body && body.date) || url.searchParams.get('date') || '');
+        const force = Boolean(body && (body.force === true || body.force === '1' || body.force === 'true'));
+        const refreshed = await probabilityEngine.refresh({ date, force, regime: String((body && body.regime) || '') });
+        return send(res, refreshed.ok ? 200 : 409, { ...refreshed, view: probabilityEngine.summaryView(date, { top: 10 }) });
       }
       // ── 实盘凭据（data/kline.db 的 bt_decision）────────────────────
       if (pathname === '/api/decisions' && req.method === 'GET') {
@@ -650,7 +703,14 @@ function createServer(port = DEFAULT_PORT) {
         const body = await readBody(req);
         const items = Array.isArray(body) ? body : (body && Array.isArray(body.items) ? body.items : []);
         const r = candidatePool.addMany(items);
-        return send(res, 200, r);
+        // 入池顺带把决策凭据写进 bt_decision；凭据失败不能影响入池本身的结果。
+        let credentials = null;
+        try {
+          credentials = await recordPoolDecisions(items);
+        } catch (e) {
+          credentials = { ok: false, error: String(e && e.message || e) };
+        }
+        return send(res, 200, { ...r, credentials });
       }
       if (pathname === '/api/pool/kline' && req.method === 'POST') {
         const body = await readBody(req);

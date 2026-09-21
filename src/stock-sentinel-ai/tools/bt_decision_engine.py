@@ -907,6 +907,10 @@ def do_score(args) -> int:
     with open(MODEL_PATH, 'r', encoding='utf-8') as f:
         model = json.load(f)
     df = pd.read_csv(args.score, encoding='utf-8-sig')
+    if 'code' in df.columns:
+        # 保留 6 位股票代码的前导零（000007 不能变成 7），否则下游按 code 关联会全部落空
+        s = df['code'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+        df['code'] = s.where(~s.str.fullmatch(r'\d{1,6}'), s.str.zfill(6))
     target = args.target
     spec = model['targets'][target]
     feat = {f['key']: f for f in model['features']}

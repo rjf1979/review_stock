@@ -21,6 +21,10 @@ const strongWatchRows = ref([]);
 const scanFunnel = ref(null);
 const scanContext = ref(null);
 const prescanMarketKey = ref('');
+// 次日上涨概率（决策模型 v1）：与扫描结果同源，缺失时给出补算入口而不是显示 0%。
+const probabilityMeta = ref(null);
+const probabilityRefreshBusy = ref(false);
+const probabilityMsg = ref('');
 const scanning = ref(false);
 const summary = ref('');
 const status = ref('');
@@ -730,6 +734,7 @@ async function scan() {
     const data = await fetchJson('/api/scan?' + q.toString());
     rows.value = data.candidates || [];
     strongWatchRows.value = data.strongWatch || [];
+    probabilityMeta.value = data.probabilityMeta || null;
     scanFunnel.value = data.funnel || null;
     scanContext.value = {
       ...scanContext.value,
@@ -1667,6 +1672,8 @@ function poolSnapshot(r) {
     amountYi: r.amountYi,
     mainNetYi: r.mainNetYi,
     score: r.score,
+    // 次日概率随候选一起入池，/api/pool 用它写 bt_decision 凭据；缺失就留 null，不编造数值。
+    probability: r.probability || null,
     pattern: r.pattern,
     patternScore: r.patternScore,
     ruleLabel: r.ruleLabel || '',
@@ -1982,6 +1989,29 @@ async function addAllToPool() {
   if (!rows.value.length) return;
   const items = rows.value.filter((row) => row.autoPool !== false).map(poolSnapshot);
   return postPool(items);
+}
+
+// 手动触发当日全范围概率打分：范围取最近一次市场预扫描，完成后自动重扫以刷新概率列。
+async function refreshProbability() {
+  if (probabilityRefreshBusy.value) return null;
+  probabilityRefreshBusy.value = true;
+  probabilityMsg.value = '正在批量打分（全范围约 30~60 秒）…';
+  try {
+    const res = await fetchJson('/api/probability/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true }),
+    });
+    const view = res.view || {};
+    probabilityMsg.value = `打分完成：覆盖 ${view.scored || 0} 只，跳过 ${(view.skipped || []).length} 只，口径 ${view.caliberNote || view.caliber || '未标注'}`;
+    if (rows.value.length) await scan();
+    return res;
+  } catch (e) {
+    probabilityMsg.value = '打分失败：' + e.message;
+    return null;
+  } finally {
+    probabilityRefreshBusy.value = false;
+  }
 }
 
 const isPoolItemBusy = (code, action) => action ? poolItemBusy.value[code] === action : Boolean(poolItemBusy.value[code]);
@@ -2583,5 +2613,5 @@ document.addEventListener('visibilitychange', () => {
 });
   }
 
-  return { clearPool, removeFromPool, bootstrap, marketClock, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, klineGaps, klineGapsSummary, tdxStatus, tdxStatusSummary, loadTdxStatus, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, loadIntegrity, loadKlineGaps, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, candidateStateHint, concentrationPreview, quoteExpiredPoolItems, quoteExpiredPoolSummary, klineUnverifiedPoolItems, klineUnverifiedPoolSummary, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
+  return { clearPool, removeFromPool, bootstrap, marketClock, watchKlines, watchLevels, watchReturnByCode, detailWatchReturn, returnBaselineEditor, loadWatchKlines, loadWatchLevels, completeWatchKlines, watchCompleting, watchSessionActive, markets, rules, enabledRules, patterns, patternOptions, selectedMarkets, ruleId, dataSource, usedSource, snapshotDate, statusInfo, localStatus, rows, scanContext, prescanMarketKey, hasValidPrescan, probabilityMeta, probabilityRefreshBusy, probabilityMsg, refreshProbability, scanning, summary, status, statusText, detail, aiSummary, aiVerdictLabel, aiVerdictClass, aiSampleLabel, aiKlineDate, aiSnapshotDate, aiDateMismatch, aiThemeNames, aiThemeSummary, aiBtnLabel, detailAiState, detailAiStateClass, fmtDuration, fmtClock, fmtDateTime, zoneRange, entryTriggerLabel, exitWatchLabel, appReady, startupMessage, klineGaps, klineGapsSummary, tdxStatus, tdxStatusSummary, loadTdxStatus, integrity, dataHealth, scanBtnText, sourceLabel, marketLabel, todayReadySummary, missingTodayLabels, lastSnapDate, boardStats, mode, watchlist, watchQuotes, watchAlerts, watchInput, watchAddMsg, watchAddMsgError, watchRefreshing, watchQuotesError, watchAuto, watchIntervalMs, lastUpdate, isWatched, isInPool, isWatchPinned, toggleWatchPin, fmtNum, fmtTime, fmtPrice, fmtPct, fmtAmount, fmtRatio, fmtVolume, loadLocalStatus, toggleMarket, preScan, scan, openDetail, refreshDetail, runAiDetail, closeDetail, handleModalKeydown, loadIntegrity, loadKlineGaps, openDataHealth, switchMode, loadWatchlist, refreshWatch, addWatch, removeWatch, toggleWatchFromScan, openReturnBaselineEditor, closeReturnBaselineEditor, saveCustomReturnBaseline, clearCustomReturnBaseline, restartWatchPolling, startWatchPolling, stopWatchPolling, settings, showFirstApiKey, showSecondApiKey, savingSettings, settingsMsg, settingsMsgError, loadSettings, saveSettings, savingRules, rulesMsg, rulesMsgError, ruleEditor, loadRules, addRule, openRuleEditor, closeRuleEditor, saveRuleDraft, removeRule, resetRules, saveRules, pool, sortedPool, poolSort, poolSortDir, poolTrackFilter, poolPatternFilter, poolTrackFilterOptions, poolPatternFilterOptions, poolPatternLabel, trackRecommendation, togglePoolSort, poolBusy, poolMsg, poolMsgError, poolStats, poolFilterStats, isPoolItemBusy, klineDone, poolKlineLatest, candidateState, candidateStateClass, candidateStateHint, concentrationPreview, quoteExpiredPoolItems, quoteExpiredPoolSummary, klineUnverifiedPoolItems, klineUnverifiedPoolSummary, poolJudgments, poolPatterns, poolRecommendations, recommendationBatch, recommendationLabel, recommendationClass, recommendationReason, startRecommendations, stopRecommendations, hasFailedJudgments, judgmentBatch, judgmentConfirm, poolPrefetch, loadPool, loadPoolJudgments, loadPoolRecommendations, loadPoolPatterns, loadBatchStatus, openBatchConfirm, closeBatchConfirm, confirmBatch, stopBatch, addToPool, addAllToPool, moveToWatch, moveAllToWatch, startPoolKline, stopPoolKline, loadPoolKlineState };
 });
