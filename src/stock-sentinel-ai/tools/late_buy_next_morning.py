@@ -9,12 +9,16 @@
 
 **数据口径限制（报告中必须如实标注，勿粉饰）**
 
-本地没有任何分钟级数据（``vipdoc/*/minline``、``fzline`` 全空；腾讯 5 分钟接口只
-回溯约 320 根 ≈ 6 个交易日），因此：
+本工具是**日线近似口径**（精确口径见 ``late_buy_next_morning_minute.py``）：
 
 * 「14:30 价」用 T 日**收盘价**近似，14:30→15:00 的漂移未建模；
 * 「次日上午最高涨幅」用 T+1 日**全天最高价**近似，是上午最高涨幅的**上界**，
   系统性偏高（真实上午最高只会 ≤ 该值）。
+
+标的池：**只含个股**（``kdata.is_stock`` 限定沪市 60/68、深市 000/001/002/003/004/300/301），
+指数、ETF/LOF、可转债、B 股、北交所均不在池内；默认进一步剔除 ST、科创板（``--include-star``
+可放开）、**银行股**（``--exclude-industry`` 可调整）与**退市股**（``--keep-delisted`` 可放开，
+放开会重新引入幸存者偏差）。板块指数与沪深 300 只作为**特征输入**，不是回测标的。
 
 收益率一律用**前复权**价计算（除权除息不产生假跳空）；涨跌停、封板判定用
 **不复权**原始价。个股名称、流通市值、ST 判定取最近一份东财快照（当前口径看历史）。
@@ -39,7 +43,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from indicators import compute_indicators, limit_ratio  # noqa: E402
-from kdata import Market, int_to_ymd  # noqa: E402
+from kdata import Market, int_to_ymd, is_stock, market_of  # noqa: E402
 from tdx_sector import align_series, load_board_series, load_industry_map  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
@@ -369,6 +373,10 @@ def main() -> int:
     ap.add_argument('--max-stocks', type=int, default=0)
     ap.add_argument('--seed', type=int, default=20260920)
     ap.add_argument('--no-date-agg', action='store_true')
+    ap.add_argument('--exclude-industry', nargs='*', default=['银行'],
+                    help='按通达信行业名包含匹配排除，默认排除「银行」；传空串可关闭')
+    ap.add_argument('--keep-delisted', action='store_true',
+                    help='保留退市股；默认剔除不在最新快照中的代码（会引入幸存者偏差）')
     args = ap.parse_args()
 
     start_int = int(args.start.replace('-', ''))
@@ -386,11 +394,27 @@ def main() -> int:
 
     market = Market()
     codes = list(market.codes(args.min_bars))
+    # 显式白名单兜底：只保留 A 股个股（沪 60/68、深 000/001/002/003/004/300/301），
+    # 排除 B 股（沪 900xxx、深 200xxx）、指数、ETF/LOF、可转债与北交所。
+    codes = [c for c in codes if is_stock(market_of(c), c)]
     codes = [c for c in codes if not c.startswith(('8', '4', '9'))]
     if not args.include_star:
         codes = [c for c in codes if not c.startswith('68')]
     st_codes = {c for c, m in snap.items() if 'ST' in (m['name'] or '').upper()}
     codes = [c for c in codes if c not in st_codes]
+    ex_hy: set[str] = set()
+    for key in (args.exclude_industry or []):
+        if key:
+            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
+    if ex_hy:
+        codes = [c for c in codes if c not in ex_hy]
+    dropped_delisted = 0
+    if not args.keep_delisted:
+        before = len(codes)
+        codes = [c for c in codes if c in snap]
+        dropped_delisted = before - len(codes)
+    print(f'[init] 排除行业 {sorted(k for k in (args.exclude_industry or []) if k)}：{len(ex_hy)} 只；'
+          f'剔除退市/无快照：{dropped_delisted} 只')
     if args.codes_file:
         with open(args.codes_file, 'r', encoding='utf-8') as f:
             want = {ln.strip().lstrip('\ufeff') for ln in f if ln.strip()}

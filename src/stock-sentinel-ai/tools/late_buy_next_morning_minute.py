@@ -28,7 +28,7 @@ import os
 import numpy as np
 
 from indicators import compute_indicators, limit_ratio
-from kdata import Market, factor_series, int_to_ymd
+from kdata import Market, factor_series, int_to_ymd, is_stock, market_of
 from late_buy_next_morning import (COST, EDGES, TARGET, IndexAgg, KeyAgg,
                                    bucket_labels, load_factors,
                                    load_latest_snapshot, write_csv, ymd_to_ordinal)
@@ -97,6 +97,10 @@ def main() -> int:
     ap.add_argument('--out-dir', default=OUT_DEFAULT)
     ap.add_argument('--max-stocks', type=int, default=0)
     ap.add_argument('--dump-detail', action='store_true')
+    ap.add_argument('--exclude-industry', nargs='*', default=['银行'],
+                    help='按通达信行业名包含匹配排除，默认排除「银行」；传空串可关闭')
+    ap.add_argument('--keep-delisted', action='store_true',
+                    help='保留退市股；默认剔除不在最新快照中的代码（会引入幸存者偏差）')
     args = ap.parse_args()
 
     start_int = int(args.start.replace('-', ''))
@@ -109,10 +113,24 @@ def main() -> int:
 
     market = Market()
     codes = [c for c in market.codes(args.min_bars) if not c.startswith(('8', '4', '9'))]
+    # 显式白名单兜底：只保留 A 股个股，排除 B 股（沪 900xxx、深 200xxx）等非个股代码。
+    codes = [c for c in codes if is_stock(market_of(c), c)]
     if not args.include_star:
         codes = [c for c in codes if not c.startswith('68')]
     st_codes = {c for c, mm in snap.items() if 'ST' in (mm['name'] or '').upper()}
     codes = [c for c in codes if c not in st_codes]
+    ex_hy: set[str] = set()
+    for key in (args.exclude_industry or []):
+        if key:
+            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
+    if ex_hy:
+        codes = [c for c in codes if c not in ex_hy]
+    dropped_delisted = 0
+    if not args.keep_delisted:
+        before = len(codes)
+        codes = [c for c in codes if c in snap]
+        dropped_delisted = before - len(codes)
+    print(f'[init] 排除行业 {len(ex_hy)} 只；剔除退市/无快照 {dropped_delisted} 只')
     if args.max_stocks:
         codes = codes[:args.max_stocks]
     print(f'[init] 快照 {snap_date}；行业映射 {len(hy_map)}；板块指数 {len(board_series)}；'

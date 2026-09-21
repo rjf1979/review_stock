@@ -104,11 +104,15 @@ def load_industry_map(tdx_dir: str | None = None) -> dict[str, dict]:
 
 def day_file_candidates(code: str, tdx_dir: str | None = None) -> list[str]:
     """板块指数 / 指数日线文件的候选路径（项目数据优先，其次通达信原始目录）。"""
-    market = 'sh' if code[0] in '5689' else 'sz'
-    name = f'{market}{code}.day'
-    paths = [os.path.join(root, market, 'lday', name) for root in DAY_ROOTS]
+    # 沪深两市存在同号代码（sh000300 沪深300 / sz000300 不存在，sz000001 平安银行），
+    # 单看代码首位不足以判定市场，因此先按推测市场找，再回退到另一个市场。
+    primary = 'sh' if code[0] in '5689' else 'sz'
     tdir = resolve_tdx_dir(tdx_dir)
-    paths.append(os.path.join(tdir, 'vipdoc', market, 'lday', name))
+    paths: list[str] = []
+    for market in [primary, 'sh' if primary == 'sz' else 'sz']:
+        name = f'{market}{code}.day'
+        paths.extend(os.path.join(root, market, 'lday', name) for root in DAY_ROOTS)
+        paths.append(os.path.join(tdir, 'vipdoc', market, 'lday', name))
     return paths
 
 
