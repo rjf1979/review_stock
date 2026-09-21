@@ -516,6 +516,13 @@ def main(argv=None) -> int:
             'weights': {t: [float(x) for x in fit['models'][t]['w']] for t in fit['models']},
             'mu': {t: [float(x) for x in fit['models'][t]['mu']] for t in fit['models']},
             'sd': {t: [float(x) for x in fit['models'][t]['sd']] for t in fit['models']},
+            # metas 必须落盘：实盘打分要按**训练集**分位边界给新样本分档。
+            # 标签字符串是 `_fmt_num` 四舍五入后的结果（真实 0.09452 → 标签 0.095），
+            # 只能用来展示，不能拿来反推边界，否则实盘分档会错位。
+            'metas': {k: {'kind': fit['metas'][k].get('kind'),
+                          'edges': [float(e) for e in (fit['metas'][k].get('edges') or [])],
+                          'labels': list(fit['metas'][k].get('labels') or [])}
+                      for k in keys},
             'features': [{'key': k, 'cn': FEATURE_CN[k], 'unit': FEATURE_UNIT[k],
                           'kind': 'num' if k in NUM_KEYS else 'cat'} for k in keys],
         },

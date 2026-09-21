@@ -276,8 +276,16 @@ def minute_features(m: dict, sl: tuple, prev_close: float, limit_px: float,
 
 
 def label_features(m: dict, sl1: tuple, entry: float, adj: float,
-                   t_close_raw: float, limit_ratio: float) -> dict | None:
-    """T+1 早盘：三个窗口的最高涨幅、对应时刻、以及卖出路径所需的价格。"""
+                   t_close_raw: float, limit_ratio: float,
+                   windows=None) -> dict | None:
+    """T+1 早盘：窗口最高涨幅、对应时刻、以及卖出路径所需的价格。
+
+    ``windows`` 默认三个对照窗口（09:31~10:00 / 10:30 / 11:30），回测取标签时使用；
+    实盘结算在次日 10:31 就出结果，只传 ``(('1030', AM_1030),)``，避免因为 11:30
+    窗口还没走完而算不出结果。
+    """
+    if windows is None:
+        windows = (('1000', AM_1000), ('1030', AM_1030), ('1130', AM_1130))
     s, e = sl1
     t = np.asarray(m['time'][s:e], dtype=np.int64)
     if not len(t):
@@ -286,7 +294,7 @@ def label_features(m: dict, sl1: tuple, entry: float, adj: float,
     h = np.asarray(m['high'][s:e], dtype=np.float64)
     c = np.asarray(m['close'][s:e], dtype=np.float64)
     out: dict = {}
-    for name, hhmm in (('1000', AM_1000), ('1030', AM_1030), ('1130', AM_1130)):
+    for name, hhmm in windows:
         sel = (t >= AM_OPEN) & (t <= hhmm)
         if not sel.any():
             return None
@@ -305,6 +313,44 @@ def label_features(m: dict, sl1: tuple, entry: float, adj: float,
     out['limitTouch1030'] = int(bool(amwin.any() and h[amwin].max() >= limit_px - 1e-6))
     out['limitTouchDay'] = int(bool(am.any() and h[am].max() >= limit_px - 1e-6))
     return out
+
+
+def daily_features(qfq, ind: dict, j0: int, entry: float, shares_wan: float,
+                   board: str, list_days: int) -> dict:
+    """T-1 及以前的日线量价特征（16 个字段）。
+
+    回测 ``compute_stock`` 与实盘打分共用这一份实现，避免两套公式各自漂移。
+    ``j0`` 是 T-1 在日线数组里的下标；``list_days`` 是 T 日的上市交易日数（bar 序号 +1）。
+    """
+    c_prev = float(qfq['close'][j0])
+    ma5, ma10 = float(ind['ma5'][j0]), float(ind['ma10'][j0])
+    ma20, ma60 = float(ind['ma20'][j0]), float(ind['ma60'][j0])
+    ma120 = float(ind['ma120'][j0])
+    hh20 = float(ind['hh20'][j0])
+
+    def back(k: int) -> float:
+        if j0 - k < 0 or float(qfq['close'][j0 - k]) <= 0:
+            return np.nan
+        return (c_prev / float(qfq['close'][j0 - k]) - 1) * 100
+
+    return {
+        'dPctPrev': round(float(ind['pct'][j0]), 4),
+        'dAmpPrev': round(float(ind['amp'][j0]), 4),
+        'dRet5': round(back(4), 4), 'dRet20': round(back(19), 4),
+        'dRet60': round(back(59), 4),
+        'dRsi14': round(float(ind['rsi14'][j0]), 4),
+        'dAtrPct': (round(float(ind['atr14'][j0]) / c_prev * 100, 4)
+                    if c_prev > 0 else np.nan),
+        'dBias5': round((c_prev / ma5 - 1) * 100, 4) if ma5 > 0 else np.nan,
+        'dBias10': round((c_prev / ma10 - 1) * 100, 4) if ma10 > 0 else np.nan,
+        'dBias20': round((c_prev / ma20 - 1) * 100, 4) if ma20 > 0 else np.nan,
+        'dBias60': round((c_prev / ma60 - 1) * 100, 4) if ma60 > 0 else np.nan,
+        'dBias120': round((c_prev / ma120 - 1) * 100, 4) if ma120 > 0 else np.nan,
+        'dDistHh20': round((c_prev / hh20 - 1) * 100, 4) if hh20 > 0 else np.nan,
+        'dListDays': int(list_days),
+        'dFloatMcapYi': round(shares_wan * entry / 1e4, 4) if np.isfinite(shares_wan) else np.nan,
+        'dBoard': board,
+    }
 
 
 _W: dict = {}
@@ -407,17 +453,6 @@ def compute_stock(code: str) -> tuple[list, dict]:
             skipped['no_entry'] += 1
             continue
         j0 = i - 1
-        c_prev = float(qfq['close'][j0])
-        ma5, ma10 = float(ind['ma5'][j0]), float(ind['ma10'][j0])
-        ma20, ma60 = float(ind['ma20'][j0]), float(ind['ma60'][j0])
-        ma120 = float(ind['ma120'][j0])
-        hh20 = float(ind['hh20'][j0])
-
-        def back(k: int) -> float:
-            if j0 - k < 0 or float(qfq['close'][j0 - k]) <= 0:
-                return np.nan
-            return (c_prev / float(qfq['close'][j0 - k]) - 1) * 100
-
         # 市场/板块上下文一律取 T-1（当日统计量要收盘后才成立）
         ctx_m = mkt.get(prev_ctx(mkt_dates, d)) or {}
         ctx_s = sec.get((sec_board, prev_ctx(sec_dates_b, d))) or {}
@@ -426,21 +461,7 @@ def compute_stock(code: str) -> tuple[list, dict]:
             'code': code, 'name': name, 'date': d, 'nextDate': d1,
             'board': board, 'industry': hyinfo.get('hy_name', ''),
             'entry1440': round(entry, 4), 'tCloseRaw': round(t_close_raw, 4),
-            'dPctPrev': round(float(ind['pct'][j0]), 4),
-            'dAmpPrev': round(float(ind['amp'][j0]), 4),
-            'dRet5': round(back(4), 4), 'dRet20': round(back(19), 4),
-            'dRet60': round(back(59), 4),
-            'dRsi14': round(float(ind['rsi14'][j0]), 4),
-            'dAtrPct': round(float(ind['atr14'][j0]) / c_prev * 100, 4) if c_prev > 0 else np.nan,
-            'dBias5': round((c_prev / ma5 - 1) * 100, 4) if ma5 > 0 else np.nan,
-            'dBias10': round((c_prev / ma10 - 1) * 100, 4) if ma10 > 0 else np.nan,
-            'dBias20': round((c_prev / ma20 - 1) * 100, 4) if ma20 > 0 else np.nan,
-            'dBias60': round((c_prev / ma60 - 1) * 100, 4) if ma60 > 0 else np.nan,
-            'dBias120': round((c_prev / ma120 - 1) * 100, 4) if ma120 > 0 else np.nan,
-            'dDistHh20': round((c_prev / hh20 - 1) * 100, 4) if hh20 > 0 else np.nan,
-            'dListDays': int(i + 1),
-            'dFloatMcapYi': round(sh_wan * entry / 1e4, 4) if np.isfinite(sh_wan) else np.nan,
-            'dBoard': board,
+            **daily_features(qfq, ind, j0, entry, sh_wan, board, i + 1),
             'marketTemp': ctx_m.get('marketTemp'),
             'marketUpRatio': ctx_m.get('marketUpRatio'),
             'marketLimitUpCnt': ctx_m.get('marketLimitUpCnt'),
