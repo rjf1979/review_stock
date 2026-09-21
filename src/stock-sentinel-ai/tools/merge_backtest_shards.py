@@ -17,6 +17,13 @@ from late_buy_next_morning import IndexAgg, KeyAgg, write_csv
 
 SUM_KEYS = ('sum_open', 'sum_high', 'sum_close', 'sum_strat', 'sum_pos', 'sum_neg')
 CONCAT_FILES = ('trade_sample.csv', 'hit_sample.csv', 'focus_picks.csv')
+## 分片间「同一全股票池口径」的字段：各分片取值相同，合并时取首个非空值
+POOL_KEYS = ('universe', 'snapshot_date', 'delist_scope', 'delist_cutoff',
+             'delist_grace_days', 'delisted_dropped', 'st_dropped',
+             'excluded_industry', 'excluded_industry_size', 'target', 'cost')
+## 分片间需要累加的字段
+SUM_INT_KEYS = ('delisted_trades_dropped',)
+SUM_DICT_KEYS = ('float_shares_src',)
 
 
 def new_slot() -> dict:
@@ -88,6 +95,9 @@ def main() -> int:
 
     trades = 0
     snap_date = ''
+    pool: dict = {}
+    int_sums: dict = {k: 0 for k in SUM_INT_KEYS}
+    dict_sums: dict = {k: {} for k in SUM_DICT_KEYS}
     for d in args.shards:
         p = os.path.join(d, 'summary.json')
         if os.path.exists(p):
@@ -95,6 +105,14 @@ def main() -> int:
                 s = json.load(f)
             trades += int(s.get('trades') or 0)
             snap_date = snap_date or s.get('snapshot_date', '')
+            for k in POOL_KEYS:
+                if k not in pool and s.get(k) is not None:
+                    pool[k] = s[k]
+            for k in SUM_INT_KEYS:
+                int_sums[k] += int(s.get(k) or 0)
+            for k in SUM_DICT_KEYS:
+                for kk, vv in (s.get(k) or {}).items():
+                    dict_sums[k][kk] = dict_sums[k].get(kk, 0) + int(vv)
 
     for fn in CONCAT_FILES:
         parts: list = []
@@ -124,6 +142,13 @@ def main() -> int:
         'by_year': aggs['year'].rows() if 'year' in aggs else [],
         'by_flag': aggs['flag'].rows() if 'flag' in aggs else [],
     }
+    for k, v in pool.items():
+        summary.setdefault(k, v)
+    summary['snapshot_date'] = snap_date
+    for k in SUM_INT_KEYS:
+        summary[k] = int_sums[k]
+    for k in SUM_DICT_KEYS:
+        summary[k] = dict_sums[k]
     with open(os.path.join(args.out_dir, 'summary.json'), 'w', encoding='utf-8') as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
     print('[done] 合并 ' + str(len(args.shards)) + ' 个分片，有效样本 ' + str(trades))

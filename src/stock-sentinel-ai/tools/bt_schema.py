@@ -84,9 +84,9 @@ CREATE TABLE IF NOT EXISTS bt_trade (
   closePos       REAL,               -- 买入时价在当日高低区间的位置 0~1
   upperShadow    REAL,               -- 上影线长度 / 买入时价
   lowerShadow    REAL,               -- 下影线长度 / 买入时价
-  turnoverPct    REAL,               -- 换手率 % = 截至买入时刻成交量 ÷ 流通股本 × 100
-  turnoverSrc    TEXT,               -- 换手率口径：intraday_minute（分钟真实量）/ floatcap_approx（日线近似）
-  floatSharesWan REAL,               -- 参与计算的流通股本（万股）= 快照流通市值 ÷ 快照日收盘价
+  turnoverPct    REAL,               -- 换手率 % = 截至买入时刻成交量 ÷ 买入日时点流通股本 × 100
+  turnoverSrc    TEXT,               -- 换手率口径：gbbq_pit（时点股本）/ intraday_minute（分钟真实量）/ snapshot_const（快照常量）/ floatcap_approx（旧近似）
+  floatSharesWan REAL,               -- 参与计算的流通股本（万股）= 买入日时点 gbbq 股本事件推导
   volRatio       REAL,               -- 量比（当日量 ÷ 前 5 日均量）
   volRatioIntraday REAL,             -- 分时量比（同刻累计量 ÷ 近 5 日同刻均量）
   amountWan      REAL,               -- 成交额（万元，截至买入时刻累计）
@@ -392,12 +392,13 @@ FEATURE_DEFS = [
     _fd('bt_trade', 'lowerShadow', '下影线', '下影线长度 ÷ 买入时价', '比例', '',
         '通达信', '(min(开,买入时价)-最低)/买入时价', 1),
     _fd('bt_trade', 'turnoverPct', '换手率', '截至买入时刻的累计换手率', '%', '',
-        '通达信分钟线 + 东财流通市值',
-        '截至买入时刻累计成交量 ÷ 流通股本 ×100；流通股本=快照流通市值÷快照日收盘价', 1),
+        '通达信分钟/日线 + 通达信 gbbq 股本',
+        '截至买入时刻累计成交量 ÷ 买入日时点流通股本 ×100；股本按 gbbq 权益事件时点推导（无前视）', 1),
     _fd('bt_trade', 'turnoverSrc', '换手率口径', '换手率的数据口径', '', '枚举',
-        '本库生成', 'intraday_minute=分钟真实量；floatcap_approx=日线量近似', 0),
+        '本库生成',
+        'gbbq_pit=时点股本；intraday_minute=分钟真实量；snapshot_const=快照常量股本；floatcap_approx=旧近似口径', 0),
     _fd('bt_trade', 'floatSharesWan', '流通股本', '参与换手率计算的流通股本', '万股', '',
-        '东财快照', '流通市值(元) ÷ 快照日收盘价 ÷ 10000', 1),
+        '通达信 gbbq', 'gbbq 权益事件（变更后流通股本）按买入日时点取值', 1),
     _fd('bt_trade', 'volRatio', '量比', '当日成交量 ÷ 前 5 日均量', '倍', '',
         '通达信日线', '截至买入时刻累计量 ÷ 前 5 日全天均量', 1),
     _fd('bt_trade', 'volRatioIntraday', '分时量比', '同刻累计量 ÷ 近 5 日同刻均量', '倍', '',
@@ -405,7 +406,7 @@ FEATURE_DEFS = [
     _fd('bt_trade', 'amountWan', '成交额', '截至买入时刻累计成交额', '万元', '',
         '通达信', '分钟 amount 求和 ÷ 1e4', 1),
     _fd('bt_trade', 'floatMcapYi', '流通市值', '按买入时价计算的流通市值', '亿元', '',
-        '东财快照 + 通达信', '流通股本 × 买入时价', 1),
+        '通达信 gbbq + 通达信日线', '买入日时点流通股本 × 买入时价', 1),
     _fd('bt_trade', 'bias20', '20日乖离率', '买入时价相对 20 日均线偏离', '%', '',
         '通达信', '买入时价/ma20-1', 1),
     _fd('bt_trade', 'bias60', '60日乖离率', '买入时价相对 60 日均线偏离', '%', '',

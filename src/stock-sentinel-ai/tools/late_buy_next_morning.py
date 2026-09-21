@@ -17,11 +17,31 @@
 
 标的池：**只含个股**（``kdata.is_stock`` 限定沪市 60/68、深市 000/001/002/003/004/300/301），
 指数、ETF/LOF、可转债、B 股、北交所均不在池内；默认进一步剔除 ST、科创板（``--include-star``
-可放开）、**银行股**（``--exclude-industry`` 可调整）与**退市股**（``--keep-delisted`` 可放开，
-放开会重新引入幸存者偏差）。板块指数与沪深 300 只作为**特征输入**，不是回测标的。
+可放开）、**银行股**（``--exclude-industry`` 可调整）与**退市股**。
+
+退市判定按 ``.day`` **最后交易日**（``--delist-grace-days`` 默认 90 自然日），
+不再等价于「不在最新东财快照里」——旧口径会误伤 600+ 只在交易的科创板个股。
+``--delist-scope stock``（默认，符合「剔除退市股」的口径）整只剔除该股全部历史，
+统计上偏乐观；``--delist-scope trade`` 只剔除其停牌前 grace 天内的成交，无幸存者偏差；
+``--keep-delisted`` 完全不剔除。板块指数与沪深 300 只作为**特征输入**，不是回测标的。
 
 收益率一律用**前复权**价计算（除权除息不产生假跳空）；涨跌停、封板判定用
-**不复权**原始价。个股名称、流通市值、ST 判定取最近一份东财快照（当前口径看历史）。
+**不复权**原始价。
+
+**特征层口径（2026-09-21 修正，消除前视）**
+
+* 名称：``tdx_names``（通达信 ``hq_cache/{shs,szs}.tnf``，含科创板，快照未覆盖的
+  在交易个股也能拿到名称）。
+* 流通股本 / 流通市值：``float_shares.ShareBook`` 按 **买入日时点**取 gbbq 股本事件
+  推导的历史股本（``float_shares_wan``、``float_shares_src`` 逐笔留痕），
+  不再把最新快照的流通市值当常量套用整段历史。
+* 换手率：``turnover_pct`` = 当日成交量（股）÷ **时点**流通股本 × 100。
+* 涨跌停比例：``indicators.limit_ratio_series`` 用时点自校准（识别 ST 期间的 5%），
+  不再用「当前名称里有没有 ST」回看历史。
+
+**仍未消除的偏差（必须在报告中同时标注）**：默认剔除退市股（幸存者偏差，偏乐观）、
+ST 个股按**当前** ST 标记整段剔除、行业分类为通达信当前分类。需要「无幸存者偏差」
+的全样本口径时用 ``--delist-scope trade`` 重跑并对比。
 
 用法::
 
@@ -34,17 +54,21 @@ import argparse
 import json
 import os
 import sqlite3
+import struct
 import sys
 from collections import defaultdict
+from datetime import date, timedelta
 
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from indicators import compute_indicators, limit_ratio  # noqa: E402
+from float_shares import ShareBook  # noqa: E402
+from indicators import compute_indicators, limit_ratio, limit_ratio_series  # noqa: E402
 from kdata import Market, int_to_ymd, is_stock, market_of  # noqa: E402
 from tdx_sector import align_series, load_board_series, load_industry_map  # noqa: E402
+from tdx_names import load_tdx_names  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
 OUT_DEFAULT = os.path.join(ROOT, 'data', 'backtest', 'late-buy-next-morning')
@@ -61,6 +85,7 @@ ZERO_BIN = int(np.searchsorted(HIST_EDGES, 0.0, side='left'))
 DETAIL_COLS = [
     'code', 'name', 'board', 'hy_name', 'date', 'close', 'pct', 'amp', 'close_pos',
     'upper_shadow', 'lower_shadow', 'vol_ratio', 'amount_wan', 'float_mcap_yi',
+    'turnover_pct', 'float_shares_wan', 'float_shares_src',
     'bias20', 'bias60', 'rsi14', 'atr_pct', 'ret5', 'ret20', 'ret60', 'dist_hh20',
     'list_days', 'hy_pct', 'hy_ret5', 'hy_ret20', 'bench_pct', 'is_limit_up',
     'touched_limit', 'next_open', 'next_high', 'next_close', 'ret_open', 'ret_high',
@@ -128,6 +153,25 @@ def load_factors():
     return dict(out)
 
 
+def last_bar_date(path: str) -> int:
+    """读取 .day 文件最后一根 K 线的日期（YYYYMMDD）；文件异常时返回 0。"""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return 0
+    if size < 32:
+        return 0
+    with open(path, 'rb') as f:
+        f.seek(size - 32)
+        return int(struct.unpack('<i', f.read(4))[0])
+
+
+def shift_ymd(d: int, days: int) -> int:
+    """YYYYMMDD 整型日期加减自然日。"""
+    dt = date(d // 10000, d // 100 % 100, d % 100) + timedelta(days=days)
+    return dt.year * 10000 + dt.month * 100 + dt.day
+
+
 def bucket_index(values: np.ndarray, edges: np.ndarray) -> np.ndarray:
     idx = np.full(len(values), -1, dtype=np.int64)
     ok = np.isfinite(values)
@@ -147,6 +191,48 @@ def ymd_to_ordinal(d: np.ndarray) -> np.ndarray:
     month_idx = np.clip(m, 1, 12) - 1
     doy = _MONTH_CUM[month_idx] + dd + (leap & (m > 2)).astype(np.int64)
     return y * 365 + y // 4 - y // 100 + y // 400 + doy
+
+
+def filter_stock_universe(codes, market, snap, names, hy_map,
+                          exclude_industry=('银行',), include_star=False,
+                          keep_delisted=False, delist_grace_days=90,
+                          delist_scope='stock'):
+    """统一的「只含个股」股票池过滤，四个回测脚本共用，避免口径漂移。
+
+    顺序：代码白名单（剔 B 股/北交所/指数/ETF）→ 科创板 → ST → 行业 → 退市。
+
+    退市/长期停牌判定按 ``.day`` **最后交易日**（``delist_grace_days`` 自然日），
+    不再等价于「不在最新东财快照里」——旧口径会误伤 600+ 只在交易的科创板个股。
+    ``delist_scope='stock'`` 整只剔除该股全部历史（偏乐观）；``'trade'`` 保留历史，
+    由调用方只剔除停牌前 grace 天内的成交（无幸存者偏差）。
+    """
+    codes = [c for c in codes if not c.startswith(('8', '4', '9'))]
+    codes = [c for c in codes if is_stock(market_of(c), c)]
+    if not include_star:
+        codes = [c for c in codes if not c.startswith('68')]
+    nm = {c: (names.get(c) or (snap.get(c) or {}).get('name', '') or '') for c in codes}
+    st_codes = {c for c in codes if 'ST' in nm[c].upper()}
+    codes = [c for c in codes if c not in st_codes]
+    ex_hy: set[str] = set()
+    for key in (exclude_industry or ()):
+        if key:
+            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
+    if ex_hy:
+        codes = [c for c in codes if c not in ex_hy]
+    lasts: dict[str, int] = {}
+    stale: set[str] = set()
+    live_cutoff = 0
+    if not keep_delisted:
+        lasts = {c: last_bar_date(market.path(c)) for c in codes}
+        newest = max(lasts.values()) if lasts else 0
+        live_cutoff = shift_ymd(newest, -delist_grace_days)
+        stale = {c for c, v in lasts.items() if v < live_cutoff}
+        if delist_scope == 'stock':
+            codes = [c for c in codes if c not in stale]
+    info = {'st_dropped': len(st_codes), 'dropped_delisted': len(stale),
+            'delist_cutoff': live_cutoff, 'ex_hy': len(ex_hy),
+            'lasts': lasts, 'stale': stale, 'names': nm}
+    return codes, info
 
 
 def bucket_labels(edges: np.ndarray) -> list[str]:
@@ -332,6 +418,7 @@ EDGES = {
     'dist_hh20': np.array([-1, -0.2, -0.1, -0.05, -0.02, 0, 0.05, 2]),
     'amount_wan': np.array([0, 3000, 5000, 10000, 20000, 50000, 100000, 1e9]),
     'float_mcap_yi': np.array([0, 20, 50, 100, 200, 500, 1000, 1e9]),
+    'turnover_pct': np.array([0, 0.5, 1, 2, 3, 5, 8, 12, 20, 1e9]),
     'hy_pct': np.array([-20, -3, -1, 0, 1, 3, 5, 20]),
     'hy_ret5': np.array([-1, -0.05, -0.02, 0, 0.02, 0.05, 0.1, 1]),
     'hy_ret20': np.array([-1, -0.1, -0.03, 0, 0.03, 0.1, 0.2, 1]),
@@ -369,6 +456,7 @@ def main() -> int:
     ap.add_argument('--dump-all-sample', type=float, default=0.0,
                     help='随机抽样导出的全部成交（含未命中），用于命中/未命中特征对照')
     ap.add_argument('--codes-file', default='', help='只用文件里的代码（每行一个，分片用）')
+    ap.add_argument('--dump-codes', default='', help='把过滤后的股票池写到该文件后退出（分片用）')
     ap.add_argument('--dump-raw', action='store_true', help='额外导出原始累加量，便于分片合并')
     ap.add_argument('--max-stocks', type=int, default=0)
     ap.add_argument('--seed', type=int, default=20260920)
@@ -376,7 +464,12 @@ def main() -> int:
     ap.add_argument('--exclude-industry', nargs='*', default=['银行'],
                     help='按通达信行业名包含匹配排除，默认排除「银行」；传空串可关闭')
     ap.add_argument('--keep-delisted', action='store_true',
-                    help='保留退市股；默认剔除不在最新快照中的代码（会引入幸存者偏差）')
+                    help='保留退市/长期停牌股；默认剔除（会引入幸存者偏差，偏乐观）')
+    ap.add_argument('--delist-scope', choices=['stock', 'trade'], default='stock',
+                    help='stock=整只剔除该股全部历史（用户口径，有幸存者偏差）；'
+                         'trade=只剔除其最后停牌前 grace 天的成交（无幸存者偏差）')
+    ap.add_argument('--delist-grace-days', type=int, default=90,
+                    help='最后交易日距今超过该自然日数视为退市/长期停牌')
     args = ap.parse_args()
 
     start_int = int(args.start.replace('-', ''))
@@ -384,7 +477,11 @@ def main() -> int:
     rng_s = np.random.default_rng(args.seed)      # 注意：循环内 rng 被当日振幅占用
 
     snap, snap_date = load_latest_snapshot()
-    print(f'[init] 快照 {snap_date}：{len(snap)} 只（名称/流通市值/ST 剔除）')
+    names = load_tdx_names()
+    book = ShareBook.load()
+    print(f'[init] 东财快照 {snap_date}：{len(snap)} 只（仅 sh_main/sz_main/chuangye）')
+    print(f'[init] 通达信名称 {len(names)} 条；时点股本时间线 {len(book.timeline)} 只'
+          f'（快照常量兜底 {len(book.snap_shares)} 只）')
     hy_map = load_industry_map()
     board_codes = sorted({v['board'] for v in hy_map.values() if v['board']})
     board_series = load_board_series(board_codes)
@@ -394,34 +491,33 @@ def main() -> int:
 
     market = Market()
     codes = list(market.codes(args.min_bars))
-    # 显式白名单兜底：只保留 A 股个股（沪 60/68、深 000/001/002/003/004/300/301），
-    # 排除 B 股（沪 900xxx、深 200xxx）、指数、ETF/LOF、可转债与北交所。
-    codes = [c for c in codes if is_stock(market_of(c), c)]
-    codes = [c for c in codes if not c.startswith(('8', '4', '9'))]
-    if not args.include_star:
-        codes = [c for c in codes if not c.startswith('68')]
-    st_codes = {c for c, m in snap.items() if 'ST' in (m['name'] or '').upper()}
-    codes = [c for c in codes if c not in st_codes]
-    ex_hy: set[str] = set()
-    for key in (args.exclude_industry or []):
-        if key:
-            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
-    if ex_hy:
-        codes = [c for c in codes if c not in ex_hy]
-    dropped_delisted = 0
-    if not args.keep_delisted:
-        before = len(codes)
-        codes = [c for c in codes if c in snap]
-        dropped_delisted = before - len(codes)
-    print(f'[init] 排除行业 {sorted(k for k in (args.exclude_industry or []) if k)}：{len(ex_hy)} 只；'
-          f'剔除退市/无快照：{dropped_delisted} 只')
+    # 统一股票池过滤（名称/ST/行业/退市口径与分钟、网格、多周期脚本共用）
+    codes, uinfo = filter_stock_universe(
+        codes, market, snap, names, hy_map,
+        exclude_industry=args.exclude_industry, include_star=args.include_star,
+        keep_delisted=args.keep_delisted, delist_grace_days=args.delist_grace_days,
+        delist_scope=args.delist_scope)
+    lasts, stale = uinfo['lasts'], uinfo['stale']
+    live_cutoff, st_codes, ex_hy = (uinfo['delist_cutoff'], uinfo['st_dropped'],
+                                    uinfo['ex_hy'])
+
+    def _nm(c: str) -> str:
+        return names.get(c) or (snap.get(c) or {}).get('name', '') or ''
+
+    print(f'[init] 排除行业 {sorted(k for k in (args.exclude_industry or []) if k)}：{ex_hy} 只；'
+          f'剔除退市/长期停牌（最后交易日 < {live_cutoff}）：{len(stale)} 只')
     if args.codes_file:
         with open(args.codes_file, 'r', encoding='utf-8') as f:
             want = {ln.strip().lstrip('\ufeff') for ln in f if ln.strip()}
         codes = [c for c in codes if c in want]
     if args.max_stocks:
         codes = codes[:args.max_stocks]
-    print(f'[init] 股票池 {len(codes)} 只（剔除 ST {len(st_codes)} 只）')
+    print(f'[init] 股票池 {len(codes)} 只（剔除 ST {st_codes} 只）')
+    if args.dump_codes:
+        with open(args.dump_codes, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(codes) + '\n')
+        print(f'[out] 股票池 {len(codes)} 只 → {args.dump_codes}')
+        return 0
 
     factors = load_factors()
     aggs: dict[str, BaseAgg] = {k: IndexAgg(bucket_labels(e)) for k, e in EDGES.items()}
@@ -441,12 +537,12 @@ def main() -> int:
     sample_rows: list[dict] = []
     all_rows: list[dict] = []
     trades = 0
+    src_count: dict[str, int] = {}
+    delist_trade_dropped = 0
 
     for n_done, code in enumerate(codes, 1):
         meta = market.meta(code)
-        name = (snap.get(code) or {}).get('name', '')
-        lmt = limit_ratio(code, name)
-        float_mcap_yi = (snap.get(code) or {}).get('float_mcap', 0.0) / 1e8
+        name = _nm(code)
         try:
             raw = market.load(code, 'raw')
             qfq = market.load(code, 'qfq', factors.get(code))
@@ -457,6 +553,16 @@ def main() -> int:
             continue
         ind = compute_indicators(qfq, code, name)
         dates = np.asarray(qfq['date'], dtype=np.int64)
+
+        # ---- 时点股本 / 流通市值 / 换手率 / 涨跌停比例（全部逐日，无前视）----
+        shares_all, share_src = book.shares_series(code, dates)       # 流通股本（万股）
+        src_count[share_src] = src_count.get(share_src, 0) + 1
+        raw_close_all = raw['close']
+        fmy_all = shares_all * raw_close_all / 1e4                    # 流通市值（亿元）
+        with np.errstate(invalid='ignore', divide='ignore'):
+            to_all = np.where(shares_all > 0,
+                              raw['volume'] / (shares_all * 1e4) * 100.0, np.nan)
+        lmt_all = limit_ratio_series(code, raw['high'], raw['low'], raw_close_all)
 
         hyinfo = hy_map.get(code) or {}
         bser = board_series.get(hyinfo.get('board', '')) or {}
@@ -472,9 +578,11 @@ def main() -> int:
         c = ind['close'][ii]
         o_raw, h_raw, l_raw, c_raw = (raw['open'][ii], raw['high'][ii],
                                       raw['low'][ii], raw['close'][ii])
+        lmt = lmt_all[ii]
+        share_src_code = share_src
         h1_raw = raw['high'][ii + 1]
         o1, h1, c1 = ind['open'][ii + 1], ind['high'][ii + 1], ind['close'][ii + 1]
-        v, pc = ind['volume'][ii], ind['prev_close'][ii]
+        v = ind['volume'][ii]
         vma5, ma20, ma60 = ind['vma5'][ii], ind['ma20'][ii], ind['ma60'][ii]
         hh20, rng = ind['hh20'][ii], np.maximum(h_raw - l_raw, 1e-9)
         prev_hy = np.roll(hy_close, 1)
@@ -490,7 +598,9 @@ def main() -> int:
             'lower_shadow': np.where(c > 0, (np.minimum(o_raw, c_raw) - l_raw) / c_raw, np.nan),
             'vol_ratio': np.where(vma5 > 0, v / vma5, np.nan),
             'amount_wan': ind['amount'][ii] / 1e4,
-            'float_mcap_yi': np.full(len(ii), float_mcap_yi),
+            'float_mcap_yi': fmy_all[ii],
+            'turnover_pct': to_all[ii],
+            'float_shares_wan': shares_all[ii],
             'bias20': np.where(ma20 > 0, c / ma20 - 1, np.nan),
             'bias60': np.where(ma60 > 0, c / ma60 - 1, np.nan),
             'rsi14': ind['rsi14'][ii],
@@ -505,7 +615,11 @@ def main() -> int:
             'hy_ret20': np.where(ii >= 20, hy_close[ii] / hy_close[np.maximum(ii - 20, 0)] - 1, np.nan),
             'bench_pct': np.where(prev_bench[ii] > 0, bench_close[ii] / prev_bench[ii] - 1, np.nan) * 100,
             'is_limit_up': ind['is_limit_up'][ii].astype(float),
-            'touched_limit': ((h_raw >= np.round(pc * (1 + lmt), 2) - 1e-6) & ~ind['is_limit_up'][ii]).astype(float),
+            # 触板判断必须同标度比较：raw 最高价 vs raw 前收盘价。
+            # （旧版误用 ind['prev_close']（前复权）与 raw 最高价比较，复权因子越大越容易假触板，
+            #   曾把工商银行判成 65% 的交易日触板。）
+            'touched_limit': ((h_raw >= np.round(raw['close'][np.maximum(ii - 1, 0)] * (1 + lmt), 2) - 1e-6)
+                              & ~ind['is_limit_up'][ii]).astype(float),
         }
 
         ordinals = ymd_to_ordinal(dates)
@@ -515,6 +629,11 @@ def main() -> int:
         valid = (v > 0) & (c > 0) & ((days1 - days) <= args.max_gap) & ~one_line
         if not args.keep_sealed:
             valid &= ~sealed
+        if args.delist_scope == 'trade' and code in stale:
+            # 无幸存者偏差口径：只掐掉该股停牌/退市前 grace 天内的成交，保留其更早历史
+            alive_before = dates[ii] < shift_ymd(lasts[code], -args.delist_grace_days)
+            delist_trade_dropped += int((valid & ~alive_before).sum())
+            valid &= alive_before
 
         buy = c
         ret_open = o1 / buy - 1
@@ -560,7 +679,7 @@ def main() -> int:
                 focus_rows.append(_detail(
                     code, name, meta, hyinfo, int(dates[ii[j]]), feats, int(j),
                     buy, o1, h1, c1, ret_open, ret_high, ret_close,
-                    limit_touch, ind['is_limit_up'][ii], strat_ret))
+                    limit_touch, ind['is_limit_up'][ii], strat_ret, share_src_code))
 
         if args.dump_hit_sample > 0:
             keep = rng_s.random(len(ii)) < args.dump_hit_sample
@@ -568,7 +687,7 @@ def main() -> int:
                 sample_rows.append(_detail(
                     code, name, meta, hyinfo, int(dates[ii[j]]), feats, int(j),
                     buy, o1, h1, c1, ret_open, ret_high, ret_close,
-                    limit_touch, ind['is_limit_up'][ii], strat_ret))
+                    limit_touch, ind['is_limit_up'][ii], strat_ret, share_src_code))
 
         if args.dump_all_sample > 0:
             keep = rng_s.random(len(ii)) < args.dump_all_sample
@@ -576,7 +695,7 @@ def main() -> int:
                 all_rows.append(_detail(
                     code, name, meta, hyinfo, int(dates[ii[j]]), feats, int(j),
                     buy, o1, h1, c1, ret_open, ret_high, ret_close,
-                    limit_touch, ind['is_limit_up'][ii], strat_ret))
+                    limit_touch, ind['is_limit_up'][ii], strat_ret, share_src_code))
 
         if n_done % 500 == 0:
             print(f'  ... {n_done}/{len(codes)}  累计有效 {trades}')
@@ -607,9 +726,21 @@ def main() -> int:
 
     summary = {
         'start': args.start, 'end': args.end, 'trades': trades,
-        'universe': ('主板+创业板（剔除 ST/北交所' +
-                     ('/科创板）' if not args.include_star else '，含科创板）')),
+        'universe': ('沪深 A 股个股（沪 60/68、深 000/001/002/003/004/300/301）；'
+                     '剔除 B 股、北交所、ST'
+                     + ('' if args.include_star else '、科创板')
+                     + '，银行股与退市/长期停牌另按下方计数剔除'),
         'snapshot_date': snap_date,
+        'universe_size': len(codes),
+        'delist_scope': ('none' if args.keep_delisted else args.delist_scope),
+        'delisted_dropped': len(stale),
+        'delisted_trades_dropped': delist_trade_dropped,
+        'delist_cutoff': live_cutoff,
+        'delist_grace_days': args.delist_grace_days,
+        'st_dropped': st_codes,
+        'excluded_industry': [k for k in (args.exclude_industry or []) if k],
+        'excluded_industry_size': ex_hy,
+        'float_shares_src': dict(sorted(src_count.items())),
         'target': TARGET, 'cost': COST,
         'overall': (overall.rows() or [{}])[0],
         'by_year': aggs['year'].rows(),
@@ -617,7 +748,11 @@ def main() -> int:
         'caveats': [
             '14:30 价用当日收盘价近似，未建模 14:30→15:00 漂移',
             '「次日上午最高涨幅」用次日全天最高价近似，是上界、系统性偏高',
-            '名称/流通市值/ST 取最近快照（当前口径看历史）',
+            '流通股本/流通市值/换手率按买入日时点 gbbq 股本事件推导（无前视）；'
+            '缺时间线时退回 2026-09-18 快照常量（float_shares_src 逐笔留痕）',
+            'ST 判定用通达信当前名称，历史 ST/摘帽状态未还原',
+            '涨跌停比例按个股近 250 日触板命中次数时点自校准，非当前名称回看',
+            '退市/长期停牌按 .day 最后交易日剔除（幸存者偏差，偏乐观）',
             '行业为通达信当前分类，板块指数为通达信自编板块指数',
             '成交假设：T 日收盘买入、T+1 开盘卖出；涨停封板与一字板已剔除',
         ],
@@ -629,12 +764,15 @@ def main() -> int:
 
 
 def _detail(code, name, meta, hyinfo, date_int, feats, j, buy, o1, h1, c1,
-            ret_open, ret_high, ret_close, limit_touch, is_limit_up, strat_ret):
+            ret_open, ret_high, ret_close, limit_touch, is_limit_up, strat_ret,
+            share_src=''):
     """单笔明细（j 为该股票 K 线数组中的下标）。"""
     row = {'code': code, 'name': name, 'board': meta.get('board', ''),
-           'hy_name': hyinfo.get('hy_name', ''), 'date': int_to_ymd(date_int)}
+           'hy_name': hyinfo.get('hy_name', ''), 'date': int_to_ymd(date_int),
+           'float_shares_src': share_src}
     for k, arr in feats.items():
-        row[k] = round(float(arr[j]), 4)
+        v = float(arr[j])
+        row[k] = round(v, 4) if np.isfinite(v) else ''
     for k, v in (('close', buy), ('next_open', o1), ('next_high', h1), ('next_close', c1),
                  ('ret_open', ret_open), ('ret_high', ret_high), ('ret_close', ret_close),
                  ('strat_ret', strat_ret)):

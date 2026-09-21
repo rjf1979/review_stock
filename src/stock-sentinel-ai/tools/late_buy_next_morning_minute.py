@@ -27,13 +27,14 @@ import os
 
 import numpy as np
 
-from indicators import compute_indicators, limit_ratio
-from kdata import Market, factor_series, int_to_ymd, is_stock, market_of
+from indicators import compute_indicators, limit_ratio_series
+from kdata import Market, factor_series, int_to_ymd
 from late_buy_next_morning import (COST, EDGES, TARGET, IndexAgg, KeyAgg,
-                                   bucket_labels, load_factors,
+                                   bucket_labels, filter_stock_universe, load_factors,
                                    load_latest_snapshot, write_csv, ymd_to_ordinal)
 from tdx_minute import load_minute
 from tdx_sector import load_board_series, load_industry_map
+from tdx_names import load_tdx_names
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
@@ -100,7 +101,9 @@ def main() -> int:
     ap.add_argument('--exclude-industry', nargs='*', default=['银行'],
                     help='按通达信行业名包含匹配排除，默认排除「银行」；传空串可关闭')
     ap.add_argument('--keep-delisted', action='store_true',
-                    help='保留退市股；默认剔除不在最新快照中的代码（会引入幸存者偏差）')
+                    help='保留退市股；默认按 .day 最后交易日剔除（会引入幸存者偏差）')
+    ap.add_argument('--delist-grace-days', type=int, default=90,
+                    help='最后交易日距今超过该自然日数视为退市/长期停牌')
     args = ap.parse_args()
 
     start_int = int(args.start.replace('-', ''))
@@ -112,25 +115,14 @@ def main() -> int:
     bench_series = load_board_series([BENCH_CODE]).get(BENCH_CODE) or {}
 
     market = Market()
-    codes = [c for c in market.codes(args.min_bars) if not c.startswith(('8', '4', '9'))]
-    # 显式白名单兜底：只保留 A 股个股，排除 B 股（沪 900xxx、深 200xxx）等非个股代码。
-    codes = [c for c in codes if is_stock(market_of(c), c)]
-    if not args.include_star:
-        codes = [c for c in codes if not c.startswith('68')]
-    st_codes = {c for c, mm in snap.items() if 'ST' in (mm['name'] or '').upper()}
-    codes = [c for c in codes if c not in st_codes]
-    ex_hy: set[str] = set()
-    for key in (args.exclude_industry or []):
-        if key:
-            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
-    if ex_hy:
-        codes = [c for c in codes if c not in ex_hy]
-    dropped_delisted = 0
-    if not args.keep_delisted:
-        before = len(codes)
-        codes = [c for c in codes if c in snap]
-        dropped_delisted = before - len(codes)
-    print(f'[init] 排除行业 {len(ex_hy)} 只；剔除退市/无快照 {dropped_delisted} 只')
+    names = load_tdx_names()
+    codes, uinfo = filter_stock_universe(
+        market.codes(args.min_bars), market, snap, names, hy_map,
+        exclude_industry=args.exclude_industry, include_star=args.include_star,
+        keep_delisted=args.keep_delisted, delist_grace_days=args.delist_grace_days)
+    print(f'[init] 通达信名称 {len(names)} 条；排除行业 {uinfo["ex_hy"]} 只；'
+          f'剔除退市/长期停牌 {uinfo["dropped_delisted"]} 只（最后交易日 < '
+          f'{uinfo["delist_cutoff"]}）；剔除 ST {uinfo["st_dropped"]} 只')
     if args.max_stocks:
         codes = codes[:args.max_stocks]
     print(f'[init] 快照 {snap_date}；行业映射 {len(hy_map)}；板块指数 {len(board_series)}；'
@@ -159,8 +151,7 @@ def main() -> int:
             no_minute += 1
             continue
         meta = market.meta(code)
-        name = (snap.get(code) or {}).get('name', '')
-        lmt = limit_ratio(code, name)
+        name = names.get(code) or (snap.get(code) or {}).get('name', '') or ''
         try:
             raw = market.load(code, 'raw')
             qfq = market.load(code, 'qfq', factors.get(code))
@@ -171,6 +162,7 @@ def main() -> int:
 
         d_dates = np.asarray(qfq['date'], dtype=np.int64)
         f = factor_series(factors.get(code), d_dates)
+        lmt_all = limit_ratio_series(code, raw['high'], raw['low'], raw['close'])
         ind = compute_indicators(qfq, code, name)
         dpos = {int(d): i for i, d in enumerate(d_dates)}
         slices = day_slices(m['date'])
@@ -186,6 +178,7 @@ def main() -> int:
         ii1 = ii + 1
         minute_dates_seen.update(cand)
         n = len(cand)
+        lmt = lmt_all[ii]
 
         entry_am = np.full(n, np.nan)
         hi_am = np.full(n, np.nan)

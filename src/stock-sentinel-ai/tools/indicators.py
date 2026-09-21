@@ -197,6 +197,48 @@ def limit_ratio(code: str, name: str = '') -> float:
     return 0.10
 
 
+def limit_ratio_series(code: str, high, low, close, window: int = 250,
+                       min_hits: int = 3) -> np.ndarray:
+    """逐日涨跌停比例（时点自校准），用于消除「用当前名称回看历史」的前视。
+
+    只会跳变的规则是「是否处于 ST/*ST 风险警示」：主板 10% ↔ ST 5%，
+    创业板/科创板 20% ↔ ST 5%。用
+    「当日最高价 / 最低价是否**恰好**等于 ``round(前收 × (1 ± r), 2)``」
+    在**前 window 个交易日**内对候选比例计数，取命中更多者；窗口内证据不足
+    （次数 < min_hits）或打平时，退回代码前缀给出的默认比例。
+
+    返回：与 ``close`` 等长的 float 数组（如 0.05 / 0.10 / 0.20）。
+    """
+    c = np.asarray(close, dtype=np.float64)
+    h = np.asarray(high, dtype=np.float64)
+    l = np.asarray(low, dtype=np.float64)
+    n = len(c)
+    base = limit_ratio(code, '')
+    out = np.full(n, base, dtype=np.float64)
+    if n < 3:
+        return out
+    cands = [base] + ([0.05] if base != 0.05 else [])
+    prev = np.empty(n, dtype=np.float64)
+    prev[0] = np.nan
+    prev[1:] = c[:-1]
+    hit = np.zeros((len(cands), n), dtype=np.float64)
+    for i, r in enumerate(cands):
+        with np.errstate(invalid='ignore'):
+            up = np.round(prev * (1.0 + r), 2)
+            dn = np.round(prev * (1.0 - r), 2)
+            hit[i] = ((np.abs(h - up) < 1e-6) | (np.abs(l - dn) < 1e-6)).astype(np.float64)
+    hit[:, 0] = 0.0
+    cs = np.concatenate([np.zeros((len(cands), 1)), np.cumsum(hit, axis=1)], axis=1)
+    idx = np.arange(n)
+    lo = np.maximum(0, idx - window)
+    seg = cs[:, idx] - cs[:, lo]                  # 窗口 [lo, t-1] 内的命中次数
+    total = seg.sum(axis=0)
+    best = np.argmax(seg, axis=0)                 # 打平 -> 取第一个（即默认比例）
+    picked = np.asarray(cands, dtype=np.float64)[best]
+    out = np.where((total >= min_hits) & (seg[best, idx] > 0), picked, base)
+    return out
+
+
 # ---------------- 一次性算全套 ---------------- #
 def compute_indicators(bars: np.ndarray, code: str = '', name: str = '') -> dict:
     """输入 BAR_DT 结构化数组，返回指标字典。所有数组与 bars 等长。"""

@@ -60,7 +60,8 @@ DECISION_DDL_PATH = os.path.join(BT_DIR, 'bt_decision.sql')
 TF_DIR = os.path.join(BT_DIR, 'late-buy-next-morning-tf')
 
 MARKET_START = 20180101        # 市场温度起始日（日线口径）
-DAILY_BASE_HIT3 = 21.14        # 日线全样本 ≥+3% 基准（%）
+DAILY_BASE_HIT3 = 21.15        # 日线全样本 ≥+3% 基准（%）—— v2 特征口径（gbbq 时点换手率 + 触板修正）
+DAILY_SAMPLE_N = 5429008       # 日线批次有效样本笔数（v2）
 MINUTE_BASE_HIT3 = 22.13       # 分钟精确全样本 ≥+3% 基准（%）
 GRID_BASE_HIT3 = 7.49          # 网格样本内最优 ≥+3%（%）仅用于对照
 
@@ -79,11 +80,11 @@ META_NOTE = (
 )
 
 GLOBAL_CAVEATS = [
-    '剔除退市股引入幸存者偏差（342 只退市样本里 283 只已停止更新），命中率偏乐观。',
-    '名称 / 流通市值 / ST 判定取 2026-09-18 快照回看历史，存在成分漂移。',
+    '退市股按 .day 最后交易日剔除（整只剔除，命中率偏乐观）；换 --delist-scope trade 可去掉该偏差。',
+    '名称改取通达信 hq_cache/{shs,szs}.tnf；ST 判定仍用当前名称回看历史，存在成分漂移。',
     '日线近似口径是上界：同日线近似 ≥3% = 26.09%，分钟精确 = 22.13%，高估约 4pp。',
     '分钟窗口仅 69~70 个交易日且落在 2026 年强势段，不能外推。',
-    '换手率用当前流通股本回看历史，存在前视偏差（送转 / 增发失真）。',
+    '换手率/流通市值改用 gbbq 权益事件按买入日时点推导，已消除送转/增发造成的前视（turnoverSrc 留痕）。',
     '多周期（5/15/30/60 分钟）形态只在分钟窗口内存在；60 分钟 ma60 需 15 日预热，'
     '有效样本从 2026-07-03 起（约 55 日），本期一律标记 usableForDecision=0。',
 ]
@@ -204,7 +205,11 @@ def snapshot_records():
 
 
 def float_shares_wan(snap: dict | None) -> float | None:
-    """流通股本（万股）≈ 流通市值 / 现价 / 1e4。"""
+    """（旧口径，仅兜底）流通股本（万股）≈ 快照流通市值 / 快照现价 / 1e4。
+
+    2026-09-21 起换手率主口径改为 ``float_shares.ShareBook`` 的 **买入日时点**
+    gbbq 股本事件推导，本函数只在 CSV 缺新列时兜底。
+    """
     if not snap:
         return None
     p = snap.get('price') or 0.0
@@ -298,14 +303,14 @@ def run_defs() -> list[dict]:
              paramsJson=js({
                  'generator': 'tools/late_buy_next_morning.py',
                  'artifact': 'data/backtest/late-buy-next-morning-stock-only',
-                 'trades': 5406890, 'dates': '2021-01-04~2026-09-17', 'nDates': 1382,
+                 'trades': DAILY_SAMPLE_N, 'dates': '2021-01-04~2026-09-17', 'nDates': 1382,
                  'entryPrice': 'T 日收盘价（14:30 的日线近似）',
                  'sellPrice': 'T+1 开盘价（ret_high 用 T+1 早盘最高价）',
                  'detailSample': 'trade_sample.csv（10.8 万笔分层抽样）已入库',
                  'baseHit3Pct': DAILY_BASE_HIT3,
                  'exclude': common['exclude'],
              }),
-             tradeCount=5406890,
+             tradeCount=DAILY_SAMPLE_N,
              note='日线近似口径：全历史大样本，≥3% 命中率是上界（高估约 4pp）。'),
         dict(runKey=RUN_MINUTE, createdAt=created, engineVersion=ENGINE_VERSION,
              priceMode=common['priceMode'], buyTime=1430, sellTimeStart=930, sellTimeEnd=1000,
@@ -349,7 +354,7 @@ def run_defs() -> list[dict]:
                  'entryPrice': 'T 日 14:30 分钟线收盘价（真实）',
                  'sellPrice': 'T+1 09:31 开盘价（集合竞价）；早盘最高 = 09:31~11:30 最高',
                  'sampleRule': '与 minutes 口径逐笔一致（292,685 笔），仅追加多周期形态快照',
-                 'turnoverSource': '截至 14:30 的分钟成交量 ÷ 流通股本（股本由 2026-09-18 快照反推，前视）',
+                 'turnoverSource': '截至 14:30 的分钟成交量 ÷ 买入日时点流通股本（gbbq 权益事件推导，无前视）',
                  'extraWarmup': '60 分钟 ma60 需 15 个交易日预热，有效样本自 2026-07-03 起约 55 日',
                  'baseHit3Pct': MINUTE_BASE_HIT3,
                  'exclude': common['exclude'],
@@ -518,7 +523,7 @@ DIM_NOTES = {
     'channel': '日线通道类型（20 根回归 R²≥0.5 判趋势方向，否则箱体：up/down/box/na）',
     'ma_align': '均线多头排列状态',
     'pos120': '收盘在 120 日通道中的位置分桶',
-    'turnover': '换手率分桶（成交量 ÷ 流通股本，floatcap_approx 前视口径）',
+    'turnover': '换手率分桶（成交量 ÷ 买入日时点流通股本 gbbq_pit）',
     'vol_ratio_intraday': '日内量比分桶（截至 14:30 的分钟量 / 同期均量）',
     'atr': 'ATR14 波动率分桶',
     'tf5_pattern': '5 分钟线形态命中分桶（逐形态，可多命中）',
@@ -715,9 +720,18 @@ def daily_trade_row(row: dict, rid: int, snaps: dict, created: str) -> tuple:
     snap = snaps.get(code) or {}
     fmy = fnum(row.get('float_mcap_yi'))
     amt = fnum(row.get('amount_wan'))
-    turnover = None
-    if fmy and amt and fmy > 0:
-        turnover = round(amt / (fmy * 100.0), 4)
+    # 换手率主口径：CSV 里的时点值（gbbq 股本推导）；缺失时回退快照反推近似
+    turnover = fnum(row.get('turnover_pct'))
+    fsw = fnum(row.get('float_shares_wan'))
+    tsrc = str(row.get('float_shares_src') or '').strip()
+    if turnover is None:
+        if fmy and amt and fmy > 0:
+            turnover = round(amt / (fmy * 100.0), 4)
+            tsrc = tsrc or 'floatcap_approx'
+    if not tsrc:
+        tsrc = 'floatcap_approx'
+    if fsw is None:
+        fsw = float_shares_wan(snap)
     d = {
         'runId': rid, 'code': code, 'name': str(row.get('name') or ''),
         'board': str(row.get('board') or ''), 'date': ymd(row.get('date')),
@@ -727,8 +741,8 @@ def daily_trade_row(row: dict, rid: int, snaps: dict, created: str) -> tuple:
         'amp': fnum(row.get('amp')), 'closePos': fnum(row.get('close_pos')),
         'upperShadow': fnum(row.get('upper_shadow')),
         'lowerShadow': fnum(row.get('lower_shadow')),
-        'turnoverPct': turnover, 'turnoverSrc': 'floatcap_approx',
-        'floatSharesWan': float_shares_wan(snap), 'volRatio': fnum(row.get('vol_ratio')),
+        'turnoverPct': turnover, 'turnoverSrc': tsrc,
+        'floatSharesWan': fsw, 'volRatio': fnum(row.get('vol_ratio')),
         'volRatioIntraday': None, 'amountWan': amt, 'floatMcapYi': fmy,
         'bias20': pct100(row.get('bias20')), 'bias60': pct100(row.get('bias60')),
         'rsi14': fnum(row.get('rsi14')), 'atrPct': fnum(row.get('atr_pct')),
@@ -1237,6 +1251,20 @@ def do_import_daily(conn: sqlite3.Connection) -> None:
     import_rules(conn, rid, DAILY_DIR, DAILY_BASE_HIT3)
 
 
+def do_import_daily_stats(conn: sqlite3.Connection) -> None:
+    """只刷新日线批次的分档统计（含形态位置三档）与规则表，不动 bt_trade 明细。
+
+    用在 ``tools/day_shape_scan.py`` / ``tools/day_pattern_scan.py`` 之后：
+    这两个脚本会写新的 ``bucket_day_shape.csv`` 等分档文件，但重跑明细会清掉它们
+    回填到 bt_trade 的形态列，所以这里只补统计。
+    """
+    rid = run_id(conn, RUN_DAILY)
+    log(f'[日线近似·仅统计] runId={rid}  源={DAILY_DIR}')
+    import_stats_from_dir(conn, rid, DAILY_DIR, DAILY_BASE_HIT3, tag='日线近似',
+                          dim_notes=DAILY_DIM_NOTES)
+    import_rules(conn, rid, DAILY_DIR, DAILY_BASE_HIT3)
+
+
 def do_import_minute(conn: sqlite3.Connection) -> None:
     rid = run_id(conn, RUN_MINUTE)
     log(f'[分钟精确] runId={rid}  源={MINUTE_DIR}')
@@ -1310,15 +1338,16 @@ def check_schema(conn: sqlite3.Connection) -> list[str]:
 
 # (标签, runKey, dimension, bucket 或 bucket 列表, 指标列, 期望值, 容差)
 VERIFY_SPECS = [
-    ('日线全样本 ≥3%', RUN_DAILY, 'overall', ('全样本',), 'hit3Pct', 21.14, 0.02),
+    ## 口径：2026-09-21 起为 gbbq 时点股本 + 时点自校准涨跌停比例 + 通达信名称
+    ('日线全样本 ≥3%', RUN_DAILY, 'overall', ('全样本',), 'hit3Pct', 21.15, 0.02),
     ('日线全样本 ≥1%', RUN_DAILY, 'overall', ('全样本',), 'hit1Pct', 57.98, 0.02),
-    ('日线全样本 触涨停%', RUN_DAILY, 'overall', ('全样本',), 'limitUpPct', 1.56, 0.05),
-    ('日线 2023 年 ≥3%', RUN_DAILY, 'year', ('2023',), 'hit3Pct', 14.76, 0.05),
-    ('日线 2021 年 ≥3%', RUN_DAILY, 'year', ('2021',), 'hit3Pct', 23.05, 0.05),
+    ('日线全样本 触涨停%', RUN_DAILY, 'overall', ('全样本',), 'limitUpPct', 2.61, 0.05),
+    ('日线 2023 年 ≥3%', RUN_DAILY, 'year', ('2023',), 'hit3Pct', 14.77, 0.05),
+    ('日线 2021 年 ≥3%', RUN_DAILY, 'year', ('2021',), 'hit3Pct', 23.06, 0.05),
     ('日线 2022 年 ≥3%', RUN_DAILY, 'year', ('2022',), 'hit3Pct', 22.42, 0.05),
-    ('日线 2024 年 ≥3%', RUN_DAILY, 'year', ('2024',), 'hit3Pct', 24.03, 0.05),
-    ('日线 2025 年 ≥3%', RUN_DAILY, 'year', ('2025',), 'hit3Pct', 19.44, 0.05),
-    ('日线 2026 年 ≥3%', RUN_DAILY, 'year', ('2026',), 'hit3Pct', 24.22, 0.05),
+    ('日线 2024 年 ≥3%', RUN_DAILY, 'year', ('2024',), 'hit3Pct', 24.05, 0.05),
+    ('日线 2025 年 ≥3%', RUN_DAILY, 'year', ('2025',), 'hit3Pct', 19.46, 0.05),
+    ('日线 2026 年 ≥3%', RUN_DAILY, 'year', ('2026',), 'hit3Pct', 24.23, 0.05),
     ('分钟精确全样本 ≥3%', RUN_MINUTE, 'overall', ('分钟精确',), 'hit3Pct', 22.13, 0.02),
     ('分钟精确全样本 ≥5%', RUN_MINUTE, 'overall', ('分钟精确',), 'hit5Pct', 9.51, 0.05),
     ('分钟对照 日线近似 ≥3%', RUN_MINUTE, 'overall', ('日线近似',), 'hit3Pct', 26.09, 0.02),
@@ -1356,7 +1385,7 @@ def do_verify(conn: sqlite3.Connection) -> int:
 
     d = conn.execute('SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
                      'WHERE r.runKey=?', (RUN_DAILY,)).fetchone()[0]
-    show('日线明细入样行数', d, 108479, d == 108479)
+    show('日线明细入样行数', d, 108965, d == 108965)
 
     blank_day = conn.execute(
         'SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
@@ -1535,6 +1564,8 @@ def main(argv=None) -> int:
     ap.add_argument('--init', action='store_true', help='建表 + 灌元数据/形态字典/字段字典')
     ap.add_argument('--check', action='store_true', help='表结构与字段字典一致性检查')
     ap.add_argument('--import-daily', action='store_true', help='导入日线近似批次')
+    ap.add_argument('--import-daily-stats', action='store_true',
+                    help='只刷新日线批次分档统计与规则表（不动 bt_trade 明细）')
     ap.add_argument('--import-minute', action='store_true', help='导入分钟精确批次')
     ap.add_argument('--import-grid', action='store_true', help='导入时间网格批次')
     ap.add_argument('--import-tf', action='store_true',
@@ -1553,7 +1584,7 @@ def main(argv=None) -> int:
         do_emit_ddl(args.emit_decision_ddl)
         if not any([args.init, args.check, args.import_daily, args.import_minute,
                     args.import_grid, args.import_tf, args.import_market, args.link,
-                    args.verify, args.emit_field_dict]):
+                    args.verify, args.emit_field_dict, args.import_daily_stats]):
             return 0
 
     conn = connect(args.db)
@@ -1575,6 +1606,8 @@ def main(argv=None) -> int:
             print(f'   bt_feature_def 共 {fdict} 个字段登记')
         if args.import_daily:
             do_import_daily(conn)
+        if args.import_daily_stats:
+            do_import_daily_stats(conn)
         if args.import_minute:
             do_import_minute(conn)
         if args.import_grid:

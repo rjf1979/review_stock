@@ -45,12 +45,12 @@ import backtest_store as store                          # noqa: E402
 import day_shape                                        # noqa: E402
 import patterns as patterns_pkg                         # noqa: E402
 import tf_patterns as tfp                               # noqa: E402
-from indicators import compute_indicators, limit_ratio   # noqa: E402
-from kdata import (Market, factor_series, int_to_ymd, is_stock,   # noqa: E402
-                   market_of)
+from float_shares import ShareBook                       # noqa: E402
+from indicators import compute_indicators, limit_ratio_series   # noqa: E402
+from kdata import Market, factor_series, int_to_ymd    # noqa: E402
 from late_buy_next_morning import (COST, TARGET, BaseAgg, IndexAgg,  # noqa: E402
                                    KeyAgg, bucket_index, bucket_labels, load_factors,
-                                   write_csv, ymd_to_ordinal)
+                                   filter_stock_universe, write_csv, ymd_to_ordinal)
 from late_buy_next_morning_minute import (AM_END, AM_START,  # noqa: E402
                                           BENCH_CODE, ENTRY_HHMM,
                                           day_slices, minute_entry,
@@ -58,6 +58,7 @@ from late_buy_next_morning_minute import (AM_END, AM_START,  # noqa: E402
 from tdx_minute import load_minute                       # noqa: E402
 from tdx_sector import (align_series, load_board_series,  # noqa: E402
                         load_industry_map)
+from tdx_names import load_tdx_names                     # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
 OUT_DEFAULT = os.path.join(ROOT, 'data', 'backtest', 'late-buy-next-morning-tf')
@@ -181,33 +182,21 @@ def _mean5(seq: list, idx: int) -> float:
     return float(np.mean(vals)) if vals else float('nan')
 
 
-def build_universe(args, snap: dict, hy_map: dict,
-                   market: Market) -> tuple[list[str], dict]:
-    """与 minute 脚本逐条一致的股票池过滤。"""
-    codes = [c for c in market.codes(args.min_bars) if not c.startswith(('8', '4', '9'))]
-    codes = [c for c in codes if is_stock(market_of(c), c)]
-    if not args.include_star:
-        codes = [c for c in codes if not c.startswith('68')]
-    st_codes = {c for c, mm in snap.items() if 'ST' in (mm['name'] or '').upper()}
-    codes = [c for c in codes if c not in st_codes]
-    ex_hy: set[str] = set()
-    for key in (args.exclude_industry or []):
-        if key:
-            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
-    if ex_hy:
-        codes = [c for c in codes if c not in ex_hy]
-    dropped = 0
-    if not args.keep_delisted:
-        before = len(codes)
-        codes = [c for c in codes if c in snap]
-        dropped = before - len(codes)
+def build_universe(args, snap: dict, hy_map: dict, market: Market,
+                   names: dict | None = None) -> tuple[list[str], dict]:
+    """与 minute / 网格脚本逐条一致的股票池过滤（共用 late_buy 的实体）。"""
+    codes, uinfo = filter_stock_universe(
+        market.codes(args.min_bars), market, snap, names or {}, hy_map,
+        exclude_industry=args.exclude_industry, include_star=args.include_star,
+        keep_delisted=args.keep_delisted, delist_grace_days=args.delist_grace_days)
     if args.codes_file:
         with open(args.codes_file, 'r', encoding='utf-8') as f:
             want = {ln.strip().lstrip('\ufeff') for ln in f if ln.strip()}
         codes = [c for c in codes if c in want]
     if args.max_stocks:
         codes = codes[:args.max_stocks]
-    info = {'ex_hy': len(ex_hy), 'dropped_delisted': dropped, 'st': len(st_codes)}
+    info = {'ex_hy': uinfo['ex_hy'], 'dropped_delisted': uinfo['dropped_delisted'],
+            'st': uinfo['st_dropped'], 'delist_cutoff': uinfo['delist_cutoff']}
     return codes, info
 
 
@@ -231,7 +220,9 @@ def main() -> int:
     ap.add_argument('--exclude-industry', nargs='*', default=['银行'],
                     help='按通达信行业名包含匹配排除，默认排除「银行」；传空串可关闭')
     ap.add_argument('--keep-delisted', action='store_true',
-                    help='保留退市股；默认剔除不在最新快照中的代码（会引入幸存者偏差）')
+                    help='保留退市股；默认按 .day 最后交易日剔除（会引入幸存者偏差）')
+    ap.add_argument('--delist-grace-days', type=int, default=90,
+                    help='最后交易日距今超过该自然日数视为退市/长期停牌')
     args = ap.parse_args()
 
     t_all = time.time()
@@ -244,7 +235,10 @@ def main() -> int:
         sorted({v['board'] for v in hy_map.values() if v['board']}))
     bench_series = load_board_series([BENCH_CODE]).get(BENCH_CODE) or {}
     market = Market()
-    codes, info = build_universe(args, snaps, hy_map, market)
+    names = load_tdx_names()
+    book = ShareBook.load()
+    codes, info = build_universe(args, snaps, hy_map, market, names)
+    print(f'[init] 通达信名称 {len(names)} 条；时点股本时间线 {len(book.timeline)} 只')
     meta_map = {c: market.meta(c) for c in codes}
     print(f'[init] 快照 {snap_date}；排除行业 {info["ex_hy"]} 只；'
           f'剔除退市/无快照 {info["dropped_delisted"]} 只；股票池 {len(codes)} 只',
@@ -293,6 +287,7 @@ def main() -> int:
     n_no_minute = 0
     n_done = 0
     dates_seen: set[int] = set()
+    src_count: dict[str, int] = {}
 
     for code in codes:
         n_done += 1
@@ -301,10 +296,8 @@ def main() -> int:
             n_no_minute += 1
             continue
         rec = snaps.get(code) or {}
-        name = rec.get('name', '')
+        name = names.get(code) or rec.get('name', '') or ''
         board_name = (meta_map.get(code) or {}).get('board', '') or ''
-        fsw = store.float_shares_wan(rec)
-        lmt = limit_ratio(code, name)
         try:
             raw = market.load(code, 'raw')
             qfq = market.load(code, 'qfq', factors.get(code))
@@ -314,6 +307,7 @@ def main() -> int:
             continue
         d_dates = np.asarray(qfq['date'], dtype=np.int64)
         f = factor_series(factors.get(code), d_dates)
+        lmt_all = limit_ratio_series(code, raw['high'], raw['low'], raw['close'])
         ind_d = compute_indicators(qfq, code, name)
         dpos = {int(d): i for i, d in enumerate(d_dates)}
         slices = day_slices(m['date'])
@@ -328,6 +322,10 @@ def main() -> int:
         ii = np.array([dpos[d] for d in cand], dtype=np.int64)
         ii1 = ii + 1
         n = len(cand)
+        # ---- 时点股本（gbbq 权益事件，无前视）：逐日流通股本 / 涨跌停比例
+        fsw_arr, share_src_code = book.shares_series(code, d_dates[ii])
+        src_count[share_src_code] = src_count.get(share_src_code, 0) + 1
+        lmt = lmt_all[ii]
 
         entry_am = np.full(n, np.nan)
         hi_am = np.full(n, np.nan)
@@ -424,6 +422,7 @@ def main() -> int:
             i1 = int(ii1[j])
             d = int(d_dates[i])
             entry_q = float(entry_am[j]) / float(f[i])
+            fsw_j = float(fsw_arr[j]) if np.isfinite(fsw_arr[j]) else 0.0
             prev_c = float(ind_d['prev_close'][i])
             # 触板判断统一用「原始价 vs 原始前收盘」，与日线脚本 touched_limit 口径一致
             pc_raw = float(raw['close'][i - 1]) if i >= 1 else float('nan')
@@ -462,16 +461,18 @@ def main() -> int:
                                   else float('nan')),
                 'lowerShadow': _r((min(opq, entry_q) - llq) / entry_q if entry_q > 0
                                   else float('nan')),
-                'turnoverPct': _r(cum_v / (fsw * 100.0) if (cum_v and fsw) else None),
+                'turnoverPct': _r(cum_v / (fsw_j * 100.0)
+                                  if (cum_v and fsw_j > 0) else None),
                 'turnoverSrc': 'intraday_minute',
-                'floatSharesWan': _r(fsw),
+                'floatSharesWan': _r(fsw_j),
                 'volRatio': _r(cum_v / ref_day if (cum_v and math.isfinite(ref_day)
                                                    and ref_day > 0) else None),
                 'volRatioIntraday': _r(cum_v / ref_intra if (cum_v
                                                              and math.isfinite(ref_intra)
                                                              and ref_intra > 0) else None),
                 'amountWan': _r(cum_a / 1e4 if cum_a else None),
-                'floatMcapYi': _r(fsw * float(entry_am[j]) / 1e4 if fsw else None),
+                'floatMcapYi': _r(fsw_j * float(entry_am[j]) / 1e4
+                                  if fsw_j > 0 else None),
                 'bias20': _r(_pct(entry_q, float(ma20[i]))),
                 'bias60': _r(_pct(entry_q, float(ma60[i]))),
                 'rsi14': _r(ind_d['rsi14'][i]),
@@ -561,16 +562,17 @@ def main() -> int:
                 conn.commit()
 
         # ---- 分档聚合（在 valid 掩码上）
-        to_arr = np.array([(cum_vol.get(int(d)) or float('nan')) / (fsw * 100.0)
-                           if fsw else float('nan') for d in cand])
+        to_arr = np.array([(cum_vol.get(int(d)) or float('nan')) / (fsw_arr[k] * 100.0)
+                           if fsw_arr[k] > 0 else float('nan')
+                           for k, d in enumerate(cand)])
         vr_arr = np.array([(cum_vol.get(int(d)) or float('nan')) /
                            (_mean5(cv_seq, day_pos[int(d)]) if day_pos.get(int(d)) is not None
                             else float('nan')) for d in cand])
         pos_arr = np.array([(float(v) if v is not None else float('nan')) for v in dpos])
         amt_arr = np.array([(cum_amt.get(int(d)) or float('nan')) / 1e4 for d in cand])
         # 流通市值逐日计算：流通股本(万股) × 当日 14:30 原始价(元) ÷ 1e4 = 亿元
-        mcap_arr = np.array([float(fsw) * float(entry_am[k]) / 1e4 if fsw
-                             else float('nan') for k in range(n)])
+        mcap_arr = np.array([float(fsw_arr[k]) * float(entry_am[k]) / 1e4
+                             if fsw_arr[k] > 0 else float('nan') for k in range(n)])
         atr_arr = np.asarray(ind_d['atr14'][ii], dtype=np.float64) / np.where(
             entry_am > 0, entry_am / f[ii], np.nan) * 100
         score_arr = np.array([tfp.align_summary(tf_snap.get(int(d)) or {})[1]
@@ -651,6 +653,8 @@ def main() -> int:
                   int_to_ymd(max(dates_seen)) if dates_seen else None],
         'nDates': len(dates_seen),
         'noMinuteStocks': n_no_minute,
+        'floatSharesSrc': dict(sorted(src_count.items())),
+        'droppedDelisted': info['dropped_delisted'], 'delistCutoff': info['delist_cutoff'],
         'entryTime': ENTRY_HHMM, 'asOf': ENTRY_HHMM,
         'overall': overall_rows[0] if overall_rows else {},
         'caveats': store.GLOBAL_CAVEATS,

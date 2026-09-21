@@ -38,12 +38,13 @@ import os
 
 import numpy as np
 
-from indicators import compute_indicators, limit_ratio
-from kdata import Market, factor_series, int_to_ymd, is_stock, market_of
-from late_buy_next_morning import (COST, TARGET, load_factors,
+from indicators import compute_indicators, limit_ratio_series
+from kdata import Market, factor_series, int_to_ymd
+from late_buy_next_morning import (COST, TARGET, filter_stock_universe, load_factors,
                                    load_latest_snapshot, write_csv, ymd_to_ordinal)
 from tdx_minute import load_minute
 from tdx_sector import align_series, load_board_series, load_industry_map
+from tdx_names import load_tdx_names
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
@@ -130,27 +131,15 @@ def build_universe(args):
     board_series = load_board_series(sorted({v['board'] for v in hy_map.values() if v['board']}))
     bench = load_board_series([BENCH_CODE]).get(BENCH_CODE) or None
     market = Market()
-    codes = [c for c in market.codes(args.min_bars) if not c.startswith(('8', '4', '9'))]
-    # 显式白名单兜底：只保留 A 股个股，排除 B 股（沪 900xxx、深 200xxx）等非个股代码。
-    codes = [c for c in codes if is_stock(market_of(c), c)]
-    if not args.include_star:
-        codes = [c for c in codes if not c.startswith('68')]
-    st_codes = {c for c, mm in snap.items() if 'ST' in (mm['name'] or '').upper()}
-    codes = [c for c in codes if c not in st_codes]
-    ex_hy: set[str] = set()
-    for key in (args.exclude_industry or []):
-        if key:
-            ex_hy |= {c for c, v in hy_map.items() if key in (v['hy_name'] or '')}
-    if ex_hy:
-        codes = [c for c in codes if c not in ex_hy]
-    dropped = 0
-    if not args.keep_delisted:
-        before = len(codes)
-        codes = [c for c in codes if c in snap]
-        dropped = before - len(codes)
-    print(f'[init] 排除行业 {len(ex_hy)} 只；剔除退市/无快照 {dropped} 只；'
-          f'快照 {snap_date}；股票池 {len(codes)} 只')
-    return codes, snap, snap_date, hy_map, board_series, bench, market
+    names = load_tdx_names()
+    codes, uinfo = filter_stock_universe(
+        market.codes(args.min_bars), market, snap, names, hy_map,
+        exclude_industry=args.exclude_industry, include_star=args.include_star,
+        keep_delisted=args.keep_delisted, delist_grace_days=args.delist_grace_days)
+    print(f'[init] 排除行业 {uinfo["ex_hy"]} 只；剔除退市/长期停牌 '
+          f'{uinfo["dropped_delisted"]} 只（最后交易日 < {uinfo["delist_cutoff"]}）；'
+          f'剔除 ST {uinfo["st_dropped"]} 只；快照 {snap_date}；股票池 {len(codes)} 只')
+    return codes, snap, snap_date, hy_map, board_series, bench, market, names
 
 
 # ---------------------------------------------------------------- 累加器
@@ -216,7 +205,8 @@ def acc_save(path: str, acc, hy_names, board_names, extra: dict) -> None:
 def run_shard(args, part_path: str) -> int:
     start_int = int(args.start.replace('-', ''))
     end_int = int(args.end.replace('-', ''))
-    codes, snap, snap_date, hy_map, board_series, bench, market = build_universe(args)
+    codes, snap, snap_date, hy_map, board_series, bench, market, names = \
+        build_universe(args)
     if args.shards > 1:
         codes = codes[args.shard::args.shards]
         print(f'[shard {args.shard}/{args.shards}] {len(codes)} 只')
@@ -241,8 +231,7 @@ def run_shard(args, part_path: str) -> int:
             acc['n_no_minute'] += 1
             continue
         meta = market.meta(code)
-        name = (snap.get(code) or {}).get('name', '')
-        lmt = limit_ratio(code, name)
+        name = names.get(code) or (snap.get(code) or {}).get('name', '') or ''
         try:
             raw = market.load(code, 'raw')
             qfq = market.load(code, 'qfq', factors.get(code))
@@ -250,6 +239,7 @@ def run_shard(args, part_path: str) -> int:
             continue
         if len(qfq) < args.min_bars + 2:
             continue
+        lmt_all = limit_ratio_series(code, raw['high'], raw['low'], raw['close'])
 
         d_dates = np.asarray(qfq['date'], dtype=np.int64)
         f = factor_series(factors.get(code), d_dates)
@@ -355,6 +345,7 @@ def run_shard(args, part_path: str) -> int:
         acc['msum'] += np.where(wok, wmax, 0.0).sum(0)
         for k in HIT_LEVELS:
             acc['mhit'][k] += (wok & (wmax >= k)).sum(0)
+        lmt = lmt_all[ii][valid]            # 时点自校准涨跌停比例，与 c_raw[valid] 对齐
         limit_px = np.round(c_raw[valid] * (1 + lmt), 2)
         acc['mlmt'] += (wok & (w >= limit_px[:, None] - 1e-6)).sum(0)
         wb = bin_index(np.where(wok, wmax, 0.0))
@@ -666,6 +657,7 @@ def main() -> int:
     ap.add_argument('--max-stocks', type=int, default=0)
     ap.add_argument('--exclude-industry', nargs='*', default=['银行'])
     ap.add_argument('--keep-delisted', action='store_true')
+    ap.add_argument('--delist-grace-days', type=int, default=90)
     ap.add_argument('--shard', type=int, default=0)
     ap.add_argument('--shards', type=int, default=1)
     ap.add_argument('--merge', action='store_true')
