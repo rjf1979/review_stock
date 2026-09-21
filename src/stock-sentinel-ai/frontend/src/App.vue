@@ -8,7 +8,7 @@
 
     <main id="main" tabindex="-1">
 
-    <MarketThemeStrip v-if="mode !== 'settings'" />
+    <MarketThemeStrip v-if="mode !== 'settings' && mode !== 'backtest'" />
 
     <ScanSection />
 
@@ -17,6 +17,8 @@
     <PoolSection />
 
     <SettingsSection />
+
+    <BacktestSection />
 
     </main>
 
@@ -40,6 +42,7 @@ import ScanSection from './components/ScanSection.vue';
 import MonitorSection from './components/MonitorSection.vue';
 import PoolSection from './components/PoolSection.vue';
 import SettingsSection from './components/SettingsSection.vue';
+import BacktestSection from './components/BacktestSection.vue';
 import DetailModal from './components/DetailModal.vue';
 import BatchConfirmModal from './components/BatchConfirmModal.vue';
 import RuleEditorModal from './components/RuleEditorModal.vue';

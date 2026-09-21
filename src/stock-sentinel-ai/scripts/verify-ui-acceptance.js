@@ -158,6 +158,12 @@ async function checkHttp(base) {
     { path: '/api/pool', assert: (body) => body && Array.isArray(body.pool), label: 'pool[]' },
     { path: '/api/kline/sync-status', assert: (body) => body && typeof body === 'object', label: 'kline sync 状态' },
     { path: '/api/tasks/recovery', assert: (body) => body && body.ok === true, label: '中断任务结算只读报告', optional: true },
+    // 回测结果与概率模型：库/模型文件缺失时返回 ok:false 或 available:false，只校验结构不校验有值。
+    { path: '/api/backtest/summary', assert: (body) => body && 'ok' in body && (body.ok === false || (Array.isArray(body.tables) && body.counts && typeof body.counts === 'object')), label: 'ok/tables/counts' },
+    { path: '/api/backtest/decision-model', assert: (body) => body && 'available' in body && (body.available === false || (body.model && typeof body.model === 'object' && Array.isArray(body.model.features))), label: 'available/model.features' },
+    { path: '/api/backtest/time-grid', assert: (body) => (body && 'ok' in body && body.ok === false) || (body && Array.isArray(body.grid)), label: 'grid[]' },
+    { path: '/api/decisions', assert: (body) => body && body.ok === true && body.scorecard && typeof body.scorecard === 'object' && Array.isArray(body.decisions), label: 'scorecard/decisions[]' },
+    { path: '/api/settings/scan-preferences', assert: (body) => body && body.ok === true && body.scanPreferences && Array.isArray(body.scanPreferences.markets) && Number.isFinite(Number(body.scanPreferences.scanLimit)), label: 'scanPreferences.markets/scanLimit' },
   ];
   for (const contract of contracts) {
     const res = await request(base, contract.path);

@@ -85,6 +85,10 @@ async function readKlineTableNames(SQL) {
   assert.deepStrictEqual(await backtestStore.statRows(), []);
   assert.deepStrictEqual(await backtestStore.timeGrid(), []);
   assert.deepStrictEqual(await backtestStore.statDimensions(), []);
+  const missingModel = await backtestStore.decisionModel();
+  assert.strictEqual(missingModel.ok, false, '模型文件缺失时应返回 ok=false');
+  assert.strictEqual(missingModel.available, false);
+  assert.ok(String(missingModel.modelFile).endsWith('decision_model.json'), '应给出模型期望路径便于排查');
 
   buildFixture(SQL);
   assert.strictEqual(backtestStore.available(), true);
@@ -125,6 +129,27 @@ async function readKlineTableNames(SQL) {
   assert.strictEqual(grid.length, 2);
   assert.strictEqual(grid[0].buyMinute, 1430, '时点网格应按买入时刻升序');
   assert.strictEqual(grid[0].retMeanPct, -0.1295);
+
+  // 概率评分模型：只读解析 + mtime 缓存 + 不写文件。
+  const MODEL_FILE = path.join(TMP, 'decision_model.json');
+  fs.writeFileSync(MODEL_FILE, JSON.stringify({
+    version: 'decision-model-v1', runId: 1, shrinkageK: 50,
+    targets: { up3: { baseHitPct: 21.3, coef: [] } },
+    calibration: { up3: { deciles: [{ decile: 10, predPct: 45.0, actualPct: 44.5 }] } },
+    topk: { top3: { k: 3, days: 1382, hit3Pct: 44.67 } },
+    risk: [{ key: 'openNegative' }],
+  }), 'utf8');
+  const modelBefore = fs.readFileSync(MODEL_FILE);
+  const loaded = await backtestStore.decisionModel();
+  assert.strictEqual(loaded.ok, true);
+  assert.strictEqual(loaded.model.version, 'decision-model-v1');
+  assert.strictEqual(loaded.model.topk.top3.hit3Pct, 44.67);
+  await backtestStore.decisionModel();
+  assert.ok(modelBefore.equals(fs.readFileSync(MODEL_FILE)), 'App 侧不得改写模型 JSON');
+  fs.writeFileSync(MODEL_FILE, '{ 这不是 JSON', 'utf8');
+  const broken = await backtestStore.decisionModel();
+  assert.strictEqual(broken.ok, false, '模型损坏时应返回 ok=false 而不是抛错');
+  assert.strictEqual(broken.available, true, '文件存在但不可解析时 available 仍为 true');
 
   // 只读性：全流程结束后回测库文件字节不得变化。
   const before = fs.readFileSync(FIXTURE_DB);

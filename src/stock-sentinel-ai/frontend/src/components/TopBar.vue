@@ -24,6 +24,7 @@
           <button type="button" role="tab" id="tab-pool" :aria-selected="mode==='pool'" @click="switchMode('pool')">候选池 <span class="num">{{ pool.length }}</span></button>
           <button type="button" role="tab" id="tab-watch" :aria-selected="mode==='watch'" @click="switchMode('watch')">盯盘 <span class="num">{{ watchlist.length }}</span></button>
           <button type="button" role="tab" id="tab-scan" :aria-selected="mode==='scan'" @click="switchMode('scan')">扫股</button>
+          <button type="button" role="tab" id="tab-backtest" :aria-selected="mode==='backtest'" @click="switchMode('backtest')">回测</button>
           <button type="button" role="tab" id="tab-settings" :aria-selected="mode==='settings'" @click="switchMode('settings')">设置</button>
         </nav>
         <button type="button" class="data-health" :class="dataHealth.state" @click="openDataHealth" :aria-label="dataHealth.label + '，' + dataHealth.detail">

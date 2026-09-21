@@ -21,6 +21,7 @@ function dbFile() {
 let SQL = null;
 let initPromise = null;
 let handle = null;          // { db, mtimeMs, size }
+let modelCache = { mtimeMs: 0, size: 0, data: null };   // decision_model.json 按 mtime 缓存
 
 async function getSQL() {
   if (!SQL) {
@@ -153,7 +154,47 @@ async function statDimensions() {
   return rows(db, 'SELECT runId, dimension, COUNT(*) AS bucketCnt, MAX(sampleCnt) AS maxSample FROM bt_stat GROUP BY runId, dimension ORDER BY runId, dimension');
 }
 
+// 概率评分模型（data/backtest/decision_model.json）。
+// Python 侧（tools/bt_decision_engine.py）生成，App 只读：分档系数、分年验证、
+// 十分位校准、每日 Top-K 模拟与时点建议都在文件里，界面直接渲染，不重复计算。
+function modelFile() {
+  if (process.env.SENTINEL_DECISION_MODEL) return path.resolve(process.env.SENTINEL_DECISION_MODEL);
+  // 生产默认：Python 侧 tools/bt_decision_engine.py 写的是 data/backtest/decision_model.json，
+  // 已自定库路径（测试夹具等）时模型与本库同目录，故按此顺序探测，都不存在则回退首选路径便于排查。
+  const candidates = [
+    path.join(path.dirname(dbFile()), 'decision_model.json'),
+    path.join(DATA_DIR, 'backtest', 'decision_model.json'),
+  ];
+  for (const candidate of candidates) {
+    try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* 继续探测下一候选 */ }
+  }
+  return candidates[0];
+}
+
+async function decisionModel() {
+  const file = modelFile();
+  let st = null;
+  try {
+    const s = fs.statSync(file);
+    if (s.isFile()) st = { mtimeMs: s.mtimeMs, size: s.size };
+  } catch { st = null; }
+  if (!st) {
+    return { ok: false, available: false, error: '未找到概率评分模型 data/backtest/decision_model.json', modelFile: file };
+  }
+  if (modelCache.data && modelCache.mtimeMs === st.mtimeMs && modelCache.size === st.size) {
+    return { ok: true, available: true, modelFile: file, model: modelCache.data };
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    modelCache = { mtimeMs: st.mtimeMs, size: st.size, data };
+    return { ok: true, available: true, modelFile: file, model: data };
+  } catch (e) {
+    return { ok: false, available: true, error: `概率评分模型解析失败：${e.message}`, modelFile: file };
+  }
+}
+
 module.exports = {
   DATA_DIR, dbFile,
   available, open, close, summary, featureDict, patternDefs, statRows, timeGrid, statDimensions,
+  modelFile, decisionModel,
 };

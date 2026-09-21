@@ -703,3 +703,43 @@
       th, td { white-space: normal; color: #111111 !important; }
       a { color: #111111 !important; text-decoration: underline; }
     }
+
+    /* ── 回测证据页（只读） ───────────────────────────────────── */
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+    .backtest-tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0 var(--space-4); }
+    .backtest-tabs button {
+      min-height: 44px; padding: 0 var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+      background: var(--btn-grad); color: var(--text-muted); cursor: pointer; font: inherit; font-weight: 600;
+      box-shadow: var(--btn-shadow); transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+    .backtest-tabs button:hover { background: var(--bg-hover); color: var(--text); }
+    .backtest-tabs button[aria-selected="true"] { background: var(--accent-soft-strong); border-color: var(--accent); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+    .backtest-tabs button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .backtest-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+    .backtest-note { display: block; margin: var(--space-3) 0 0; line-height: 1.6; }
+    .backtest-run-chips { margin-bottom: var(--space-3); }
+    /* 维度与买入时点各 30+ 个按钮：限高滚动，避免把下面的表格顶出首屏。 */
+    .backtest-dim-chips, .backtest-buy-chips { max-height: 180px; overflow-y: auto; margin-bottom: var(--space-3); padding-right: var(--space-1); }
+    .backtest-h3 { margin: var(--space-4) 0 var(--space-2); font-size: 14px; font-weight: 700; }
+    .backtest-model-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); gap: var(--space-4); align-items: start; }
+    .backtest-risk { border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); padding: var(--space-3) var(--space-4); }
+    .backtest-risk h3 { margin: 0 0 var(--space-2); font-size: 13px; color: var(--warn); }
+    .backtest-risk ul { margin: 0; padding-left: 18px; }
+    .backtest-risk li { margin-bottom: var(--space-3); line-height: 1.6; font-size: 13px; }
+    .backtest-risk li:last-child { margin-bottom: 0; }
+    .backtest-risk li strong { display: block; color: var(--text); }
+    .backtest-risk li span { color: var(--text-muted); }
+    /* 概览卡里的长文本（区间、批次数）用等宽小字号，避免撑破卡片。 */
+    .market-stats .stat strong.backtest-stat-text { font-size: 13px; font-family: var(--mono); }
+    @media (max-width: 1080px) {
+      .backtest-model-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    /* 顶部模式切换从 4 项增到 5 项：窄屏压缩内边距并隐藏计数，保证 375px 无横向溢出。 */
+    @media (max-width: 560px) {
+      .mode-switch button { padding: 0 var(--space-2); font-size: 13px; min-width: 0; }
+      .mode-switch button .num { display: none; }
+      .backtest-tabs button { padding: 0 var(--space-3); }
+    }

@@ -308,6 +308,9 @@ function createServer(port = DEFAULT_PORT) {
         const rawRunId = url.searchParams.get('runId');
         return send(res, 200, { ok: true, grid: await backtestStore.timeGrid({ runId: rawRunId === null || rawRunId === '' ? null : Number(rawRunId) }) });
       }
+      if (pathname === '/api/backtest/decision-model') {
+        return send(res, 200, await backtestStore.decisionModel());
+      }
       // ── 实盘凭据（data/kline.db 的 bt_decision）────────────────────
       if (pathname === '/api/decisions' && req.method === 'GET') {
         const tradeDate = url.searchParams.get('tradeDate');
@@ -348,9 +351,42 @@ function createServer(port = DEFAULT_PORT) {
         const saved = settings.save({ ...settings.load(), tradingStyle: body && body.tradingStyle });
         return send(res, 200, { ok: true, settings: saved });
       }
+      // 扫描偏好（自选市场 + 扫描股数）读取：未保存过时回落到默认值，便于前端与外部脚本“先读后改”。
+      if (pathname === '/api/settings/scan-preferences' && req.method === 'GET') {
+        const prefs = await getScanPreferences();
+        return send(res, 200, {
+          ok: true,
+          saved: Boolean(prefs),
+          scanPreferences: prefs || { markets: MARKETS_DEFAULTS, scanLimit: 500, updatedAt: '' },
+        });
+      }
+      // 扫描偏好写入：只改显式传入的字段，未传的字段沿用已保存值。
+      // 空 body / 非法字段直接 400 且不落库，避免一次无内容的请求把自选市场清空。
       if (pathname === '/api/settings/scan-preferences' && req.method === 'POST') {
         const body = await readBody(req);
-        const saved = await saveScanPreferences(body && body.scanMarkets, body && body.scanLimit);
+        const plainBody = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+        const hasMarkets = Boolean(plainBody && Object.prototype.hasOwnProperty.call(plainBody, 'scanMarkets'));
+        const hasLimit = Boolean(plainBody && Object.prototype.hasOwnProperty.call(plainBody, 'scanLimit'));
+        if (!plainBody || (!hasMarkets && !hasLimit)) {
+          return send(res, 400, { ok: false, error: '请提供 scanMarkets 或 scanLimit；空请求不会改动已保存的扫描偏好' });
+        }
+        if (hasMarkets && !Array.isArray(plainBody.scanMarkets)) {
+          return send(res, 400, { ok: false, error: 'scanMarkets 必须是市场键数组' });
+        }
+        const limitRaw = hasLimit ? plainBody.scanLimit : null;
+        if (hasLimit && (limitRaw === null || typeof limitRaw === 'boolean'
+          || String(limitRaw).trim() === '' || !Number.isFinite(Number(limitRaw)))) {
+          return send(res, 400, { ok: false, error: 'scanLimit 必须是 1~500 的数字' });
+        }
+        const current = (await getScanPreferences()) || { markets: MARKETS_DEFAULTS, scanLimit: 500 };
+        const nextMarkets = hasMarkets ? plainBody.scanMarkets : current.markets;
+        const cleanedMarkets = [...new Set(
+          (Array.isArray(nextMarkets) ? nextMarkets : []).filter((x) => typeof x === 'string').map((x) => x.trim()).filter(Boolean),
+        )];
+        if (!cleanedMarkets.length) {
+          return send(res, 400, { ok: false, error: '至少保留一个扫描市场；如需重置请显式传入完整市场列表' });
+        }
+        const saved = await saveScanPreferences(cleanedMarkets, hasLimit ? plainBody.scanLimit : current.scanLimit);
         return send(res, 200, { ok: true, scanPreferences: saved });
       }
       if (pathname === '/api/ai/prompt' && req.method === 'GET') return send(res, 200, { ok: true, prompt: await getAiPrompt() });

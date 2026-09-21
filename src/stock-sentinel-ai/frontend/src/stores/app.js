@@ -80,7 +80,7 @@ const tdxStatus = reactive({ loading: false, checked: false, configured: false, 
 const mode = ref((() => {
   try {
     const saved = localStorage.getItem('stock-sentinel-active-mode');
-    return ['pool', 'watch', 'scan', 'settings'].includes(saved) ? saved : 'pool';
+    return ['pool', 'watch', 'scan', 'backtest', 'settings'].includes(saved) ? saved : 'pool';
   } catch { return 'pool'; }
 })());
 const appReady = ref(false);
@@ -2153,7 +2153,7 @@ function startWatchPolling() {
 }
 function restartWatchPolling() { startWatchPolling(); }
 function switchMode(next) {
-  if (!['pool', 'watch', 'scan', 'settings'].includes(next)) next = 'pool';
+  if (!['pool', 'watch', 'scan', 'backtest', 'settings'].includes(next)) next = 'pool';
   mode.value = next;
   try { localStorage.setItem('stock-sentinel-active-mode', next); } catch { /* 浏览器存储不可用时不影响切换 */ }
   if (next === 'pool') {
