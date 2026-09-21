@@ -70,23 +70,39 @@ RUN_MINUTE = 'minute-20260612-20260917-stockonly-d1'
 RUN_GRID = 'grid-20260615-20260918-stockonly-d1'
 RUN_TF = 'tf-20260612-20260917-stockonly-d1'
 
+# ---- 14:40 分时反推批次（2026-09-21 新口径，当前唯一入库批次）----
+REVERSE_DIR = os.path.join(BT_DIR, 'minute-reverse')
+REVERSE_SAMPLES = os.path.join(REVERSE_DIR, 'samples.csv')
+REVERSE_MODEL_PATH = os.path.join(REVERSE_DIR, 'reverse_model.json')
+REVERSE_EXTRACT_META = os.path.join(REVERSE_DIR, 'extract_meta.json')
+RUN_REVERSE = 'reverse-20260612-20260917-stockonly-t1440'
+REVERSE_MODEL_VERSION = 'minute-reverse-v1'
+REVERSE_BASE_HIT3 = 20.081     # 反推全样本 T+1 09:31~10:30 最高涨幅 ≥+3% 基准（%）
+REVERSE_BASE_HIT5 = 8.496      # 同上 ≥+5% 基准（%）
+REVERSE_SAMPLE_N = 298294      # 反推批次有效样本笔数
+
 ENGINE_VERSION = bt_schema.SCHEMA_VERSION
 GENERATOR = bt_schema.GENERATOR
 
 META_NOTE = (
-    '回测口径：T 日尾盘 14:30~14:55 买入、T+1 09:30~10:00 卖出；'
+    '回测口径：T 日 14:40 买入（1 分钟收盘价）、T+1 09:31~10:30 卖出窗口；'
     '只含 A 股个股，已剔除银行股、退市股、B 股、ST、科创板、北交所；'
-    '统计目标为「次日早盘最高涨幅 ≥ X%」；概念题材本期未接入。'
+    '标签为「T+1 09:31~10:30 窗口最高涨幅 ≥ X%」，先按标签切样本再反推 T 日尾盘分时；'
+    '特征集已剔除全部形态字段，概念题材本期未接入。'
+)
+
+REVERSE_NOTE = (
+    '14:40 分时反推批次：样本 298,294 笔 / 4,337 只 / 69 个交易日（20260612~20260917）；'
+    '无形态特征｜最高十分位样本外策略均值 −0.253%｜未扩窗复核前 usableForDecision=0，'
+    '不得作为实盘下单依据。'
 )
 
 GLOBAL_CAVEATS = [
-    '退市股按 .day 最后交易日剔除（整只剔除，命中率偏乐观）；换 --delist-scope trade 可去掉该偏差。',
-    '名称改取通达信 hq_cache/{shs,szs}.tnf；ST 判定仍用当前名称回看历史，存在成分漂移。',
-    '日线近似口径是上界：同日线近似 ≥3% = 26.09%，分钟精确 = 22.13%，高估约 4pp。',
-    '分钟窗口仅 69~70 个交易日且落在 2026 年强势段，不能外推。',
-    '换手率/流通市值改用 gbbq 权益事件按买入日时点推导，已消除送转/增发造成的前视（turnoverSrc 留痕）。',
-    '多周期（5/15/30/60 分钟）形态只在分钟窗口内存在；60 分钟 ma60 需 15 日预热，'
-    '有效样本从 2026-07-03 起（约 55 日），本期一律标记 usableForDecision=0。',
+    '退市股按 .day 最后交易日剔除（整只剔除，命中率偏乐观）。',
+    '名称取自通达信 hq_cache/{shs,szs}.tnf；ST 判定用当前名称回看历史，存在成分漂移。',
+    '窗口仅 69 个交易日（20260612~20260917）且落在 2026 年同一段行情，不能外推。',
+    '换手率/流通市值走 gbbq 权益事件按买入日时点推导，已消除送转/增发造成的前视。',
+    '命中率 ≠ 期望收益：最高十分位样本外策略均值 −0.253%，扣成本后不可直接落地。',
 ]
 
 
@@ -288,8 +304,13 @@ def dataset_rows() -> list[dict]:
     return rows
 
 
-def run_defs() -> list[dict]:
-    """bt_run：4 个批次（日线近似 / 分钟精确 / 时间网格 / 多周期形态明细）。"""
+def legacy_run_defs() -> list[dict]:
+    """旧口径批次定义（日线近似 / 分钟精确 / 时间网格 / 多周期形态）。
+
+    2026-09-21 起旧口径回测结果已从库中清出，本函数只保留定义用于「需要时重新导入」：
+    ``--import-daily`` / ``--import-minute`` / ``--import-grid`` / ``--import-tf``
+    会先调用 :func:`ensure_run` 把对应批次行补回，再按磁盘产物重新导入。
+    """
     created = now_iso()
     common = dict(priceMode='qfq-adjust', costBps=15.0,
                   universeFilter='A股个股（剔除银行/退市/B股/ST/科创板/北交所）',
@@ -365,20 +386,111 @@ def run_defs() -> list[dict]:
     ]
 
 
+def reverse_run_def() -> dict:
+    """bt_run：14:40 分时反推批次（当前唯一入库批次）。"""
+    created = now_iso()
+    meta = load_json(REVERSE_EXTRACT_META) if os.path.exists(REVERSE_EXTRACT_META) else {}
+    model = load_json(REVERSE_MODEL_PATH) if os.path.exists(REVERSE_MODEL_PATH) else {}
+    base = (model or {}).get('base') or {}
+    params = {
+        'generator': meta.get('generator', 'tools/minute_reverse_backtest.py'),
+        'analyzer': 'tools/minute_reverse_analyze.py',
+        'artifact': 'data/backtest/minute-reverse',
+        'samplesCsv': 'data/backtest/minute-reverse/samples.csv',
+        'modelFile': 'data/backtest/minute-reverse/reverse_model.json',
+        'modelVersion': (model or {}).get('version', REVERSE_MODEL_VERSION),
+        'entryTime': 1440, 'entryPrice': 'T 日 14:40 一分钟收盘价（不复权）',
+        'label': 'T+1 09:31~10:30 窗口最高涨幅 ≥+3%',
+        'labelWindows': '主口径 09:31~10:30；对照 09:31~10:00 / 09:31~11:30 / 全天',
+        'sellRule': '触及 +3% 止盈，否则 10:30 收盘卖出',
+        'costBps': 15.0, 'trades': REVERSE_SAMPLE_N,
+        'dates': '2026-06-12~2026-09-17', 'nDates': int(base.get('days') or 69),
+        'codes': int(base.get('codes') or 0),
+        'features': 'T 日 ≤14:40 分时 + T-1 日线（含 5/10/20/60/120 日乖离数值）+ T-1 市场/板块温度；无形态字段',
+        'lookahead': '分时只用 ≤14:40；日线指标 T-1；市场/板块上下文 T-1',
+        'baseHit3Pct': REVERSE_BASE_HIT3, 'baseHit5Pct': REVERSE_BASE_HIT5,
+        'skipped': meta.get('skipped') or {},
+        'exclude': meta.get('exclude', '银行股、退市股、B 股、ST；科创板排除'),
+        'usableForDecision': 0,
+        'warning': '仅 69 日同一段行情；最高十分位样本外策略均值 −0.253%，未扩窗复核前不可作实盘下单依据',
+    }
+    return dict(
+        runKey=RUN_REVERSE, createdAt=created, engineVersion=ENGINE_VERSION,
+        priceMode='raw-minute', buyTime=1440, sellTimeStart=931, sellTimeEnd=1030,
+        costBps=15.0,
+        universeFilter='A股个股（剔除银行/退市/B股/ST/科创板/北交所）',
+        excludeIndustry='银行', keepDelisted=0,
+        paramsJson=js(params), tradeCount=REVERSE_SAMPLE_N, note=REVERSE_NOTE)
+
+
+def run_defs() -> list[dict]:
+    """bt_run：入库批次。当前只写 14:40 分时反推批次。"""
+    return [reverse_run_def()]
+
+
+RUN_DEF_BUILDERS = {
+    RUN_REVERSE: reverse_run_def,
+}
+
+
+def ensure_run(conn: sqlite3.Connection, run_key: str) -> None:
+    """把某个批次定义补进 bt_run（幂等）：恢复旧口径导入前调用。"""
+    if conn.execute('SELECT 1 FROM bt_run WHERE runKey=?', (run_key,)).fetchone():
+        return
+    defs = {d['runKey']: d for d in legacy_run_defs()}
+    builder = RUN_DEF_BUILDERS.get(run_key)
+    row = builder() if builder else defs.get(run_key)
+    if row is None:
+        raise SystemExit(f'未知 runKey={run_key}，无法补建 bt_run 行')
+    insert_runs(conn, [row])
+    log(f'bt_run 补建：{run_key}')
+
+
+def insert_runs(conn: sqlite3.Connection, runs: list[dict]) -> None:
+    conn.executemany(
+        'INSERT INTO bt_run (runKey, createdAt, engineVersion, priceMode, buyTime, '
+        'sellTimeStart, sellTimeEnd, costBps, universeFilter, excludeIndustry, '
+        'keepDelisted, paramsJson, tradeCount, note) '
+        'VALUES (:runKey,:createdAt,:engineVersion,:priceMode,:buyTime,:sellTimeStart,'
+        ':sellTimeEnd,:costBps,:universeFilter,:excludeIndustry,:keepDelisted,'
+        ':paramsJson,:tradeCount,:note) '
+        'ON CONFLICT(runKey) DO UPDATE SET createdAt=excluded.createdAt,'
+        'engineVersion=excluded.engineVersion, priceMode=excluded.priceMode,'
+        'buyTime=excluded.buyTime, sellTimeStart=excluded.sellTimeStart,'
+        'sellTimeEnd=excluded.sellTimeEnd, costBps=excluded.costBps,'
+        'universeFilter=excluded.universeFilter, excludeIndustry=excluded.excludeIndustry,'
+        'keepDelisted=excluded.keepDelisted, paramsJson=excluded.paramsJson,'
+        'tradeCount=excluded.tradeCount, note=excluded.note', runs)
+
+
 def do_init(conn: sqlite3.Connection) -> None:
     bt_schema.create_schema(conn)
     created = now_iso()
     cov1 = load_json(COV[1]) if os.path.exists(COV[1]) else {}
+    meta_in = load_json(REVERSE_EXTRACT_META) if os.path.exists(REVERSE_EXTRACT_META) else {}
+    model = load_json(REVERSE_MODEL_PATH) if os.path.exists(REVERSE_MODEL_PATH) else {}
+    feats = ((model or {}).get('model') or {}).get('features') or []
     meta = [
         ('schemaVersion', bt_schema.SCHEMA_VERSION),
         ('createdAt', created),
         ('generator', GENERATOR),
-        ('buyWindow', '1430-1455'),
-        ('sellWindow', '0930-1000'),
-        ('tdxMinuteAsOfBars', '1430'),
-        ('minuteWindow', f'{cov1.get("date_min", "")}-{cov1.get("date_max", "")}'),
+        ('buyWindow', '1440'),
+        ('sellWindow', '0931-1030'),
+        ('tdxMinuteAsOfBars', '1440'),
+        ('minuteWindow', f'{meta_in.get("dateMin", cov1.get("date_min", ""))}'
+                         f'-{meta_in.get("dateMax", cov1.get("date_max", ""))}'),
         ('dayWindow', '19901219-20260918'),
+        ('primaryRun', RUN_REVERSE),
+        ('reverseModel', 'data/backtest/minute-reverse/reverse_model.json'),
+        ('reverseModelVersion', (model or {}).get('version', REVERSE_MODEL_VERSION)),
+        ('reverseSampleN', REVERSE_SAMPLE_N),
+        ('reverseBaseHit3Pct', REVERSE_BASE_HIT3),
+        ('reverseBaseHit5Pct', REVERSE_BASE_HIT5),
+        ('reverseFeatureCnt', len(feats)),
+        ('usableForDecision', 0),
         ('note', META_NOTE),
+        ('reverseNote', REVERSE_NOTE),
+        ('caveats', js(GLOBAL_CAVEATS)),
     ]
     conn.executemany(
         'INSERT INTO bt_meta (key, value, updatedAt) VALUES (?,?,?) '
@@ -409,30 +521,32 @@ def do_init(conn: sqlite3.Connection) -> None:
         'ruleParams=excluded.ruleParams, basisNote=excluded.basisNote,'
         'version=excluded.version', pats)
 
-    feats = bt_schema.feature_rows()
+    feat_rows = bt_schema.feature_rows()
     conn.executemany(
         'INSERT INTO bt_feature_def (tableName, columnName, nameCn, meaning, unit, '
         'valueScope, source, calcRule, isFeature) VALUES (?,?,?,?,?,?,?,?,?) '
         'ON CONFLICT(tableName, columnName) DO UPDATE SET nameCn=excluded.nameCn,'
         'meaning=excluded.meaning, unit=excluded.unit, valueScope=excluded.valueScope,'
         'source=excluded.source, calcRule=excluded.calcRule, isFeature=excluded.isFeature',
-        feats)
+        feat_rows)
 
-    runs = run_defs()
+    insert_runs(conn, run_defs())
+
+    # bt_reverse_feature：minute-reverse-v1 实际进入模型的特征登记
+    conn.execute('DELETE FROM bt_reverse_feature')
     conn.executemany(
-        'INSERT INTO bt_run (runKey, createdAt, engineVersion, priceMode, buyTime, '
-        'sellTimeStart, sellTimeEnd, costBps, universeFilter, excludeIndustry, '
-        'keepDelisted, paramsJson, tradeCount, note) '
-        'VALUES (:runKey,:createdAt,:engineVersion,:priceMode,:buyTime,:sellTimeStart,'
-        ':sellTimeEnd,:costBps,:universeFilter,:excludeIndustry,:keepDelisted,'
-        ':paramsJson,:tradeCount,:note) '
-        'ON CONFLICT(runKey) DO UPDATE SET createdAt=excluded.createdAt,'
-        'engineVersion=excluded.engineVersion, priceMode=excluded.priceMode,'
-        'buyTime=excluded.buyTime, sellTimeStart=excluded.sellTimeStart,'
-        'sellTimeEnd=excluded.sellTimeEnd, costBps=excluded.costBps,'
-        'universeFilter=excluded.universeFilter, excludeIndustry=excluded.excludeIndustry,'
-        'keepDelisted=excluded.keepDelisted, paramsJson=excluded.paramsJson,'
-        'tradeCount=excluded.tradeCount, note=excluded.note', runs)
+        'INSERT INTO bt_reverse_feature (featureKey, nameCn, unit, kind, sourceColumn, '
+        'inModel, note) VALUES (:featureKey,:nameCn,:unit,:kind,:sourceColumn,1,:note) '
+        'ON CONFLICT(featureKey) DO UPDATE SET nameCn=excluded.nameCn, unit=excluded.unit,'
+        'kind=excluded.kind, sourceColumn=excluded.sourceColumn, inModel=excluded.inModel,'
+        'note=excluded.note',
+        [dict(featureKey=str(f.get('key') or ''),
+              nameCn=str(f.get('cn') or ''),
+              unit=str(f.get('unit') or ''),
+              kind=str(f.get('kind') or 'num'),
+              sourceColumn=str(f.get('key') or ''),
+              note=f'{REVERSE_MODEL_VERSION} 模型特征；来源列同 bt_reverse_sample')
+         for f in feats])
     conn.commit()
 
 
@@ -443,6 +557,11 @@ def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
             'ORDER BY name'):
         out[name] = int(conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])
     return out
+
+
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                        (name,)).fetchone() is not None
 
 
 def run_id(conn: sqlite3.Connection, run_key: str) -> int:
@@ -1190,7 +1309,7 @@ def link_context(conn: sqlite3.Connection, run_keys=None) -> int:
     tmp = [(c, v.get('board') or '', (names.get(v.get('board') or '') or {}).get('name') or '')
            for c, v in imap.items()]
     conn.executemany('INSERT OR REPLACE INTO _tmp_code_board VALUES (?,?,?)', tmp)
-    keys = list(run_keys or [RUN_DAILY, RUN_MINUTE, RUN_GRID, RUN_TF])
+    keys = list(run_keys or [RUN_DAILY, RUN_MINUTE, RUN_GRID, RUN_TF, RUN_REVERSE])
     q = ','.join('?' * len(keys))
     rids = [r[0] for r in conn.execute(
         f'SELECT runId FROM bt_run WHERE runKey IN ({q})', keys)]
@@ -1239,6 +1358,285 @@ def link_context(conn: sqlite3.Connection, run_keys=None) -> int:
                          rids).fetchone()[0])
     log(f'bt_trade_context {n} 行（已回填市场/板块温度）')
     return n
+
+
+# ---------------------------------------------------------------- 反推批次导入
+# 第三套策略：T 日 14:40 买入 → T+1 09:31~10:30 窗口最高涨幅 ≥3%
+# （先按标签切样本，再反推 T 日尾盘分时；无形态字段）。
+# 源：data/backtest/minute-reverse/{samples.csv(95 列逐笔), reverse_model.json}
+REVERSE_STAT_DIM_NOTES = {
+    'overall': '全样本基准（T 日 14:40 买入 → T+1 09:31~10:30 窗口最高涨幅）',
+    'month': '逐自然月（窗口仅 4 个月，行情敏感度极大）',
+    'board': '上市板',
+    'market_regime': 'T-1 市场环境（strong_trend/range_strong/rotation/recovery/weak）',
+    'industry': '通达信行业',
+    'decile': '预测概率十分位（样本内；D10 = 预测最高）',
+    'decile_loo': '预测概率十分位（留一月·样本外；D10 策略均值为负，不得用于下单）',
+    'topk': '每日 Top-K（样本内，成交额 ≥1000 万过滤）',
+    'topk_loo': '每日 Top-K（留一月·样本外）',
+    'model_month': '模型逐月 AUC 与每日 Top-3 命中率',
+}
+
+
+def reverse_sample_types(conn: sqlite3.Connection) -> dict[str, str]:
+    """bt_reverse_sample 的「列名 → SQLite 类型（大写）」。"""
+    return {str(r[1]): str(r[2] or '').upper()
+            for r in conn.execute("PRAGMA table_info('bt_reverse_sample')")}
+
+
+def _reverse_value(raw, col_type: str):
+    """按列类型把 CSV 文本转成写入值：整数列 → int，浮点列 → float，其余原样。"""
+    if col_type and 'INT' in col_type:
+        return inum(raw)
+    if col_type and any(k in col_type for k in ('REAL', 'FLOA', 'DOUB', 'NUM')):
+        return fnum(raw)
+    return raw if (raw is not None and str(raw).strip() != '') else None
+
+
+def import_reverse_samples(conn: sqlite3.Connection, path: str = REVERSE_SAMPLES,
+                           batch: int = 5000) -> int:
+    """把 samples.csv（95 列）整体写入 bt_reverse_sample（先清空再流式插入）。"""
+    if not os.path.exists(path):
+        raise SystemExit(f'缺少反推采样文件：{path}')
+    types = reverse_sample_types(conn)
+    cols = list(types)
+    sql = (f'INSERT OR REPLACE INTO bt_reverse_sample ({",".join(cols)}) '
+           f'VALUES ({",".join("?" * len(cols))})')
+    conn.execute('DELETE FROM bt_reverse_sample')
+    n = 0
+    buf: list[tuple] = []
+    with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+        rd = csv.reader(f)
+        head = next(rd, None)
+        if not head:
+            raise SystemExit(f'反推采样文件为空：{path}')
+        if len(head) != len(cols) or set(head) != set(cols):
+            raise SystemExit('samples.csv 列与 bt_reverse_sample 不一致：'
+                             f'缺={sorted(set(cols) - set(head))} '
+                             f'多={sorted(set(head) - set(cols))}')
+        order = [head.index(c) for c in cols]
+        ctypes = [types[c] for c in cols]
+        for line_no, raw in enumerate(rd, start=2):
+            if not raw:
+                continue
+            if len(raw) != len(head):
+                raise SystemExit(f'samples.csv 第 {line_no} 行列数 {len(raw)} ≠ {len(head)}')
+            buf.append(tuple(_reverse_value(raw[i], t) for i, t in zip(order, ctypes)))
+            n += 1
+            if len(buf) >= batch:
+                conn.executemany(sql, buf)
+                buf.clear()
+        if buf:
+            conn.executemany(sql, buf)
+    conn.commit()
+    log(f'bt_reverse_sample {n} 行 ← {os.path.relpath(path, ROOT)}')
+    return n
+
+
+def _hit_map(d: dict) -> dict:
+    """把 reverse_model.json 的 up1..up9 / limitUp / ret* 命名映射成 stat_tuple 的入参键。"""
+    out: dict = {'n': d.get('n')}
+    for i in range(1, 10):
+        out[f'ge{i}_pct'] = d.get(f'up{i}Pct')
+    out['limit_pct'] = d.get('limitUpPct')
+    out['avg_ret_open_pct'] = d.get('retOpenPct')
+    out['avg_ret_high_pct'] = d.get('retHighPct')
+    out['avg_ret_close_pct'] = d.get('retClosePct')
+    out['avg_strat_ret_pct'] = d.get('stratPct')
+    out['win_rate_true_pct'] = d.get('winRatePct')
+    out['profit_factor'] = d.get('profitFactor')
+    return out
+
+
+def _stat_tuple(rid: int, dim: str, row: dict, note: str,
+                by_year=None, stability: str | None = None) -> tuple:
+    """stat_tuple + 分年 JSON（第 23 列）+ 稳定性（第 24 列）。"""
+    t = list(stat_tuple(rid, dim, row, REVERSE_BASE_HIT3, note))
+    t[23] = js(by_year) if by_year else None
+    t[24] = stability or t[24]
+    return tuple(t)
+
+
+def import_reverse_stats(conn: sqlite3.Connection, rid: int,
+                         path: str = REVERSE_MODEL_PATH) -> int:
+    """把 reverse_model.json 的基准 / 分档 / 规则外统计写进 bt_stat。"""
+    if not os.path.exists(path):
+        raise SystemExit(f'缺少反推模型文件：{path}')
+    model = load_json(path)
+    base = model.get('base') or {}
+    hit = base.get('hitPct') or {}
+    means = base.get('means') or {}
+    rows: list[tuple] = []
+
+    # 1) 全样本基准
+    overall = _hit_map({
+        **{f'up{i}Pct': hit.get(f'up{i}') for i in range(1, 10)},
+        'limitUpPct': hit.get('limitUp'),
+        'n': base.get('rows'),
+        'retOpenPct': means.get('retOpenPct'),
+        'retHighPct': means.get('retHighPct'),
+        'retClosePct': means.get('retClosePct'),
+        'stratPct': means.get('stratPct'),
+    })
+    overall['bucket'] = '全样本'
+    rows.append(_stat_tuple(rid, 'overall', overall, REVERSE_STAT_DIM_NOTES['overall'],
+                            stability='unverified'))
+
+    # 2) 逐自然月
+    for m in base.get('byMonth') or []:
+        r = _hit_map({**{f'up{i}Pct': m.get(f'up{i}Pct') for i in range(1, 10)},
+                      'limitUpPct': m.get('limitUpPct'), 'n': m.get('n'),
+                      'retOpenPct': m.get('retOpenPct'),
+                      'retHighPct': m.get('retHighPct'),
+                      'stratPct': m.get('stratPct')})
+        r['bucket'] = str(m.get('month'))
+        rows.append(_stat_tuple(rid, 'month', r, REVERSE_STAT_DIM_NOTES['month']))
+
+    # 3) 分类扫描：上市板 / 市场环境 / 行业
+    cat_dim = {'dBoard': 'board', 'marketRegime': 'market_regime', 'industry': 'industry'}
+    for cat in model.get('catScan') or []:
+        dim = cat_dim.get(str(cat.get('key') or ''), str(cat.get('key') or ''))
+        for g in cat.get('groups') or []:
+            r = {'bucket': str(g.get('name') or ''), 'n': g.get('n'),
+                 'ge3_pct': g.get('hitPct')}
+            rows.append(_stat_tuple(rid, dim, r, REVERSE_STAT_DIM_NOTES.get(dim, '')))
+
+    # 4) 单因子十分位（每个数值特征一个 rev_<key> 维度）
+    for bs in model.get('bucketScan') or []:
+        key = str(bs.get('key') or '')
+        cn = str(bs.get('cn') or key)
+        unit = str(bs.get('unit') or '')
+        dim = f'rev_{key}'
+        for b in bs.get('buckets') or []:
+            lo, hi = b.get('lo'), b.get('hi')
+            span = (f'{"-" if lo is None else round(float(lo), 4)}~'
+                    f'{"-" if hi is None else round(float(hi), 4)}')
+            note = (f'单因子分档：{cn}{("（" + unit + "）") if unit else ""}｜'
+                    f'区间 {span}｜全因子极差 lift '
+                    f'{bs.get("spreadLift") if bs.get("spreadLift") is not None else "-"}')
+            r = {'bucket': f'D{inum(b.get("bin")) or 0:02d}', 'n': b.get('n'),
+                 'ge3_pct': b.get('hitPct')}
+            rows.append(_stat_tuple(rid, dim, r, note))
+
+    # 5) 预测概率十分位（样本内 / 留一月样本外）
+    for dim, items in (('decile', model.get('deciles') or []),
+                       ('decile_loo', model.get('decilesLoo') or [])):
+        for d in items:
+            r = {'bucket': f'D{inum(d.get("decile")) or 0:02d}', 'n': d.get('n'),
+                 'ge3_pct': d.get('actualPct'), 'limit_pct': d.get('limitUpPct'),
+                 'avg_ret_open_pct': d.get('retOpenMeanPct'),
+                 'avg_ret_high_pct': d.get('retHighMeanPct'),
+                 'avg_strat_ret_pct': d.get('stratMeanPct')}
+            note = (f'{REVERSE_STAT_DIM_NOTES[dim]}｜预测 {d.get("predPct")}% vs '
+                    f'实际 {d.get("actualPct")}%｜lift {d.get("liftVsBase")}')
+            rows.append(_stat_tuple(rid, dim, r, note))
+
+    # 6) 每日 Top-K（样本内 / 留一月样本外）
+    for dim, items in (('topk', model.get('topk') or {}),
+                       ('topk_loo', model.get('topkLoo') or {})):
+        for k, d in items.items():
+            r = {'bucket': str(k), 'n': d.get('n'), 'ge3_pct': d.get('hit3Pct'),
+                 'limit_pct': d.get('limitUpPct'), 'avg_ret_open_pct': d.get('retOpenPct'),
+                 'avg_ret_high_pct': d.get('retHighPct'),
+                 'avg_strat_ret_pct': d.get('stratPct')}
+            note = (f'{REVERSE_STAT_DIM_NOTES[dim]}｜每日取 {d.get("k")} 只｜有效 '
+                    f'{d.get("days")} 天｜成交额 ≥1000 万')
+            rows.append(_stat_tuple(rid, dim, r, note, by_year=d.get('byYear')))
+
+    # 7) 模型逐月 AUC / Top-3 命中
+    for m in model.get('months') or []:
+        r = {'bucket': str(m.get('month')), 'n': m.get('n'), 'ge3_pct': m.get('up3Pct')}
+        note = (f'{REVERSE_STAT_DIM_NOTES["model_month"]}｜up3 AUC {m.get("auc")}｜'
+                f'每日 Top-3 命中 {m.get("top3up3Pct")}%')
+        rows.append(_stat_tuple(rid, 'model_month', r, note))
+
+    conn.execute('DELETE FROM bt_stat WHERE runId=?', (rid,))
+    conn.executemany(STAT_SQL, rows)
+    conn.commit()
+    dims: dict[str, int] = {}
+    for t in rows:
+        dims[t[1]] = dims.get(t[1], 0) + 1
+    log(f'bt_stat {len(rows)} 行 / {len(dims)} 个维度（反推批次）：'
+        + ', '.join(f'{k}×{v}' for k, v in sorted(dims.items())
+                    if not k.startswith('rev_')))
+    return len(rows)
+
+
+RULE_PREFIX = (('singles', 'REV-S'), ('pairs', 'REV-P'), ('triples', 'REV-T'))
+
+
+def import_reverse_rules(conn: sqlite3.Connection, rid: int,
+                         path: str = REVERSE_MODEL_PATH) -> int:
+    """把组合规则扫描结果写入 bt_rule（逐日/逐月稳健闸门信息存 conditionsJson）。"""
+    model = load_json(path)
+    rules = model.get('rules') or {}
+    conn.execute('DELETE FROM bt_rule WHERE runId=?', (rid,))
+    out: list[tuple] = []
+    for kind, prefix in RULE_PREFIX:
+        for i, r in enumerate(rules.get(kind) or [], 1):
+            cond = js({
+                'kind': kind,
+                'terms': [r[k] for k in ('a', 'b', 'c') if r.get(k)],
+                'text': r.get('text'),
+                'gates': {'monthCount': r.get('monthCount'),
+                          'dayCount': r.get('dayCount'),
+                          'monthLiftMin': r.get('monthLiftMin'),
+                          'monthLiftMed': r.get('monthLiftMed'),
+                          'dayLiftMin': r.get('dayLiftMin'),
+                          'dayLiftMed': r.get('dayLiftMed'),
+                          'robust': bool(r.get('robust'))},
+            })
+            out.append((rid, f'{prefix}{i:02d}', cond, inum(r.get('n')) or 0,
+                        fnum(r.get('hitPct')), REVERSE_BASE_HIT3, fnum(r.get('lift')),
+                        None, None, '采纳' if r.get('robust') else '观察',
+                        r.get('text')))
+    conn.executemany(
+        'INSERT INTO bt_rule (runId, ruleName, conditionsJson, sampleCnt, hit3Pct, '
+        'baseHit3Pct, lift3, stratMean, byYearJson, verdict, note) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?)', out)
+    conn.commit()
+    log(f'bt_rule {len(out)} 行（反推批次：单 {len(rules.get("singles") or [])} / '
+        f'双 {len(rules.get("pairs") or [])} / 三 {len(rules.get("triples") or [])}）')
+    return len(out)
+
+
+def do_import_reverse(conn: sqlite3.Connection) -> None:
+    """导入第三套策略（14:40 分时反推）的全量结果。"""
+    ensure_run(conn, RUN_REVERSE)
+    rid = run_id(conn, RUN_REVERSE)
+    log(f'[14:40 分时反推] runId={rid}  源={REVERSE_DIR}')
+    import_reverse_samples(conn)
+    import_reverse_stats(conn, rid)
+    import_reverse_rules(conn, rid)
+
+
+# ---------------------------------------------------------------- 旧口径清出
+# 2026-09-21：用户要求「原先的回测数据删除掉，重新写入新的回测结果」。
+# 清出范围＝全部旧口径结果表 + bt_run + bt_meta；保留市场/板块温度与数据集字典
+# （bt_market_day / bt_sector_day / bt_dataset 与具体策略无关，重扫需数分钟）。
+PURGE_TABLES = ['bt_trade', 'bt_trade_context', 'bt_trade_tf', 'bt_stat', 'bt_rule',
+                'bt_time_grid', 'bt_time_marginal', 'bt_pattern_def', 'bt_feature_def',
+                'bt_reverse_sample', 'bt_reverse_feature']
+PURGE_KEEP = ['bt_market_day', 'bt_sector_day', 'bt_dataset']
+
+
+def do_purge_legacy(conn: sqlite3.Connection, vacuum: bool = True) -> None:
+    """清出旧口径回测结果（旧批次明细/统计/网格/形态/字段登记 + bt_run + bt_meta）。"""
+    before = table_counts(conn)
+    for t in PURGE_TABLES + ['bt_run', 'bt_meta']:
+        if t in before:
+            conn.execute(f'DELETE FROM {t}')
+    conn.commit()
+    if vacuum:
+        log('VACUUM 回收空间…')
+        conn.execute('VACUUM')
+    after = table_counts(conn)
+    log('旧回测结果已清出（保留市场/板块温度与数据集字典）：')
+    for t in sorted(before):
+        if t in PURGE_KEEP:
+            print(f'  保留 {t:<20} {after.get(t, 0):>9}')
+        elif before[t]:
+            print(f'  删除 {t:<20} {before[t]:>9} → {after.get(t, 0)}')
 
 
 # ---------------------------------------------------------------- 批次导入
@@ -1312,6 +1710,8 @@ def do_import_market(conn: sqlite3.Connection, max_stocks: int | None = None) ->
 def check_schema(conn: sqlite3.Connection) -> list[str]:
     """bt_feature_def 与真实表结构双向覆盖检查。"""
     issues: list[str] = []
+    if not table_exists(conn, 'bt_feature_def'):
+        return ['bt_feature_def 不存在，请先执行 --init 建表并灌入字段字典']
     tables = [r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'bt_%'")]
     have = {}
@@ -1337,30 +1737,34 @@ def check_schema(conn: sqlite3.Connection) -> list[str]:
 
 
 # (标签, runKey, dimension, bucket 或 bucket 列表, 指标列, 期望值, 容差)
+# 口径：2026-09-21 晚定稿的第三套策略 —— T 日 14:40 买入（1 分钟收盘价）、
+# T+1 09:31~10:30 窗口最高涨幅 ≥+3% 为标签，先按标签切样本再反推 T 日尾盘分时；无形态字段。
 VERIFY_SPECS = [
-    ## 口径：2026-09-21 起为 gbbq 时点股本 + 时点自校准涨跌停比例 + 通达信名称
-    ('日线全样本 ≥3%', RUN_DAILY, 'overall', ('全样本',), 'hit3Pct', 21.15, 0.02),
-    ('日线全样本 ≥1%', RUN_DAILY, 'overall', ('全样本',), 'hit1Pct', 57.98, 0.02),
-    ('日线全样本 触涨停%', RUN_DAILY, 'overall', ('全样本',), 'limitUpPct', 2.61, 0.05),
-    ('日线 2023 年 ≥3%', RUN_DAILY, 'year', ('2023',), 'hit3Pct', 14.77, 0.05),
-    ('日线 2021 年 ≥3%', RUN_DAILY, 'year', ('2021',), 'hit3Pct', 23.06, 0.05),
-    ('日线 2022 年 ≥3%', RUN_DAILY, 'year', ('2022',), 'hit3Pct', 22.42, 0.05),
-    ('日线 2024 年 ≥3%', RUN_DAILY, 'year', ('2024',), 'hit3Pct', 24.05, 0.05),
-    ('日线 2025 年 ≥3%', RUN_DAILY, 'year', ('2025',), 'hit3Pct', 19.46, 0.05),
-    ('日线 2026 年 ≥3%', RUN_DAILY, 'year', ('2026',), 'hit3Pct', 24.23, 0.05),
-    ('分钟精确全样本 ≥3%', RUN_MINUTE, 'overall', ('分钟精确',), 'hit3Pct', 22.13, 0.02),
-    ('分钟精确全样本 ≥5%', RUN_MINUTE, 'overall', ('分钟精确',), 'hit5Pct', 9.51, 0.05),
-    ('分钟对照 日线近似 ≥3%', RUN_MINUTE, 'overall', ('日线近似',), 'hit3Pct', 26.09, 0.02),
-    ('多周期全样本 ≥3%', RUN_TF, 'overall', ('全样本',), 'hit3Pct', 22.14, 0.05),
-    ('多周期创业板 ≥3%', RUN_TF, 'board', ('创业板',), 'hit3Pct', 26.87, 0.05),
-    ('多周期 tf_align=partial ≥3%', RUN_TF, 'tf_align', ('partial',), 'hit3Pct', 22.18, 0.05),
-    ('多周期 60m 主形态 rsi_low_turn ≥3%', RUN_TF, 'tf60_primary', ('rsi_low_turn',),
-     'hit3Pct', 32.93, 0.05),
+    ('反推全样本 ≥3%', RUN_REVERSE, 'overall', ('全样本',), 'hit3Pct', 20.081, 0.02),
+    ('反推全样本 ≥1%', RUN_REVERSE, 'overall', ('全样本',), 'hit1Pct', 57.924, 0.02),
+    ('反推全样本 ≥5%', RUN_REVERSE, 'overall', ('全样本',), 'hit5Pct', 8.496, 0.02),
+    ('反推全样本 触涨停%', RUN_REVERSE, 'overall', ('全样本',), 'limitUpPct', 2.035, 0.02),
+    ('反推 202606 ≥3%', RUN_REVERSE, 'month', ('202606',), 'hit3Pct', 23.86, 0.02),
+    ('反推 202609 ≥3%', RUN_REVERSE, 'month', ('202609',), 'hit3Pct', 13.4, 0.02),
+    ('反推 创业板 ≥3%', RUN_REVERSE, 'board', ('创业板',), 'hit3Pct', 24.19, 0.02),
+    ('反推 半导体 ≥3%', RUN_REVERSE, 'industry', ('半导体',), 'hit3Pct', 32.21, 0.02),
+    ('反推 证券 ≥3%', RUN_REVERSE, 'industry', ('证券',), 'hit3Pct', 9.02, 0.02),
+    ('单因子 日内振幅 D10 ≥3%', RUN_REVERSE, 'rev_mAmp1440', ('D10',), 'hit3Pct', 42.17, 0.02),
+    ('单因子 换手率 D10 ≥3%', RUN_REVERSE, 'rev_mTurnover1440', ('D10',), 'hit3Pct', 39.98, 0.02),
+    ('十分位 样本内 D10 ≥3%', RUN_REVERSE, 'decile', ('D10',), 'hit3Pct', 51.01, 0.02),
+    ('十分位 样本外 D10 ≥3%', RUN_REVERSE, 'decile_loo', ('D10',), 'hit3Pct', 42.32, 0.02),
+    ('每日 Top-K 样本内 K=10', RUN_REVERSE, 'topk', ('k10',), 'hit3Pct', 66.23, 0.02),
+    ('每日 Top-K 样本外 K=10', RUN_REVERSE, 'topk_loo', ('k10',), 'hit3Pct', 64.35, 0.02),
+    ('流动性 Top-10 样本外', RUN_REVERSE, 'topk_loo', ('liq_k10',), 'hit3Pct', 64.49, 0.02),
 ]
 
 
 def do_verify(conn: sqlite3.Connection) -> int:
     bad = 0
+    if not table_exists(conn, 'bt_reverse_sample') or not table_exists(conn, 'bt_stat'):
+        print('== 关键数字核对：跳过（bt_reverse_sample / bt_stat 不存在，请先执行 '
+              '--init 与 --import-reverse）')
+        return 1
 
     def show(label, got, want, ok):
         nonlocal bad
@@ -1369,7 +1773,7 @@ def do_verify(conn: sqlite3.Connection) -> int:
             bad += 1
         print(f'  [{mark}] {label:<22} 库内={got}  期望={want}')
 
-    print('== 关键数字核对')
+    print('== 关键数字核对（第三套：14:40 买入 → 次日 09:31~10:30 最高涨幅 ≥3%）')
     for label, rk, dim, buckets, col, want, tol in VERIFY_SPECS:
         got = None
         for b in buckets:
@@ -1383,58 +1787,50 @@ def do_verify(conn: sqlite3.Connection) -> int:
         ok = got is not None and abs(got - want) <= tol
         show(label, got, want, ok)
 
-    d = conn.execute('SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
-                     'WHERE r.runKey=?', (RUN_DAILY,)).fetchone()[0]
-    show('日线明细入样行数', d, 108965, d == 108965)
-
-    blank_day = conn.execute(
-        'SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
-        'WHERE r.runKey=? AND (t.dayShape IS NULL OR t.channelType IS NULL)',
-        (RUN_DAILY,)).fetchone()[0]
-    show('日线形态位置空值行', blank_day, 0, blank_day == 0)
-    for dim, want in (('day_shape', 6), ('channel', 3), ('pos120', 5)):
-        got = conn.execute(
-            'SELECT COUNT(*) FROM bt_stat s JOIN bt_run r ON r.runId=s.runId '
-            'WHERE r.runKey=? AND s.dimension=?', (RUN_DAILY, dim)).fetchone()[0]
-        show(f'日线 bt_stat[{dim}] 档数', got, f'>={want}', got >= want)
-
-    row = conn.execute(
-        'SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
-        'WHERE r.runKey=?', (RUN_TF,)).fetchone()[0]
-    if row:
-        show('多周期明细笔数', row, 292685, abs(row - 292685) <= 5)
-        ttf = conn.execute(
-            'SELECT COUNT(*) FROM bt_trade_tf f JOIN bt_run r ON r.runId=f.runId '
-            'WHERE r.runKey=?', (RUN_TF,)).fetchone()[0]
-        show('多周期快照行数', ttf, row * 4, ttf == row * 4)
-        blank = conn.execute(
-            'SELECT COUNT(*) FROM bt_trade t JOIN bt_run r ON r.runId=t.runId '
-            'WHERE r.runKey=? AND (t.tfAlign IS NULL OR t.dayShape IS NULL '
-            'OR t.turnoverPct IS NULL OR t.nextHigh IS NULL)', (RUN_TF,)).fetchone()[0]
-        show('多周期字段空值行', blank, 0, blank == 0)
-
-    for label, sql, want, tol in [
-        ('bt_pattern_def 条数', 'SELECT COUNT(*) FROM bt_pattern_def', 139, 0),
-        ('bt_feature_def 条数', 'SELECT COUNT(*) FROM bt_feature_def', 250, 0),
-        ('bt_time_grid 组合数', 'SELECT COUNT(*) FROM bt_time_grid', 806, 0),
+    feat_n = 0
+    if os.path.exists(REVERSE_MODEL_PATH):
+        feat_n = len(((load_json(REVERSE_MODEL_PATH).get('model') or {})
+                      .get('features')) or [])
+    print('== 逐笔明细与登记（反推批次）')
+    for label, sql, want in [
+        ('bt_reverse_sample 逐笔行数', 'SELECT COUNT(*) FROM bt_reverse_sample',
+         REVERSE_SAMPLE_N),
+        ('bt_reverse_sample 列数',
+         "SELECT COUNT(*) FROM pragma_table_info('bt_reverse_sample')", 95),
+        ('bt_reverse_feature 入模特征', 'SELECT COUNT(*) FROM bt_reverse_feature', feat_n),
+        ('bt_rule 组合规则条数', 'SELECT COUNT(*) FROM bt_rule', 30),
+        ('bt_feature_def 字段登记', 'SELECT COUNT(*) FROM bt_feature_def', 352),
+        ('bt_pattern_def 形态字典', 'SELECT COUNT(*) FROM bt_pattern_def', 139),
+        ('bt_trade 旧口径明细（已清出）', 'SELECT COUNT(*) FROM bt_trade', 0),
+        ('bt_trade_tf 旧快照（已清出）', 'SELECT COUNT(*) FROM bt_trade_tf', 0),
+        ('bt_time_grid 组合（已清出）', 'SELECT COUNT(*) FROM bt_time_grid', 0),
+        ('bt_run 批次行数（仅反推）', 'SELECT COUNT(*) FROM bt_run', 1),
         ('bt_sector_day 行业数',
-         'SELECT COUNT(DISTINCT boardId) FROM bt_sector_day', 110, 0),
+         'SELECT COUNT(DISTINCT boardId) FROM bt_sector_day', 110),
     ]:
         got = conn.execute(sql).fetchone()[0]
-        ok = (abs(got - want) <= tol) if tol else (got == want)
-        show(label, got, want, ok)
+        show(label, got, want, got == want)
 
     got = conn.execute('SELECT COUNT(*) FROM bt_market_day').fetchone()[0]
     show('bt_market_day 交易日数', got, '>=1900', got >= 1900)
 
-    for b, s, want in ((1430, 930, -0.1295), (1430, 1000, -0.0328)):
-        row = conn.execute(
-            'SELECT g.retMeanPct FROM bt_time_grid g JOIN bt_run r ON r.runId=g.runId '
-            'WHERE r.runKey=? AND g.buyMinute=? AND g.sellMinute=?',
-            (RUN_GRID, b, s)).fetchone()
-        got = None if row is None else row[0]
-        ok = got is not None and abs(got - want) <= 0.001
-        show(f'网格 {b}→{s} 均收%', got, want, ok)
+    print('== bt_stat 维度覆盖（反推批次）')
+    for dim, want_min in (('overall', 1), ('month', 4), ('board', 4), ('market_regime', 5),
+                          ('industry', 40), ('decile', 10), ('decile_loo', 10),
+                          ('topk', 14), ('topk_loo', 14), ('model_month', 4)):
+        got = conn.execute(
+            'SELECT COUNT(*) FROM bt_stat s JOIN bt_run r ON r.runId=s.runId '
+            'WHERE r.runKey=? AND s.dimension=?', (RUN_REVERSE, dim)).fetchone()[0]
+        show(f'bt_stat[{dim}]', got, f'>={want_min}', got >= want_min)
+    rev = conn.execute(
+        "SELECT COUNT(DISTINCT s.dimension) FROM bt_stat s JOIN bt_run r ON r.runId=s.runId "
+        "WHERE r.runKey=? AND s.dimension GLOB 'rev_*'", (RUN_REVERSE,)).fetchone()[0]
+    show('bt_stat 单因子维度数', rev, 55, rev == 55)
+
+    print('== 红线（必须随数据一起展示）')
+    print('  · 窗口仅 69 个交易日（20260612~20260917）且落在同一段行情，不能外推。')
+    print('  · 最高十分位样本外：预测 48.96% vs 实际 42.32%（高估），策略均值 −0.253%。')
+    print('  · bt_meta.usableForDecision=0：未扩窗复核前不得作为实盘下单依据。')
 
     print('== 覆盖度')
     for rk, in conn.execute('SELECT runKey FROM bt_run ORDER BY runId'):
@@ -1468,8 +1864,8 @@ CREATE TABLE IF NOT EXISTS bt_decision (
   limitUpProb     REAL,              -- 预测次日封涨停概率 %
   expectedRetHigh REAL,              -- 预期次日早盘最高涨幅 %
   expectedRetOpen REAL,              -- 预期次日开盘卖出收益 %
-  suggestedBuyTime  INTEGER,         -- 建议买入时刻 HHMM（14:30~14:55）
-  suggestedSellTime INTEGER,         -- 建议卖出时刻 HHMM（09:30~10:00）
+  suggestedBuyTime  INTEGER,         -- 建议买入时刻 HHMM（当前口径：14:40）
+  suggestedSellTime INTEGER,         -- 建议卖出时刻 HHMM（当前口径：09:31~10:30 窗口内）
   marketTemp      REAL,              -- 决策日全市场温度
   marketRegime    TEXT,              -- 决策日市场环境（strong_trend/range_strong/rotation/recovery/weak）
   sectorHeat      REAL,              -- 所属行业热度分
@@ -1504,15 +1900,18 @@ def do_emit_ddl(path: str = DECISION_DDL_PATH) -> str:
     return path
 
 
-FIELD_DICT_PATH = os.path.join(ROOT, 'docs', '2026-09-21-回测字段字典-250字段.md')
+FIELD_DICT_PATH = os.path.join(ROOT, 'docs', '2026-09-21-回测字段字典-352字段.md')
 
-TABLE_ORDER = ['bt_meta', 'bt_dataset', 'bt_run', 'bt_trade', 'bt_trade_tf',
+TABLE_ORDER = ['bt_meta', 'bt_dataset', 'bt_run', 'bt_reverse_sample',
+               'bt_reverse_feature', 'bt_trade', 'bt_trade_tf',
                'bt_pattern_def', 'bt_market_day', 'bt_sector_day',
                'bt_concept_map', 'bt_trade_context', 'bt_stat', 'bt_time_grid',
                'bt_time_marginal', 'bt_rule', 'bt_feature_def']
 
 TABLE_CN = {
     'bt_meta': '库元信息', 'bt_dataset': '数据集覆盖', 'bt_run': '回测批次',
+    'bt_reverse_sample': '14:40 反推逐笔原始采样（无形态，95 列）',
+    'bt_reverse_feature': '反推模型入模特征（58 条）',
     'bt_trade': '逐笔明细（含尾盘特征与次日结果）',
     'bt_trade_tf': '逐笔多周期形态快照（5/15/30/60 分钟）',
     'bt_pattern_def': '形态字典', 'bt_market_day': '每日全市场温度',
@@ -1524,7 +1923,10 @@ TABLE_CN = {
 
 
 def do_emit_field_dict(conn: sqlite3.Connection, path: str = FIELD_DICT_PATH) -> str:
-    """把 bt_feature_def 的 250 条字段登记渲染成中文 Markdown 字典。"""
+    """把 bt_feature_def 的字段登记渲染成中文 Markdown 字典。"""
+    if not table_exists(conn, 'bt_feature_def'):
+        log('bt_feature_def 不存在，请先执行 --init')
+        return path
     rows = conn.execute(
         'SELECT tableName, columnName, nameCn, meaning, unit, valueScope, source, '
         'calcRule, isFeature FROM bt_feature_def').fetchall()
@@ -1534,7 +1936,7 @@ def do_emit_field_dict(conn: sqlite3.Connection, path: str = FIELD_DICT_PATH) ->
     order = [t for t in TABLE_ORDER if t in by_table]
     order += [t for t in by_table if t not in order]
 
-    lines = ['# 智诊盯盘 · 尾盘买入回测库字段字典（250 字段中文注释）', '',
+    lines = [f'# 智诊盯盘 · 尾盘买入回测库字段字典（{len(rows)} 字段中文注释）', '',
              '由 `python tools/backtest_store.py --emit-field-dict` 从 `bt_feature_def` '
              '自动渲染，字段与表结构一一对应。',
              '', f'共 {len(rows)} 个字段登记，覆盖 {len(order)} 张表。', '']
@@ -1571,20 +1973,25 @@ def main(argv=None) -> int:
     ap.add_argument('--import-tf', action='store_true',
                     help='导入多周期（5/15/30/60 分钟）形态批次的统计结果')
     ap.add_argument('--import-market', action='store_true', help='扫描并导入市场/板块温度')
+    ap.add_argument('--import-reverse', action='store_true',
+                    help='导入第三套策略：14:40 分时反推批次（当前唯一在库批次）')
+    ap.add_argument('--purge-legacy', action='store_true',
+                    help='清出旧口径回测结果（保留市场/板块温度与数据集字典），随后 VACUUM')
     ap.add_argument('--link', action='store_true', help='把温度回填到 bt_trade 并重建上下文')
     ap.add_argument('--verify', action='store_true', help='关键数字一致性核对')
     ap.add_argument('--max-stocks', type=int, default=None, help='扫描日线时只取前 N 只（冒烟）')
     ap.add_argument('--emit-decision-ddl', nargs='?', const=DECISION_DDL_PATH, default=None,
                     metavar='PATH', help='输出 bt_decision 建表 DDL')
     ap.add_argument('--emit-field-dict', nargs='?', const=FIELD_DICT_PATH, default=None,
-                    metavar='PATH', help='输出 250 字段中文名字典（Markdown）')
+                    metavar='PATH', help='输出字段中文名字典（Markdown）')
     args = ap.parse_args(argv)
 
     if args.emit_decision_ddl:
         do_emit_ddl(args.emit_decision_ddl)
         if not any([args.init, args.check, args.import_daily, args.import_minute,
                     args.import_grid, args.import_tf, args.import_market, args.link,
-                    args.verify, args.emit_field_dict, args.import_daily_stats]):
+                    args.verify, args.emit_field_dict, args.import_daily_stats,
+                    args.import_reverse, args.purge_legacy]):
             return 0
 
     conn = connect(args.db)
@@ -1594,6 +2001,8 @@ def main(argv=None) -> int:
             do_init(conn)
             for k, v in table_counts(conn).items():
                 print(f'  {k:<20} {v:>8}')
+        if args.purge_legacy:
+            do_purge_legacy(conn)
         if args.check:
             issues = check_schema(conn)
             if issues:
@@ -1602,8 +2011,9 @@ def main(argv=None) -> int:
                     print('  -', i)
             else:
                 print('== 结构检查：0 个问题（字段字典与表结构完全一致）')
-            fdict = int(conn.execute('SELECT COUNT(*) FROM bt_feature_def').fetchone()[0])
-            print(f'   bt_feature_def 共 {fdict} 个字段登记')
+            if table_exists(conn, 'bt_feature_def'):
+                fdict = int(conn.execute('SELECT COUNT(*) FROM bt_feature_def').fetchone()[0])
+                print(f'   bt_feature_def 共 {fdict} 个字段登记')
         if args.import_daily:
             do_import_daily(conn)
         if args.import_daily_stats:
@@ -1616,6 +2026,8 @@ def main(argv=None) -> int:
             do_import_tf(conn)
         if args.import_market:
             do_import_market(conn, max_stocks=args.max_stocks)
+        if args.import_reverse:
+            do_import_reverse(conn)
         if args.link:
             link_context(conn)
         if args.emit_field_dict:

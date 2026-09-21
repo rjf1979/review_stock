@@ -18,6 +18,28 @@ function dbFile() {
     : path.join(DATA_DIR, 'backtest.db');
 }
 
+// 第三套策略（T 日 14:40 买入 → T+1 09:31~10:30）的反推模型文件：
+// 维度中文名从这里派生，避免前后端各写一份翻译。
+function reverseModelFile() {
+  return path.join(DATA_DIR, 'backtest', 'minute-reverse', 'reverse_model.json');
+}
+
+// 反推批次 bt_stat.dimension → 中文名（固定维度 + rev_<因子> 动态维度）。
+const REVERSE_DIM_CN = {
+  overall: '全样本基准', month: '自然月', board: '上市板', market_regime: '市场环境',
+  industry: '行业', decile: '预测概率十分位（样本内）', decile_loo: '预测概率十分位（留一月样本外）',
+  topk: '每日 Top-K（样本内）', topk_loo: '每日 Top-K（留一月样本外）', model_month: '模型逐月校准',
+};
+
+function reverseDimCn() {
+  const out = { ...REVERSE_DIM_CN };
+  try {
+    const raw = JSON.parse(fs.readFileSync(reverseModelFile(), 'utf8'));
+    for (const b of raw.bucketScan || []) out[`rev_${b.key}`] = `单因子 · ${b.cn || b.key}`;
+  } catch { /* 模型文件缺失时只给固定维度中文名 */ }
+  return out;
+}
+
 let SQL = null;
 let initPromise = null;
 let handle = null;          // { db, mtimeMs, size }
@@ -81,17 +103,22 @@ async function summary() {
   if (!db) return { ok: false, available: false, error: '未找到回测库 data/backtest.db', dbFile: dbFile() };
   const present = tables(db);
   const counts = {};
-  for (const name of ['bt_trade', 'bt_trade_tf', 'bt_stat', 'bt_pattern_def', 'bt_feature_def', 'bt_time_grid', 'bt_market_day', 'bt_sector_day']) {
+  for (const name of ['bt_reverse_sample', 'bt_reverse_feature', 'bt_trade', 'bt_trade_tf', 'bt_stat', 'bt_pattern_def', 'bt_feature_def', 'bt_time_grid', 'bt_market_day', 'bt_sector_day']) {
     if (!present.includes(name)) continue;
     const res = db.exec(`SELECT COUNT(*) FROM ${name}`);
     counts[name] = res.length && res[0].values.length ? Number(res[0].values[0][0]) : 0;
   }
+  const hasReverse = present.includes('bt_reverse_sample');
   return {
     ok: true,
     available: true,
     dbFile: dbFile(),
     tables: present,
     counts,
+    // 反推批次（第三套策略）在库标志：界面据此切换口径文案与维度中文名。
+    reverse: hasReverse
+      ? { available: true, modelFile: reverseModelFile(), dimCn: reverseDimCn() }
+      : { available: false, dimCn: {} },
     meta: present.includes('bt_meta') ? Object.fromEntries(rows(db, 'SELECT key, value FROM bt_meta').map((r) => [String(r.key), String(r.value)])) : {},
     runs: present.includes('bt_run')
       ? rows(db, 'SELECT runId, runKey, createdAt, engineVersion, buyTime, sellTimeStart, sellTimeEnd, universeFilter, tradeCount, note FROM bt_run ORDER BY runId')
@@ -99,7 +126,7 @@ async function summary() {
   };
 }
 
-// 字段字典（250 条）：中文名、口径、单位、来源，供界面直接显示，避免前后端各写一份翻译。
+// 字段字典（352 条）：中文名、口径、单位、来源，供界面直接显示，避免前后端各写一份翻译。
 async function featureDict({ tableName = null } = {}) {
   const db = await open();
   if (!db) return [];

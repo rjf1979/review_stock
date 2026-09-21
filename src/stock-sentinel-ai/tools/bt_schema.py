@@ -20,7 +20,7 @@ ROOT = os.path.normpath(os.path.join(HERE, '..'))
 DEFAULT_DB = os.path.join(ROOT, 'data', 'backtest.db')
 KLINE_DB = os.path.join(ROOT, 'data', 'kline.db')
 
-SCHEMA_VERSION = 'bt-schema-v2'
+SCHEMA_VERSION = 'bt-schema-v3'
 GENERATOR = 'tools/backtest_store.py'
 
 
@@ -350,6 +350,119 @@ CREATE TABLE IF NOT EXISTS bt_feature_def (
   PRIMARY KEY (tableName, columnName)
 );
 
+-- =====================================================================
+-- 第三套策略批次：T 日 14:40 分时反推 → T+1 09:31~10:30 最高涨幅 ≥3%
+-- 数据源 data/backtest/minute-reverse/samples.csv（95 列，原样落库）
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS bt_reverse_sample (
+  code             TEXT NOT NULL,  -- 股票代码（6 位）
+  name             TEXT,           -- 股票名称（通达信，当前名称回看历史）
+  date             INTEGER NOT NULL, -- 买入日 T（YYYYMMDD）
+  nextDate         INTEGER,        -- 次日 T+1（YYYYMMDD）
+  board            TEXT,           -- 上市板（沪主板/深主板/中小板/创业板）
+  industry         TEXT,           -- 通达信行业名称
+  entry1440        REAL,           -- T 日 14:40 一分钟收盘价（不复权，买入价）
+  tCloseRaw        REAL,           -- T 日不复权收盘价（用于涨跌停价计算）
+  dPctPrev         REAL,           -- 前一日（T-1）涨跌幅 %
+  dAmpPrev         REAL,           -- 前一日（T-1）振幅 %
+  dRet5            REAL,           -- 截至 T-1 的近 5 日收益 %
+  dRet20           REAL,           -- 截至 T-1 的近 20 日收益 %
+  dRet60           REAL,           -- 截至 T-1 的近 60 日收益 %
+  dRsi14           REAL,           -- T-1 日线 RSI14
+  dAtrPct          REAL,           -- T-1 日线 ATR14 ÷ 收盘 %
+  dBias5           REAL,           -- T-1 收盘相对 5 日均线乖离 %
+  dBias10          REAL,           -- T-1 收盘相对 10 日均线乖离 %
+  dBias20          REAL,           -- T-1 收盘相对 20 日均线乖离 %
+  dBias60          REAL,           -- T-1 收盘相对 60 日均线乖离 %
+  dBias120         REAL,           -- T-1 收盘相对 120 日均线乖离 %
+  dDistHh20        REAL,           -- T-1 收盘距 20 日新高 %
+  dListDays        INTEGER,        -- 上市交易日数（按 T 日计）
+  dFloatMcapYi     REAL,           -- 流通市值（亿元，按 14:40 价重算）
+  dBoard           TEXT,           -- 上市板（分类特征，与 board 同值）
+  marketTemp       REAL,           -- T-1 全市场温度 0~1
+  marketUpRatio    REAL,           -- T-1 全市场上涨家数占比 %
+  marketLimitUpCnt INTEGER,        -- T-1 全市场涨停家数
+  marketRegime     TEXT,           -- T-1 市场环境分类
+  sectorPct        REAL,           -- T-1 所属行业指数涨跌幅 %
+  sectorRet5       REAL,           -- T-1 所属行业近 5 日收益 %
+  sectorRet20      REAL,           -- T-1 所属行业近 20 日收益 %
+  sectorHeat       REAL,           -- T-1 所属行业热度分 0~100
+  sectorUpRatio    REAL,           -- T-1 所属行业成分上涨占比 %
+  sectorLimitUpCnt INTEGER,        -- T-1 所属行业成分涨停家数
+  mRet10           REAL,           -- 尾盘 14:30→14:40 涨幅 %
+  mRet5            REAL,           -- 尾盘 14:35→14:40 涨幅 %
+  mRet30           REAL,           -- 尾盘 14:10→14:40 涨幅 %
+  mRet60           REAL,           -- 尾盘 13:40→14:40 涨幅 %
+  mAccel10         REAL,           -- 尾盘动量加速度（最近 10 分钟 - 前 10 分钟）%
+  mTailAmtShare10  REAL,           -- 14:31~14:40 成交额占全段比例
+  mTailAmtShare30  REAL,           -- 14:11~14:40 成交额占全段比例
+  mTailAmtTempo    REAL,           -- 尾盘 10 分钟量能 ÷ 13:31~14:30 分钟均额（倍）
+  mLastMinAmtShare REAL,           -- 14:40 当分钟成交额占全段比例
+  mTailMaxDrop     REAL,           -- 14:11~14:40 自最高点起最大回撤 %
+  mTailRangePos    REAL,           -- 14:40 价在尾盘 30 分钟区间的相对位置 0~1
+  mTailVwapDev     REAL,           -- 14:40 价相对 14:01~14:40 VWAP 偏离 %
+  mTailUpMinShare  REAL,           -- 14:01~14:40 上涨分钟占比 0~1
+  mRetClose1440    REAL,           -- 14:40 价相对 T-1 不复权收盘涨幅 %（尾盘买入时的当日涨幅）
+  mRetOpen1440     REAL,           -- 14:40 价相对 T 日开盘涨幅 %
+  mGapPct          REAL,           -- T 日开盘缺口 %（开盘价相对 T-1 收盘）
+  mAmp1440         REAL,           -- 截至 14:40 日内振幅 %（最高-最低）/T-1 收盘
+  mClosePos1440    REAL,           -- 截至 14:40 收盘价在当日区间位置 0~1
+  mVwapDev1440     REAL,           -- 14:40 价相对当日 VWAP 偏离 %
+  mVwapSlope20     REAL,           -- 14:21~14:40 VWAP 相对 14:20 前 VWAP 偏离 %
+  mHiTimeRank      REAL,           -- 当日最高点出现时间的位置 0~1（0=开盘，1=14:40）
+  mFirstHourRet    REAL,           -- T 日 09:31~10:30 涨幅 %
+  mNoonRet         REAL,           -- T 日 11:30→14:40 涨幅 %
+  mPmRet           REAL,           -- T 日 13:01→14:40 涨幅 %
+  mVolPct1440      REAL,           -- 分时波动率（分钟收益标准差）%
+  mUpMinShare      REAL,           -- 当日上涨分钟占比 0~1
+  mUpDownVolRatio  REAL,           -- 上涨分钟成交量 ÷ 下跌分钟成交量
+  mAmtRatio2ndHalf REAL,           -- 13:00~14:40 成交额占全段比例
+  mTurnover1440    REAL,           -- 截至 14:40 换手率 %（成交量 ÷ T 日时点流通股本）
+  mAmountWan1440   REAL,           -- 截至 14:40 成交额（万元）
+  mVolRatio1440    REAL,           -- 截至 14:40 量比（当日同期额 ÷ 前 5 日同刻均额）
+  hi1000Pct        REAL,           -- T+1 09:31~10:00 最高涨幅 %
+  hi1000Time       INTEGER,        -- T+1 09:31~10:00 最高点时刻 HHMM
+  hi1030Pct        REAL,           -- T+1 09:31~10:30 最高涨幅 %（本批次标签）
+  hi1030Time       INTEGER,        -- T+1 09:31~10:30 最高点时刻 HHMM
+  hi1130Pct        REAL,           -- T+1 09:31~11:30 最高涨幅 %
+  hi1130Time       INTEGER,        -- T+1 09:31~11:30 最高点时刻 HHMM
+  openPct          REAL,           -- T+1 开盘涨幅 %
+  c1000Pct         REAL,           -- T+1 10:00 价涨幅 %
+  c1030Pct         REAL,           -- T+1 10:30 价涨幅 %
+  hiDayPct         REAL,           -- T+1 全天最高涨幅 %
+  limitTouch1030   INTEGER,        -- T+1 09:31~10:30 是否触涨停（0/1）
+  limitTouchDay    INTEGER,        -- T+1 全天是否触涨停（0/1）
+  hit1             INTEGER,        -- 标签：T+1 早盘最高 ≥+1%（0/1）
+  hit1000_1        INTEGER,        -- 对照：T+1 09:31~10:00 最高 ≥+1%（0/1）
+  hit2             INTEGER,        -- 标签：≥+2%
+  hit1000_2        INTEGER,        -- 对照：09:31~10:00 最高 ≥+2%
+  hit3             INTEGER,        -- 标签：≥+3%（本批次主目标）
+  hit1000_3        INTEGER,        -- 对照：09:31~10:00 最高 ≥+3%
+  hit4             INTEGER,        -- 标签：≥+4%
+  hit1000_4        INTEGER,        -- 对照：09:31~10:00 最高 ≥+4%
+  hit5             INTEGER,        -- 标签：≥+5%
+  hit1000_5        INTEGER,        -- 对照：09:31~10:00 最高 ≥+5%
+  hit6             INTEGER,        -- 标签：≥+6%
+  hit1000_6        INTEGER,        -- 对照：09:31~10:00 最高 ≥+6%
+  hit7             INTEGER,        -- 标签：≥+7%
+  hit1000_7        INTEGER,        -- 对照：09:31~10:00 最高 ≥+7%
+  hit8             INTEGER,        -- 标签：≥+8%
+  hit1000_8        INTEGER,        -- 对照：09:31~10:00 最高 ≥+8%
+  hit9             INTEGER,        -- 标签：≥+9%
+  hit1000_9        INTEGER,        -- 对照：09:31~10:00 最高 ≥+9%
+  PRIMARY KEY (code, date)
+);
+
+CREATE TABLE IF NOT EXISTS bt_reverse_feature (
+  featureKey      TEXT PRIMARY KEY, -- 特征键（= samples.csv 列名）
+  nameCn          TEXT NOT NULL,    -- 中文名
+  unit            TEXT,             -- 单位（% / 倍 / 0~1 / 枚举）
+  kind            TEXT,             -- 类型：num（数值）/ cat（分类）
+  sourceColumn    TEXT,             -- 对应 bt_reverse_sample 的列名
+  inModel         INTEGER,          -- 是否进入 minute-reverse-v1 模型（0/1）
+  note            TEXT              -- 备注（口径与风险）
+);
+
 CREATE INDEX IF NOT EXISTS idx_bt_trade_run_date ON bt_trade (runId, date);
 CREATE INDEX IF NOT EXISTS idx_bt_trade_run_hit3 ON bt_trade (runId, hit3);
 CREATE INDEX IF NOT EXISTS idx_bt_trade_code     ON bt_trade (code, date);
@@ -357,6 +470,8 @@ CREATE INDEX IF NOT EXISTS idx_bt_trade_pattern  ON bt_trade (runId, dayPatternM
 CREATE INDEX IF NOT EXISTS idx_bt_trade_tf_lookup ON bt_trade_tf (period, primaryPattern, date);
 CREATE INDEX IF NOT EXISTS idx_bt_trade_tf_code   ON bt_trade_tf (code, date);
 CREATE INDEX IF NOT EXISTS idx_bt_sector_day_date ON bt_sector_day (date, boardType);
+CREATE INDEX IF NOT EXISTS idx_bt_reverse_hit3    ON bt_reverse_sample (date, hit3);
+CREATE INDEX IF NOT EXISTS idx_bt_reverse_code    ON bt_reverse_sample (code, date);
 """
 
 
@@ -801,6 +916,130 @@ FEATURE_DEFS = [
         '本库生成', '', 0),
     _fd('bt_dataset', 'builtAt', '登记时间', 'ISO 时间', '', '', '本库生成', '', 0),
 ]
+
+# ---- bt_reverse_sample：14:40 分时反推批次的原始采样（与 samples.csv 95 列一一对应）----
+# (列名, 中文名, 单位, 取值范围, 是否模型特征)
+_REVERSE_SAMPLE_DEFS = [
+    ('code', '股票代码', '', '', 0),
+    ('name', '股票名称', '', '', 0),
+    ('date', '买入日T', '', 'YYYYMMDD', 0),
+    ('nextDate', '次日T+1', '', 'YYYYMMDD', 0),
+    ('board', '上市板', '', '枚举', 0),
+    ('industry', '所属行业', '', '枚举', 0),
+    ('entry1440', '14:40买入价', '元', '', 0),
+    ('tCloseRaw', 'T日不复权收盘价', '元', '', 0),
+    ('dPctPrev', '前一日涨幅', '%', '', 1),
+    ('dAmpPrev', '前一日振幅', '%', '', 1),
+    ('dRet5', '前一日近5日收益', '%', '', 1),
+    ('dRet20', '前一日近20日收益', '%', '', 1),
+    ('dRet60', '前一日近60日收益', '%', '', 1),
+    ('dRsi14', '前一日RSI14', '', '0~100', 1),
+    ('dAtrPct', '前一日ATR14波动率', '%', '', 1),
+    ('dBias5', '前一日5日乖离', '%', '', 1),
+    ('dBias10', '前一日10日乖离', '%', '', 1),
+    ('dBias20', '前一日20日乖离', '%', '', 1),
+    ('dBias60', '前一日60日乖离', '%', '', 1),
+    ('dBias120', '前一日120日乖离', '%', '', 1),
+    ('dDistHh20', '前一日距20日新高', '%', '', 1),
+    ('dListDays', '上市天数', '日', '', 1),
+    ('dFloatMcapYi', '流通市值', '亿元', '', 1),
+    ('dBoard', '上市板(分类特征)', '', '枚举', 1),
+    ('marketTemp', '全市场温度', '0~1', 'T-1', 1),
+    ('marketUpRatio', '全市场上涨占比', '%', 'T-1', 1),
+    ('marketLimitUpCnt', '全市场涨停家数', '家', 'T-1', 1),
+    ('marketRegime', '市场环境', '', 'T-1', 1),
+    ('sectorPct', '所属行业涨幅', '%', 'T-1', 1),
+    ('sectorRet5', '所属行业5日收益', '%', 'T-1', 1),
+    ('sectorRet20', '所属行业20日收益', '%', 'T-1', 1),
+    ('sectorHeat', '所属行业热度分', '0~100', 'T-1', 1),
+    ('sectorUpRatio', '所属行业上涨占比', '%', 'T-1', 1),
+    ('sectorLimitUpCnt', '所属行业涨停家数', '家', 'T-1', 1),
+    ('mRet10', '尾盘14:30→14:40涨幅', '%', '', 1),
+    ('mRet5', '尾盘14:35→14:40涨幅', '%', '', 1),
+    ('mRet30', '尾盘14:10→14:40涨幅', '%', '', 1),
+    ('mRet60', '尾盘13:40→14:40涨幅', '%', '', 1),
+    ('mAccel10', '尾盘动量加速度', '%', '', 1),
+    ('mTailAmtShare10', '尾盘10分钟成交额占比', '', '0~1', 1),
+    ('mTailAmtShare30', '尾盘30分钟成交额占比', '', '0~1', 1),
+    ('mTailAmtTempo', '尾盘10分钟量能倍数', '倍', '', 1),
+    ('mLastMinAmtShare', '14:40当分钟成交额占比', '', '0~1', 1),
+    ('mTailMaxDrop', '尾盘30分钟最大回撤', '%', '', 1),
+    ('mTailRangePos', '尾盘区间位置', '0~1', '', 1),
+    ('mTailVwapDev', '相对尾盘均价偏离', '%', '', 1),
+    ('mTailUpMinShare', '尾盘上涨分钟占比', '0~1', '', 1),
+    ('mRetClose1440', '14:40相对昨收涨幅', '%', '', 1),
+    ('mRetOpen1440', '14:40相对今开涨幅', '%', '', 1),
+    ('mGapPct', '今日开盘缺口', '%', '', 1),
+    ('mAmp1440', '截至14:40日内振幅', '%', '', 1),
+    ('mClosePos1440', '截至14:40日内位置', '0~1', '', 1),
+    ('mVwapDev1440', '相对当日均价偏离', '%', '', 1),
+    ('mVwapSlope20', '尾盘20分钟均价斜率', '%', '', 1),
+    ('mHiTimeRank', '当日最高点时间位置', '0~1', '', 1),
+    ('mFirstHourRet', '上午前60分钟涨幅', '%', '', 1),
+    ('mNoonRet', '11:30→14:40涨幅', '%', '', 1),
+    ('mPmRet', '下午13:01→14:40涨幅', '%', '', 1),
+    ('mVolPct1440', '分时波动率', '%', '', 1),
+    ('mUpMinShare', '当日上涨分钟占比', '0~1', '', 1),
+    ('mUpDownVolRatio', '上涨/下跌分钟量比', '', '', 1),
+    ('mAmtRatio2ndHalf', '后半段成交额占比', '', '0~1', 1),
+    ('mTurnover1440', '截至14:40换手率', '%', '', 1),
+    ('mAmountWan1440', '截至14:40成交额', '万元', '', 1),
+    ('mVolRatio1440', '截至14:40量比', '', '', 1),
+    ('hi1000Pct', 'T+1 09:31~10:00最高涨幅', '%', '对照窗口', 0),
+    ('hi1000Time', 'T+1最高点时刻(1000窗口)', 'HHMM', '', 0),
+    ('hi1030Pct', 'T+1 09:31~10:30最高涨幅', '%', '本批次标签', 1),
+    ('hi1030Time', 'T+1最高点时刻(1030窗口)', 'HHMM', '', 0),
+    ('hi1130Pct', 'T+1 09:31~11:30最高涨幅', '%', '对照窗口', 0),
+    ('hi1130Time', 'T+1最高点时刻(1130窗口)', 'HHMM', '', 0),
+    ('openPct', 'T+1开盘涨幅', '%', '', 1),
+    ('c1000Pct', 'T+1 10:00价涨幅', '%', '', 1),
+    ('c1030Pct', 'T+1 10:30价涨幅', '%', '', 1),
+    ('hiDayPct', 'T+1全天最高涨幅', '%', '对照口径', 0),
+    ('limitTouch1030', 'T+1早盘是否触涨停', '0/1', '', 1),
+    ('limitTouchDay', 'T+1全天是否触涨停', '0/1', '对照口径', 0),
+    ('hit1', '标签:T+1早盘最高≥+1%', '0/1', '标签', 0),
+    ('hit1000_1', '对照:10:00前最高≥+1%', '0/1', '对照标签', 0),
+    ('hit2', '标签:T+1早盘最高≥+2%', '0/1', '标签', 0),
+    ('hit1000_2', '对照:10:00前最高≥+2%', '0/1', '对照标签', 0),
+    ('hit3', '标签:T+1早盘最高≥+3%', '0/1', '主标签', 0),
+    ('hit1000_3', '对照:10:00前最高≥+3%', '0/1', '对照标签', 0),
+    ('hit4', '标签:T+1早盘最高≥+4%', '0/1', '标签', 0),
+    ('hit1000_4', '对照:10:00前最高≥+4%', '0/1', '对照标签', 0),
+    ('hit5', '标签:T+1早盘最高≥+5%', '0/1', '标签', 0),
+    ('hit1000_5', '对照:10:00前最高≥+5%', '0/1', '对照标签', 0),
+    ('hit6', '标签:T+1早盘最高≥+6%', '0/1', '标签', 0),
+    ('hit1000_6', '对照:10:00前最高≥+6%', '0/1', '对照标签', 0),
+    ('hit7', '标签:T+1早盘最高≥+7%', '0/1', '标签', 0),
+    ('hit1000_7', '对照:10:00前最高≥+7%', '0/1', '对照标签', 0),
+    ('hit8', '标签:T+1早盘最高≥+8%', '0/1', '标签', 0),
+    ('hit1000_8', '对照:10:00前最高≥+8%', '0/1', '对照标签', 0),
+    ('hit9', '标签:T+1早盘最高≥+9%', '0/1', '标签', 0),
+    ('hit1000_9', '对照:10:00前最高≥+9%', '0/1', '对照标签', 0),
+]
+assert len(_REVERSE_SAMPLE_DEFS) == 95, len(_REVERSE_SAMPLE_DEFS)
+
+FEATURE_DEFS += [
+    _fd('bt_reverse_sample', col, cn, f'14:40 分时反推批次原始采样｜{cn}', unit, scope,
+        'data/backtest/minute-reverse/samples.csv（tools/minute_reverse_backtest.py）',
+        '' if feat == 0 else 'T 日 ≤14:40 分时 + T-1 日线/市场/板块；无形态字段', feat)
+    for col, cn, unit, scope, feat in _REVERSE_SAMPLE_DEFS
+]
+
+# ---- bt_reverse_feature：minute-reverse-v1 模型特征登记 ----
+_REVERSE_MODEL_DEFS = [
+    _fd('bt_reverse_feature', 'featureKey', '特征键', '与 samples.csv 列名一致', '',
+        '', 'minute-reverse-v1', '', 0),
+    _fd('bt_reverse_feature', 'nameCn', '特征中文名', '', '', '', 'minute-reverse-v1', '', 0),
+    _fd('bt_reverse_feature', 'unit', '单位', '', '', '枚举', 'minute-reverse-v1', '', 0),
+    _fd('bt_reverse_feature', 'kind', '特征类型', '数值型/分类型', '', 'num/cat',
+        'minute-reverse-v1', '', 0),
+    _fd('bt_reverse_feature', 'sourceColumn', '来源列', '对应 bt_reverse_sample 列名', '',
+        '', '本库生成', '', 0),
+    _fd('bt_reverse_feature', 'inModel', '是否入模', '是否进入 minute-reverse-v1 模型', '0/1',
+        '0/1', '本库生成', '', 0),
+    _fd('bt_reverse_feature', 'note', '备注', '口径与风险说明', '', '', '本库生成', '', 0),
+]
+FEATURE_DEFS += _REVERSE_MODEL_DEFS
 
 
 def feature_rows():

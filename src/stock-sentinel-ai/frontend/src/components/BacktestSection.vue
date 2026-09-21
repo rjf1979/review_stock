@@ -19,8 +19,9 @@
             <div class="panel-title">
               <h2>回测证据层</h2>
               <p class="summary">
-                口径：尾盘 14:30~14:55 买入、次日 09:30~10:00 卖出；股票池 {{ universeText }}。
+                口径：{{ legText }}；股票池 {{ universeText }}。
                 数据由 Python 侧写入 data/backtest.db 与 decision_model.json，本页只读，不下单。
+                当前回测库已按 14:40 分时反推口径重建，旧的 14:30~14:55 口径明细与网格不再在库。
               </p>
             </div>
             <div class="backtest-actions">
@@ -350,7 +351,7 @@
         <section class="panel" aria-label="模型时点建议">
           <div class="panel-head">
             <div class="panel-title">
-              <h2>时点建议（14:30~14:55 买 / 09:30~10:00 卖）</h2>
+              <h2>时点建议（第二套概率模型：14:30~14:55 买 / 09:30~10:00 卖）</h2>
               <p class="summary">基于 {{ timing.months || '—' }} 个月、{{ fmtCount(timing.poolN) }} 笔的分钟级网格；判定「月度稳健」要求每个月的均值都优于基线。</p>
             </div>
           </div>
@@ -380,7 +381,10 @@
               </p>
             </div>
           </div>
-          <div v-if="!backtest.grid.length" class="status empty" role="status" aria-live="polite">回测库暂无时点网格（data/backtest.db 的 bt_time_grid）。</div>
+          <div v-if="!backtest.grid.length" class="status empty" role="status" aria-live="polite">
+            回测库暂无时点网格：旧的 14:30~14:55 网格已按新口径清出，当前在库批次为
+            {{ legText }}（bt_reverse_sample / bt_stat），未重新计算买卖时点网格。
+          </div>
           <template v-else>
             <div class="chips backtest-buy-chips" role="group" aria-label="买入时刻选择">
               <button
@@ -572,7 +576,7 @@ const { mode } = storeToRefs(appStore);
 const bt = useBacktestStore();
 const {
   backtest, runs, counts, dimensions, statRows, targets, deciles, topk, coefs, riskNotes,
-  gridBuys, gridSells, gridTop,
+  gridBuys, gridSells, gridTop, legText,
 } = storeToRefs(bt);
 const { load, loadDecisions, switchTab, selectRun, selectDimension, selectGridBuy, selectTarget, setStatSort, dimLabel, fmtMinute } = bt;
 
@@ -584,6 +588,7 @@ const universeText = computed(() => (activeRun.value && activeRun.value.universe
   || (model.value && model.value.notes && model.value.notes.length ? '见模型说明' : '个股（剔除银行/退市/B股/ST/科创板/北交所）'));
 
 const COUNT_CN = {
+  bt_reverse_sample: '反推逐笔采样', bt_reverse_feature: '反推入模特征',
   bt_trade: '逐笔明细（日线）', bt_trade_tf: '逐笔明细（分钟）', bt_stat: '分档统计',
   bt_pattern_def: '形态字典', bt_feature_def: '字段字典', bt_time_grid: '时点组合',
   bt_market_day: '市场日', bt_sector_day: '行业日',

@@ -87,9 +87,21 @@ export const useBacktestStore = defineStore('backtest', () => {
 
   const runs = computed(() => (backtest.summary && backtest.summary.runs) || []);
   const counts = computed(() => (backtest.summary && backtest.summary.counts) || {});
+  // 反推批次（第三套策略）派生出的维度中文名；缺省回退到静态 DIM_CN，再回退原始键。
+  const dimCn = computed(() => ({
+    ...DIM_CN,
+    ...((backtest.summary && backtest.summary.reverse && backtest.summary.reverse.dimCn) || {}),
+  }));
+  // 批次口径：当前在库批次为 14:40 分时反推，界面文案随之切换。
+  const legText = computed(() => {
+    const rev = backtest.summary && backtest.summary.reverse;
+    return rev && rev.available
+      ? 'T 日 14:40 买入 → T+1 09:31~10:30 窗口'
+      : '尾盘 14:30~14:55 买入 → 次日 09:30~10:00 卖出';
+  });
   const dimensions = computed(() => (backtest.dimensions || [])
     .filter((d) => Number(d.runId) === Number(backtest.runId))
-    .map((d) => ({ ...d, cn: DIM_CN[d.dimension] || d.dimension })));
+    .map((d) => ({ ...d, cn: dimCn.value[d.dimension] || d.dimension })));
   const statRows = computed(() => {
     const dim = backtest.statDimension;
     const rows = (backtest.stats || []).filter((r) => !dim || r.dimension === dim);
@@ -143,7 +155,7 @@ export const useBacktestStore = defineStore('backtest', () => {
     .slice(0, 8)
     .map((r) => ({ ...r, buy: fmtBacktestMinute(r.buyMinute), sell: fmtBacktestMinute(r.sellMinute) })));
 
-  function dimLabel(dim) { return DIM_CN[dim] || dim || '—'; }
+  function dimLabel(dim) { return dimCn.value[dim] || dim || '—'; }
 
   async function loadStats() {
     if (backtest.runId === null || backtest.runId === undefined) return;
@@ -196,8 +208,11 @@ export const useBacktestStore = defineStore('backtest', () => {
       else { backtest.model = null; backtest.modelError = (modelRes && modelRes.error) || '概率模型不可用'; }
       backtest.grid = (gridRes && gridRes.grid) || [];
       if (backtest.runId === null || !runs.value.some((r) => Number(r.runId) === Number(backtest.runId))) {
-        const daily = runs.value.find((r) => String(r.runKey || '').startsWith('daily-')) || runs.value[0];
-        backtest.runId = daily ? daily.runId : null;
+        // 优先当前在库批次（反推），其次旧的日线批次，最后取第一条。
+        const preferredRun = runs.value.find((r) => String(r.runKey || '').startsWith('reverse-'))
+          || runs.value.find((r) => String(r.runKey || '').startsWith('daily-'))
+          || runs.value[0];
+        backtest.runId = preferredRun ? preferredRun.runId : null;
       }
       const timing = backtest.model && backtest.model.timing;
       const preferredBuy = (timing && timing.insampleBest && timing.insampleBest.buy) || '14:30';
@@ -245,7 +260,7 @@ export const useBacktestStore = defineStore('backtest', () => {
   }
 
   return {
-    backtest, runs, counts, dimensions, statRows, targets, deciles, topk, coefs, riskNotes,
+    backtest, runs, counts, dimensions, dimCn, legText, statRows, targets, deciles, topk, coefs, riskNotes,
     gridBuys, gridSells, gridTop,
     load, loadStats, loadDecisions, switchTab, selectRun, selectDimension, selectGridBuy,
     selectTarget, setStatSort, dimLabel, fmtMinute: fmtBacktestMinute,
