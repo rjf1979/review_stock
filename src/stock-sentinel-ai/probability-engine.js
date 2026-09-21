@@ -1,4 +1,4 @@
-// 智诊盯盘 · 次日上涨概率（决策模型 v1）Node 侧桥接。
+// 智诊盯盘 · 次日上涨概率（决策模型 v2）Node 侧桥接。
 //
 // 职责边界：
 //   * Python（tools/score_candidates.py）负责把 T 日尾盘个股特征按回测口径组装成 31 维输入并打分，
@@ -23,7 +23,7 @@ const SCORE_TIMEOUT_MS = 10 * 60 * 1000;
 // 收盘口径的当日打分不会随时间改善；超过该时长仍允许复用，只有换日或显式 force 才重算。
 const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
-// 无 regime 分档统计时的兜底基准：模型样本基准（decision_model.json 的 baseSampleHit3Pct）。
+// 模型文件缺失/损坏时的最后兜底基准；正常路径读 decision_model.json 的 regimeBases / baseSampleHit3Pct。
 const FALLBACK_BASE_HIT3 = 21.31;
 
 let memCache = { date: '', key: '', data: null, at: 0 };
@@ -53,19 +53,23 @@ function normalizeCode(value) {
 // ── 基准命中率 ─────────────────────────────────────────────
 // 实盘必须带基准锚定：模型是 2% 抽样训练（基准 21.31%），不同市场环境的
 // 真实基准在 17.97%~23.09% 之间，不锚定会系统性高估「弱市」、低估「强市」。
+// 基准随模型文件一起固化（decision_model.json → regimeBases.buckets），不查 bt_stat：
+// 库里同时存在多个批次时，按 dimension 取行会拿到别的批次（例如 69 日分时反推批）的分档，
+// 于是界面显示的基准和真正算概率用的基准会不一致。模型文件是唯一权威来源。
 let regimeBaseCache = { at: 0, map: null };
 
 async function regimeBaseMap() {
   if (regimeBaseCache.map && Date.now() - regimeBaseCache.at < 10 * 60 * 1000) return regimeBaseCache.map;
   const map = new Map();
   try {
-    const rows = await backtestStore.statRows({ dimension: 'market_regime' });
-    for (const row of rows || []) {
-      const bucket = String(row.bucket || row.statBucket || '');
-      const hit3 = Number(row.hit3Pct);
+    const got = await backtestStore.decisionModel();
+    const buckets = (got && got.model && got.model.regimeBases
+      && got.model.regimeBases.buckets) || {};
+    for (const bucket of Object.keys(buckets)) {
+      const hit3 = Number(buckets[bucket] && buckets[bucket].up3);
       if (bucket && Number.isFinite(hit3)) map.set(bucket, hit3);
     }
-  } catch { /* 统计不可用时退回模型基准 */ }
+  } catch { /* 模型不可用时退回模型基准 / 常量 */ }
   regimeBaseCache = { at: Date.now(), map };
   return map;
 }
@@ -73,13 +77,30 @@ async function regimeBaseMap() {
 async function baseHit3For(regime) {
   const map = await regimeBaseMap();
   const hit = map.get(String(regime || ''));
-  if (Number.isFinite(hit)) return { value: hit, source: 'bt_stat.market_regime' };
+  if (Number.isFinite(hit)) return { value: hit, source: 'model.regimeBases' };
   try {
-    const model = await backtestStore.decisionModel();
-    const v = Number(model && model.model && model.model.baseSampleHit3Pct);
-    if (Number.isFinite(v)) return { value: v, source: 'model.baseSampleHit3Pct' };
+    const got = await backtestStore.decisionModel();
+    const v = Number(got && got.model && got.model.baseSampleHit3Pct);
+    if (Number.isFinite(v) && v > 0) return { value: v, source: 'model.baseSampleHit3Pct' };
   } catch { /* 落到常量兜底 */ }
   return { value: FALLBACK_BASE_HIT3, source: 'fallback' };
+}
+
+// 模型身份：bt_decision 的 runId / runKey 必须指向模型文件的真实批次。
+// 写死 runId=1 会在旧批次被清出后让实盘凭据指错行，跨库追溯时看不到真实来源。
+async function modelIdentity() {
+  try {
+    const got = await backtestStore.decisionModel();
+    const m = (got && got.model) || {};
+    const rid = Number(m.runId);
+    return {
+      runId: Number.isFinite(rid) ? rid : null,
+      runKey: String(m.runKey || ''),
+      version: String(m.version || ''),
+    };
+  } catch {
+    return { runId: null, runKey: '', version: '' };
+  }
 }
 
 // ── 缓存读写 ───────────────────────────────────────────────
@@ -341,6 +362,15 @@ function summaryView(date = '', { top = 20 } = {}) {
     bench: (data && data.bench) || null,
     baseByTarget: (data && data.baseByTarget) || {},
     baseRegime: (data && data.baseRegime) || '',
+    // 基准锚点：v2 起由 Python 写进结果文件（baseHit3）；更早落盘的文件没有这个键，
+    // 用文件里的逐目标基准回填，避免界面/凭据把「基准来源」显示成空。
+    baseHit3: (data && data.baseHit3) || (data && Number.isFinite(Number(data.baseByTarget && data.baseByTarget.up3))
+      ? {
+        value: Number(data.baseByTarget.up3),
+        source: 'score_file.baseByTarget',
+        regime: (data && data.baseRegime) || '',
+      }
+      : null),
     scored: items.length,
     skipped: (data && data.skipped) || [],
     quoteErrors: (data && data.quoteErrors) || [],
@@ -416,7 +446,7 @@ async function attachToItems(items = [], { date = '', regime = '' } = {}) {
 }
 
 // 扫描/入池的候选 → bt_decision 行（实盘凭据）。概率缺失时不写伪值，保留 null 并在 reason 里说明。
-function decisionRows(items = [], { tradeDate = '', runId = 1, runKey = '', regime = '', marketTemp = null, base = null, source = 'scan' } = {}) {
+function decisionRows(items = [], { tradeDate = '', runId = null, runKey = '', regime = '', marketTemp = null, base = null, source = 'scan' } = {}) {
   const rows = [];
   for (const item of items || []) {
     const code = normalizeCode(item.code);
@@ -474,7 +504,7 @@ function buildReason(item, prob = {}, base = null) {
 
 module.exports = {
   TARGETS, scorePath, pythonBin, todayYmd,
-  baseHit3For, regimeBaseMap,
+  baseHit3For, regimeBaseMap, modelIdentity,
   cachedScores, readScoreFile, missingCodes, coveredCodes,
   refresh, refreshInBackground, jobStatus,
   attachToScan, attachToItems, decisionRows, caliberNote,

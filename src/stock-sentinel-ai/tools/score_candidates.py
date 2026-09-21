@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """尾盘选股概率评分：把「T 日尾盘」个股特征组装成决策模型输入并打分。
 
-口径与回测（Decision Model v1 / runId=1）完全对齐，特征顺序、分档、锚定方式
-均复用 ``bt_decision_engine.py``，本脚本只负责**组装 31 个特征**。
+口径与回测（``decision_model.json``，v2 起携带 regimeBases）完全对齐：特征顺序、
+分档、锚定方式均复用 ``bt_decision_engine.py``，本脚本只负责**组装 31 个特征**。
+实盘锚定基准只从模型文件读，不按 runId 去 bt_stat 里取（库中批次可被清出，取错批次会让
+界面显示的基准与真正算概率用的基准不一致）。
 
 两种 T 日口径（写入 JSON 的 ``caliber`` 字段，实盘凭据必须携带）：
 
@@ -506,23 +508,46 @@ TARGET_BASE_COL = {
 }
 
 
-def regime_bases(regime: str, run_id: int = 1) -> dict[str, float]:
-    """取某个市场环境下各目标的历史基准命中率（bt_stat.dimension='market_regime'）。"""
+def regime_bases(regime: str, run_id: int | None = None) -> tuple[dict[str, float], str]:
+    """取某个市场环境下各目标的历史基准命中率（%），返回 (逐目标基准, 来源)。
+
+    权威来源是模型文件里的 ``regimeBases``：它与训练样本同口径、随模型一起发布，
+    不会因为库里批次被清出而失效，也不会串到其它批次的分档上。
+    只有模型文件缺这块（v1 模型）时才回退 ``bt_stat.dimension='market_regime'``，
+    且用模型文件声明的 runId，最后才用调用方给的 run_id。
+    """
     if not regime:
-        return {}
+        return {}, ''
+    regime = str(regime)
+    model: dict = {}
+    try:
+        model = load_model()
+    except (OSError, ValueError):
+        model = {}
+    block = model.get('regimeBases') or {}
+    row = (block.get('buckets') or {}).get(regime)
+    if isinstance(row, dict):
+        out = {t: float(row[t]) for t in TARGET_BASE_COL
+               if isinstance(row.get(t), (int, float))}
+        if out:
+            return out, 'model.regimeBases'
+    rid = block.get('runId') or model.get('runId') or run_id
+    if rid is None:
+        return {}, ''
     conn = sqlite3.connect('file:%s?mode=ro' % BT_DB, uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute(
+        r = conn.execute(
             "SELECT * FROM bt_stat WHERE runId=? AND dimension='market_regime' AND bucket=?",
-            (run_id, regime)).fetchone()
-        if not row:
-            return {}
-        keys = row.keys()
-        return {t: float(row[col]) for t, col in TARGET_BASE_COL.items()
-                if col in keys and row[col] is not None}
+            (int(rid), regime)).fetchone()
+        if not r:
+            return {}, ''
+        keys = r.keys()
+        return ({t: float(r[col]) for t, col in TARGET_BASE_COL.items()
+                 if col in keys and r[col] is not None},
+                'bt_stat.market_regime#runId=%d' % int(rid))
     except sqlite3.Error:
-        return {}
+        return {}, ''
     finally:
         conn.close()
 
@@ -762,11 +787,13 @@ def main() -> int:
     if not args.no_score:
         targets = [t for t in args.targets.split(',') if t]
         base_map: dict[str, float] = {}
+        base_src = ''
         if args.base_regime:
-            base_map = regime_bases(args.base_regime, args.run)
+            base_map, base_src = regime_bases(args.base_regime, args.run)
             if base_map:
-                log('[base] 环境 %s 逐目标基准：%s' % (
+                log('[base] 环境 %s 逐目标基准（%s）：%s' % (
                     args.base_regime,
+                    base_src,
                     ', '.join('%s=%.2f%%' % (t, base_map[t]) for t in targets if t in base_map)))
             else:
                 log('[base] 环境 %s 无分档统计，退回模型基准' % args.base_regime)
@@ -775,6 +802,15 @@ def main() -> int:
         scored = score_targets(out_csv, targets, args.base, BT_DIR, base_map)
         result['baseByTarget'] = {t: (base_map.get(t) or args.base or None) for t in targets}
         result['baseRegime'] = args.base_regime or ''
+        result['baseSource'] = base_src or ('explicit' if args.base else '')
+        # 基准锚点随结果落盘：界面与实盘凭据直接读它，服务重启后仍能追溯
+        # 「这条概率是拿哪个基准算出来的」，不必再去 bt_stat 反查（批次可能已被清出）。
+        anchor = base_map.get('up3') if base_map else args.base
+        result['baseHit3'] = {
+            'value': float(anchor) if isinstance(anchor, (int, float)) else None,
+            'source': result['baseSource'],
+            'regime': result['baseRegime'],
+        }
         for row in rows:
             code = row['code']
             item = {'code': code, 'date': date, 'name': row['name'],

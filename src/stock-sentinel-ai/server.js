@@ -247,10 +247,19 @@ async function recordPoolDecisions(items = []) {
   const regime = String((view.market && view.market.regime) || view.baseRegime || '');
   const marketTemp = view.market && Number.isFinite(Number(view.market.tempScore)) ? Number(view.market.tempScore) : null;
   const enriched = await probabilityEngine.attachToItems(items, { date: tradeDate, regime });
+  // 凭据里的批次必须来自模型文件，不能写死 runId=1：旧批次被清出后写死值会指错来源。
+  const identity = await probabilityEngine.modelIdentity();
   const base = view.available && Number.isFinite(Number(view.baseByTarget && view.baseByTarget.up3))
-    ? { value: Number(view.baseByTarget.up3), source: 'bt_stat.market_regime', regime }
+    ? {
+      value: Number(view.baseByTarget.up3),
+      source: (view.baseHit3 && view.baseHit3.source) || 'model.regimeBases',
+      regime,
+    }
     : null;
-  const rows = probabilityEngine.decisionRows(enriched, { tradeDate, regime, marketTemp, base, source: 'pool' });
+  const rows = probabilityEngine.decisionRows(enriched, {
+    tradeDate, regime, marketTemp, base, source: 'pool',
+    runId: identity.runId, runKey: identity.runKey,
+  });
   if (!rows.length) return { ok: true, saved: 0, rows: 0, note: '入池条目中没有可记录的有效代码' };
   const saved = await saveBtDecisions(rows);
   return {

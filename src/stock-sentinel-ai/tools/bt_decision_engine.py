@@ -53,7 +53,7 @@ MODEL_PATH = os.path.join(BT_DIR, 'decision_model.json')
 GRID_MONTH_CSV = os.path.join(BT_DIR, 'late-buy-time-grid', 'grid_pairs_month.csv')
 DOC_PATH = os.path.join(ROOT, 'docs', '2026-09-21-概率评分引擎与校准报告.md')
 
-MODEL_VERSION = 'decision-model-v1'
+MODEL_VERSION = 'decision-model-v2'
 BINS = 10               # 数值特征分档数（训练集分位数）
 SHRINK_K = 50.0         # 分档命中率的收缩强度（等效先验样本数）
 RIDGE_GRID = (3.0, 10.0, 30.0)
@@ -542,6 +542,36 @@ def recommend_timing() -> dict:
     }
 
 
+def group_hit_stats(df: pd.DataFrame, lab) -> list:
+    """按分档标签聚合各目标命中率（%）与收益统计。
+
+    bt_stat 分档与模型文件的 regimeBases 必须同源，否则界面显示的基准和真正算概率
+    用的基准会不一致，所以两处都走这一个函数。
+    """
+    rows = []
+    for name in sorted(set(lab.tolist())):
+        m = lab == name
+        n = int(m.sum())
+        if n == 0:
+            continue
+        sub = df[m]
+        rows.append({
+            'bucket': name, 'n': n,
+            **{'ge%d_pct' % k: round(100 * float(sub['up%d' % k].mean()), 2)
+               for k in range(1, 10)},
+            'limit_pct': round(100 * float(sub['limitUp'].mean()), 2),
+            'avg_ret_open_pct': round(float(sub['retOpen'].mean()), 3),
+            'avg_ret_high_pct': round(float(sub['retHigh'].mean()), 3),
+            'avg_ret_close_pct': round(float(sub['retClose'].mean()), 3),
+            'avg_strat_ret_pct': round(float(sub['stratRet'].mean()), 3),
+            'win_rate_true_pct': round(100 * float((sub['stratRet'] > 0).mean()), 2),
+            'profit_factor': round(
+                float(sub.loc[sub['stratRet'] > 0, 'stratRet'].sum())
+                / max(float(-sub.loc[sub['stratRet'] < 0, 'stratRet'].sum()), 1e-9), 3),
+        })
+    return rows
+
+
 def write_stat_dims(conn, rid: int, df: pd.DataFrame) -> None:
     """把抽样明细里的换手率 / 温度 / 行业热度等补写进 bt_stat，便于前端按分档展示。"""
     base = 100.0 * float(df['up3'].mean())
@@ -555,33 +585,39 @@ def write_stat_dims(conn, rid: int, df: pd.DataFrame) -> None:
     for dim, col in specs:
         kind = 'cat' if col in ('marketRegime',) else 'num'
         lab, _meta = make_labels(kind, df[col])
-        rows = []
-        for name in sorted(set(lab.tolist())):
-            m = lab == name
-            n = int(m.sum())
-            if n == 0:
-                continue
-            sub = df[m]
-            rows.append({
-                'bucket': name, 'n': n,
-                **{'ge%d_pct' % k: round(100 * float(sub['up%d' % k].mean()), 2)
-                   for k in range(1, 10)},
-                'limit_pct': round(100 * float(sub['limitUp'].mean()), 2),
-                'avg_ret_open_pct': round(float(sub['retOpen'].mean()), 3),
-                'avg_ret_high_pct': round(float(sub['retHigh'].mean()), 3),
-                'avg_ret_close_pct': round(float(sub['retClose'].mean()), 3),
-                'avg_strat_ret_pct': round(float(sub['stratRet'].mean()), 3),
-                'win_rate_true_pct': round(100 * float((sub['stratRet'] > 0).mean()), 2),
-                'profit_factor': round(
-                    float(sub.loc[sub['stratRet'] > 0, 'stratRet'].sum())
-                    / max(float(-sub.loc[sub['stratRet'] < 0, 'stratRet'].sum()), 1e-9), 3),
-            })
+        rows = group_hit_stats(df, lab)
         conn.execute('DELETE FROM bt_stat WHERE runId=? AND dimension=?', (rid, dim))
         conn.executemany(STAT_SQL, [stat_tuple(rid, dim, r, base, note) for r in rows])
         total += len(rows)
         log('  bt_stat[%s] %d 档（基准 %.2f%%）' % (dim, len(rows), base))
     conn.commit()
     log(f'[write] 补写 {total} 行分档统计')
+
+
+def regime_bases_block(df: pd.DataFrame, rid: int, run_key: str) -> dict:
+    """市场环境 → 各目标历史基准（%），随模型文件一起固化。
+
+    实盘锚定必须知道「当日市场环境下 ≥3% 的自然命中率」，而这个值来自训练样本。
+    如果只存在库里的 bt_stat，一旦旧口径批次被清出，锚定就会静默退化成统一基准
+    （或串到别的批次上），所以把它写进 decision_model.json 一起发布。
+    """
+    lab, _meta = make_labels('cat', df['marketRegime'])
+    buckets: dict = {}
+    for r in group_hit_stats(df, lab):
+        item = {'sampleCnt': int(r['n'])}
+        for k in range(1, 10):
+            item['up%d' % k] = r['ge%d_pct' % k]
+        item['limitUp'] = r['limit_pct']
+        buckets[str(r['bucket'])] = item
+    return {
+        'dimension': 'market_regime',
+        'runId': rid, 'runKey': run_key,
+        'sampleN': int(len(df)),
+        'baseSampleHit3Pct': round(100 * float(df['up3'].mean()), 3),
+        'note': '命中率 = 该环境下「次日早盘最高涨幅 ≥ 阈值」占比，limitUp = 触及涨停占比；'
+                '口径与 bt_stat.dimension=market_regime 一致。',
+        'buckets': buckets,
+    }
 
 
 # ------------------------------------------------------------------ 主流程
@@ -680,6 +716,7 @@ def do_fit(args) -> int:
         'baseSampleHit3Pct': round(100 * base_sample, 3),
         'baseFullHit3Pct': DAILY_BASE_HIT3,
         'shrinkK': SHRINK_K, 'bins': BINS, 'lambda': lam_best,
+        'regimeBases': regime_bases_block(df, rid, run_key),
         'features': features_json,
         'targets': artifacts,
         'metrics': metrics,
@@ -694,6 +731,8 @@ def do_fit(args) -> int:
             '实盘锚定：真实基准与训练基准不同时，先算 z，再加 '
             '(logit(baseNow) − logit(baseTrain)) 后再 sigmoid，'
             'baseTrain = targets[].baseHitPct。',
+            '环境锚定：当日市场环境的基准取 regimeBases.buckets[环境].up3，'
+            '未命中该环境时退回 baseSampleHit3Pct；两者都在本文件内，不查库。',
             '分档边界来自训练集分位数（数值特征 10 档），未知分档按 loglift=0 处理。',
             '样本为 2% 随机抽样（基准 21.27%），不是全样本；全样本日线基准 21.15%。',
         ],
@@ -701,6 +740,8 @@ def do_fit(args) -> int:
     with open(MODEL_PATH, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(model, f, ensure_ascii=False, indent=1)
     log(f'[out] {MODEL_PATH}')
+    for _b, _v in sorted(model['regimeBases']['buckets'].items()):
+        log('  [regime] %-14s n=%6d  ≥3%%=%.2f%%' % (_b, _v['sampleCnt'], _v['up3']))
 
     conn.execute('INSERT OR REPLACE INTO bt_meta(key,value,updatedAt) VALUES(?,?,?)',
                  ('decisionModel', json.dumps({
@@ -710,6 +751,8 @@ def do_fit(args) -> int:
                      'brierUp3Loo': round(loo['brierUp3'], 5),
                      'brierUp3LooAnchor': round(loo['brierUp3Anchor'], 5),
                      'baseSampleHit3Pct': round(100 * base_sample, 3),
+                     'regimeBasesHit3Pct': {
+                         k: v['up3'] for k, v in model['regimeBases']['buckets'].items()},
                      'timingStable': timing.get('stableBest'),
                      'timingInsample': timing.get('insampleBest'),
                  }, ensure_ascii=False), now_iso()))
