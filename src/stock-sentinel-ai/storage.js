@@ -243,6 +243,46 @@ async function ensureDb() {
       db.run('INSERT INTO data_stats(statKey,statValue,updatedAt) SELECT statKey,CAST(statValue AS REAL),updatedAt FROM data_stats_legacy');
       db.run('DROP TABLE data_stats_legacy');
     }
+    // 尾盘买入实盘凭据表：DDL 与 tools/backtest_store.py 的 DECISION_DDL 保持同源
+    // （由 tools/backtest_store.py --emit-decision-ddl 生成 data/backtest/bt_decision.sql）。
+    // 回测统计仍在 data/backtest.db，本表只存「每日决策 + 次日回填」，作为可追溯的实盘凭据。
+    db.run(`CREATE TABLE IF NOT EXISTS bt_decision (
+      decisionId      INTEGER PRIMARY KEY AUTOINCREMENT, -- 主键
+      tradeDate       INTEGER NOT NULL,  -- 决策日 T（YYYYMMDD）
+      code            TEXT    NOT NULL,  -- 股票代码
+      name            TEXT,              -- 股票名称
+      runId           INTEGER,           -- 引用的回测批次（backtest.db 的 bt_run.runId）
+      runKey          TEXT,              -- 回测批次键（便于跨库追溯）
+      score           REAL,              -- 综合评分（0~100）
+      up3Prob         REAL,              -- 预测次日早盘最高 ≥+3% 概率 %
+      up5Prob         REAL,              -- 预测次日早盘最高 ≥+5% 概率 %
+      limitUpProb     REAL,              -- 预测次日封涨停概率 %
+      expectedRetHigh REAL,              -- 预期次日早盘最高涨幅 %
+      expectedRetOpen REAL,              -- 预期次日开盘卖出收益 %
+      suggestedBuyTime  INTEGER,         -- 建议买入时刻 HHMM（14:30~14:55）
+      suggestedSellTime INTEGER,         -- 建议卖出时刻 HHMM（09:30~10:00）
+      marketTemp      REAL,              -- 决策日全市场温度
+      marketRegime    TEXT,              -- 决策日市场环境（strong_trend/range_strong/rotation/recovery/weak）
+      sectorHeat      REAL,              -- 所属行业热度分
+      sectorUpRatio   REAL,              -- 所属行业成分上涨占比 %
+      evidenceJson    TEXT,              -- 命中的特征与规则证据（JSON）
+      patternJson     TEXT,              -- 多周期形态快照（JSON）
+      confidence      TEXT,              -- 置信度 high/medium/low
+      source          TEXT,              -- 生成来源（如 backtest-v2）
+      reason          TEXT,              -- 入选理由（中文）
+      createdAt       TEXT NOT NULL,     -- 写入时间
+      actualEntryPrice REAL,             -- 实盘买入价（次日回填）
+      actualHigh       REAL,             -- 次日早盘最高价（次日回填）
+      actualExitPrice  REAL,             -- 实际卖出价（次日回填）
+      actualRetHigh    REAL,             -- 实际早盘最高涨幅 %（次日回填）
+      actualRetExit    REAL,             -- 实际卖出收益 %（次日回填）
+      hit3             INTEGER,          -- 实际是否达到 ≥+3%（0/1，次日回填）
+      settledAt        TEXT,             -- 结果回填时间
+      UNIQUE (tradeDate, code)
+    )`);
+    db.run('CREATE INDEX IF NOT EXISTS idx_bt_decision_date ON bt_decision (tradeDate)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_bt_decision_code ON bt_decision (code, tradeDate)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_bt_decision_hit  ON bt_decision (hit3)');
   }
   return db;
 }
@@ -635,6 +675,109 @@ async function setMigration(name) {
 }
 
 // ── K线日期索引 / 缺失日补全 ──────────────────────────────
+
+// ── 尾盘买入实盘凭据（bt_decision）────────────────────────────
+// 表结构与 tools/backtest_store.py 的 DECISION_DDL 同源；回测统计在 data/backtest.db，本表只存决策与回填。
+const BT_DECISION_COLUMNS = [
+  'tradeDate', 'code', 'name', 'runId', 'runKey', 'score', 'up3Prob', 'up5Prob', 'limitUpProb',
+  'expectedRetHigh', 'expectedRetOpen', 'suggestedBuyTime', 'suggestedSellTime', 'marketTemp',
+  'marketRegime', 'sectorHeat', 'sectorUpRatio', 'evidenceJson', 'patternJson', 'confidence',
+  'source', 'reason',
+];
+
+function normalizeBtDecision(row = {}) {
+  const out = {};
+  for (const col of BT_DECISION_COLUMNS) out[col] = row[col] === undefined ? null : row[col];
+  out.tradeDate = Number(out.tradeDate) || null;
+  out.code = String(out.code || '');
+  if (!out.tradeDate || !/^\d{6}$/.test(out.code)) return null;
+  out.createdAt = String(row.createdAt || new Date().toISOString());
+  return out;
+}
+
+// 幂等写入当日决策：同一 (tradeDate, code) 覆盖，保留已回填的实盘结果。
+async function saveBtDecisions(rows = []) {
+  const list = (Array.isArray(rows) ? rows : []).map(normalizeBtDecision).filter(Boolean);
+  if (!list.length) return { ok: true, saved: 0, skipped: 0 };
+  const d = await ensureDb();
+  let saved = 0;
+  try {
+    d.run('BEGIN');
+    for (const row of list) {
+      const cols = [...BT_DECISION_COLUMNS, 'createdAt'];
+      d.run(
+        `INSERT INTO bt_decision (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`
+        + ' ON CONFLICT(tradeDate, code) DO UPDATE SET '
+        + cols.filter((c) => c !== 'tradeDate' && c !== 'code').map((c) => `${c}=excluded.${c}`).join(','),
+        cols.map((c) => row[c]),
+      );
+      saved += 1;
+    }
+    d.run('COMMIT');
+    persist();
+    return { ok: true, saved, skipped: rows.length - list.length };
+  } catch (e) {
+    try { d.run('ROLLBACK'); } catch { /* 已回滚 */ }
+    return { ok: false, saved: 0, skipped: rows.length, error: String(e && e.message || e) };
+  }
+}
+
+// 回填次日真实结果（实盘凭据闭环）。只更新实际成交/涨幅列。
+async function settleBtDecision(patch = {}) {
+  const tradeDate = Number(patch.tradeDate) || null;
+  const code = String(patch.code || '');
+  if (!tradeDate || !/^\d{6}$/.test(code)) return { ok: false, error: 'tradeDate/code 非法' };
+  const cols = ['actualEntryPrice', 'actualHigh', 'actualExitPrice', 'actualRetHigh', 'actualRetExit', 'hit3'];
+  const d = await ensureDb();
+  try {
+    const assignments = cols.map((c) => `${c} = ?`).join(', ');
+    d.run(
+      `UPDATE bt_decision SET ${assignments}, settledAt = ? WHERE tradeDate = ? AND code = ?`,
+      [...cols.map((c) => (patch[c] === undefined ? null : patch[c])), String(patch.settledAt || new Date().toISOString()), tradeDate, code],
+    );
+    persist();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+// 读取决策凭据：不传 tradeDate 取最近若干条（按决策日倒序）。
+async function listBtDecisions({ tradeDate = null, limit = 200 } = {}) {
+  try {
+    const d = await ensureDb();
+    const res = tradeDate
+      ? d.exec('SELECT * FROM bt_decision WHERE tradeDate = ? ORDER BY score DESC, code', [Number(tradeDate)])
+      : d.exec('SELECT * FROM bt_decision ORDER BY tradeDate DESC, score DESC, code LIMIT ?', [Math.max(1, Math.min(2000, Number(limit) || 200))]);
+    if (!res.length) return [];
+    const columns = res[0].columns;
+    return res[0].values.map((values) => Object.fromEntries(columns.map((c, i) => [c, values[i]])));
+  } catch {
+    return [];
+  }
+}
+
+// 实盘凭据命中率：只统计已回填 hit3 的记录，用于「回测 → 实盘」一致性核对。
+async function btDecisionScorecard() {
+  try {
+    const d = await ensureDb();
+    const res = d.exec(`SELECT COUNT(*), SUM(CASE WHEN hit3 IS NOT NULL THEN 1 ELSE 0 END),
+      SUM(CASE WHEN hit3 = 1 THEN 1 ELSE 0 END), AVG(CASE WHEN hit3 IS NOT NULL THEN actualRetExit END),
+      MIN(tradeDate), MAX(tradeDate) FROM bt_decision`);
+    const row = res.length && res[0].values.length ? res[0].values[0] : [];
+    const total = Number(row[0]) || 0;
+    const settled = Number(row[1]) || 0;
+    const hits = Number(row[2]) || 0;
+    return {
+      total, settled, hits,
+      hit3Pct: settled ? Number(((hits / settled) * 100).toFixed(2)) : null,
+      avgExitRet: row[3] === null || row[3] === undefined ? null : Number(Number(row[3]).toFixed(3)),
+      firstDate: row[4] || null, lastDate: row[5] || null,
+    };
+  } catch {
+    return { total: 0, settled: 0, hits: 0, hit3Pct: null, avgExitRet: null, firstDate: null, lastDate: null };
+  }
+}
 
 // 返回某只股票已落盘的全部日期（升序）。用于「哪天没数据就提示补全」。
 async function readKlineDates(code) {
@@ -1205,6 +1348,7 @@ module.exports = {
   writeKline, writeKlineListingEvidence, readKline, readKlineStats, listKlineDates, clearKlines, clearJudgments, flush, reloadDbFromDisk, klineStats,
   readKlineDates, recentTradingDates, klineGaps,
   getMigration, setMigration,
+  saveBtDecisions, settleBtDecision, listBtDecisions, btDecisionScorecard,
   writeJudgmentRecord, getLastSuccessJudgment, listJudgmentAttempts,
   writePriceLevelSet, getPriceLevelSet, refreshDataStats, getDataStats, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences,
   saveWatchRecommendationBatch, saveWatchRecommendation, latestWatchRecommendations,

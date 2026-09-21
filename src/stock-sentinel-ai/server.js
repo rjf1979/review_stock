@@ -9,7 +9,9 @@ const { listRules, scanByMarketContext, getMarketPrescan, PATTERNS, detectSingle
 const rulesStore = require('./rules-store');
 const crypto = require('crypto');
 const priceLevels = require('./price-levels');
-const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans } = require('./storage');
+const { DATA_DIR, DB_FILE, listSnapshotDates, listKlineDates, klineStats, clearJudgments, recentTradingDates, readKlineDates, readKline, readKlineStats, writeKline, writePriceLevelSet, getPriceLevelSet, flush, flushSync, getAiPrompt, saveAiPrompt, getScanPreferences, saveScanPreferences, getStockRiskPlans, saveBtDecisions, settleBtDecision, listBtDecisions, btDecisionScorecard } = require('./storage');
+// 回测库（data/backtest.db）只读访问：字段字典 / 形态字典 / 分档统计 / 时点网格。
+const backtestStore = require('./backtest-store');
 // 本地通达信数据源探针：只读检查目录/除权文件是否可用，供设置页与巡检使用。
 const { tdxStatus } = require('./tdx-vipdoc');
 const watchlist = require('./watchlist');
@@ -280,6 +282,54 @@ function createServer(port = DEFAULT_PORT) {
         return send(res, 200, { ok: true, rules: saved });
       }
       if (pathname === '/api/patterns') return send(res, 200, { patterns: Object.keys(PATTERNS) });
+      // ── 回测库（data/backtest.db，只读）────────────────────────────
+      if (pathname === '/api/backtest/summary') return send(res, 200, await backtestStore.summary());
+      if (pathname === '/api/backtest/feature-dict') {
+        return send(res, 200, { ok: true, fields: await backtestStore.featureDict({ tableName: url.searchParams.get('table') || null }) });
+      }
+      if (pathname === '/api/backtest/patterns') {
+        return send(res, 200, {
+          ok: true,
+          patterns: await backtestStore.patternDefs({ scope: url.searchParams.get('scope') || null, usableOnly: url.searchParams.get('usable') === '1' }),
+        });
+      }
+      if (pathname === '/api/backtest/stats') {
+        const rawRunId = url.searchParams.get('runId');
+        return send(res, 200, {
+          ok: true,
+          dimensions: await backtestStore.statDimensions(),
+          stats: await backtestStore.statRows({
+            runId: rawRunId === null || rawRunId === '' ? null : Number(rawRunId),
+            dimension: url.searchParams.get('dimension') || null,
+          }),
+        });
+      }
+      if (pathname === '/api/backtest/time-grid') {
+        const rawRunId = url.searchParams.get('runId');
+        return send(res, 200, { ok: true, grid: await backtestStore.timeGrid({ runId: rawRunId === null || rawRunId === '' ? null : Number(rawRunId) }) });
+      }
+      // ── 实盘凭据（data/kline.db 的 bt_decision）────────────────────
+      if (pathname === '/api/decisions' && req.method === 'GET') {
+        const tradeDate = url.searchParams.get('tradeDate');
+        return send(res, 200, {
+          ok: true,
+          tradeDate: tradeDate || null,
+          scorecard: await btDecisionScorecard(),
+          decisions: await listBtDecisions({ tradeDate: tradeDate ? Number(tradeDate) : null, limit: Number(url.searchParams.get('limit')) || 200 }),
+        });
+      }
+      if (pathname === '/api/decisions' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await saveBtDecisions(Array.isArray(body) ? body : (body && body.decisions) || []);
+        if (!result.ok) return send(res, 400, result);
+        return send(res, 200, { ...result, decisions: await listBtDecisions({ limit: 200 }) });
+      }
+      if (pathname === '/api/decisions/settle' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await settleBtDecision(body || {});
+        if (!result.ok) return send(res, 400, result);
+        return send(res, 200, { ...result, scorecard: await btDecisionScorecard() });
+      }
       if (pathname === '/api/settings' && req.method === 'GET') {
         const prefs = await getScanPreferences();
         return send(res, 200, { ...settings.load(), scanMarkets: prefs?.markets || MARKETS_DEFAULTS, scanLimit: prefs?.scanLimit || 500 });
